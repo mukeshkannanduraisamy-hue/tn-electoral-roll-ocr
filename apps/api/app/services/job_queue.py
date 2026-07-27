@@ -29,11 +29,11 @@ import json
 import logging
 import threading
 import uuid
-from concurrent.futures import Future, ProcessPoolExecutor
+from concurrent.futures import Executor, Future, ProcessPoolExecutor, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from ..config import settings
 from ..db import (
@@ -72,6 +72,21 @@ def _init_worker() -> None:
         logger.warning("Worker warmup failed: %s", exc)
 
 
+def existing_page_ids(session, file_id: str) -> dict[int, str]:
+    """Map page_number -> existing page id for one file.
+
+    Used so re-processing reuses a page's identity. See the call site for why
+    generating a fresh id instead duplicates every record on the page.
+    """
+    return dict(
+        session.execute(
+            select(PageRow.page_number, PageRow.id).where(
+                PageRow.file_id == file_id
+            )
+        ).all()
+    )
+
+
 def _process_page_task(
     pdf_path: str,
     page_number: int,
@@ -101,21 +116,46 @@ def _process_page_task(
 
 class JobManager:
     def __init__(self) -> None:
-        self._executor: ProcessPoolExecutor | None = None
+        self._executor: Executor | None = None
         self._lock = threading.Lock()
         self._subscribers: dict[str, list[tuple[asyncio.AbstractEventLoop, asyncio.Queue]]] = {}
         self._cancelled: set[str] = set()
 
     # ------------------------------------------------------------- lifecycle
 
-    def executor(self) -> ProcessPoolExecutor:
+    def executor(self) -> Executor:
+        """The pool jobs run on.
+
+        Two modes, chosen by `OCR_OCR_WORKERS`:
+
+        * ``>= 1`` -- a process pool. Real parallelism across pages, but each
+          worker loads its own ~0.9 GB copy of the models on top of the API
+          process's own set.
+        * ``0``    -- a single background thread inside the API process. It
+          reuses the model set already loaded there, roughly halving total
+          memory, and is what makes the app fit on a small cloud instance.
+          PaddleOCR spends most of its time in native code that releases the
+          GIL, so a lone thread is not much slower than a lone process.
+        """
         with self._lock:
             if self._executor is None:
-                logger.info("Starting OCR pool with %d workers", settings.ocr_workers)
-                self._executor = ProcessPoolExecutor(
-                    max_workers=max(1, settings.ocr_workers),
-                    initializer=_init_worker,
-                )
+                if settings.ocr_workers >= 1:
+                    logger.info(
+                        "Starting OCR process pool with %d worker(s)",
+                        settings.ocr_workers,
+                    )
+                    self._executor = ProcessPoolExecutor(
+                        max_workers=settings.ocr_workers,
+                        initializer=_init_worker,
+                    )
+                else:
+                    logger.info(
+                        "OCR_WORKERS=0 -- running jobs in-process on one thread "
+                        "(lower memory, no page parallelism)"
+                    )
+                    self._executor = ThreadPoolExecutor(
+                        max_workers=1, thread_name_prefix="ocr"
+                    )
             return self._executor
 
     def shutdown(self) -> None:
@@ -215,8 +255,23 @@ class JobManager:
                     pdf_path = file_row.stored_path
                     page_count = max(file_row.page_count, 1)
 
+                    # `pages_done` is a per-run counter. Without this reset it
+                    # keeps climbing across re-runs and the UI shows progress
+                    # like "2 of 1 pages".
+                    file_row.pages_done = 0
+
+                    # Page identity must be derived from (file, page number),
+                    # never freshly generated. A new uuid per run creates a
+                    # SECOND page row for the same physical page, so
+                    # re-processing a file duplicates every record instead of
+                    # replacing it -- 30 voters silently become 60, and every
+                    # export double-counts them.
+                    existing_ids = existing_page_ids(session, file_id)
+
                     for page_number in range(1, page_count + 1):
-                        page_id = uuid.uuid4().hex[:12]
+                        page_id = existing_ids.get(
+                            page_number, uuid.uuid4().hex[:12]
+                        )
                         future = executor.submit(
                             _process_page_task,
                             pdf_path,

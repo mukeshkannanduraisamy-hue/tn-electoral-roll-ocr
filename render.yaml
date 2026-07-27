@@ -1,39 +1,131 @@
+# =============================================================================
+# Render Blueprint - Tamil Nadu Electoral Roll OCR Workspace
+#
+# Two services: a Python OCR API and a Next.js frontend that proxies to it.
+#
+# -----------------------------------------------------------------------------
+# READ THIS BEFORE DEPLOYING: the API cannot run on Free or Starter.
+# -----------------------------------------------------------------------------
+# PaddleOCR holds its models in memory. Measured on this corpus, the API
+# process sits at ~1.1 GB resident once the detection and Tamil recognition
+# models are warm. Free and Starter both cap at 512 MB, so the service is
+# OOM-killed the first time a page is processed -- it will deploy, pass a
+# health check, and then die on first use.
+#
+#   plan          RAM      verdict
+#   free          512 MB   OOM. Also spins down when idle, and a cold start
+#                          reloads ~92 MB of models before the first response.
+#   starter       512 MB   OOM.
+#   standard      2 GB     Minimum workable. Use OCR_OCR_WORKERS=0.
+#   pro           4 GB     Comfortable; can afford OCR_OCR_WORKERS=1..2.
+#
+# The frontend is an ordinary Next.js server and is happy on Starter.
+# =============================================================================
+
 services:
   # ---------------------------------------------------------------------------
-  # 1. FastAPI Backend OCR Service
+  # OCR API (FastAPI + PaddleOCR)
   # ---------------------------------------------------------------------------
   - type: web
-    name: tamil-nadu-ocr-api
-    env: python
+    name: ocr-api
+    runtime: python
     region: singapore
-    plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    plan: standard # see the table above; free/starter WILL be OOM-killed
     rootDir: apps/api
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+    # OCR keeps ~1 GB of weights per process, so a single uvicorn worker is
+    # deliberate. Scale by making the instance bigger, not by adding workers.
+
+    disk:
+      name: ocr-data
+      mountPath: /var/data
+      sizeGB: 10
+      # Holds the SQLite database, uploaded PDFs, rendered page images and the
+      # PaddleOCR model cache. Without a disk every deploy loses all extracted
+      # data AND re-downloads ~92 MB of models on each cold start.
+
     envVars:
       - key: PYTHON_VERSION
-        value: "3.11.0"
-      - key: DATA_DIR
-        value: "/tmp/data"
+        value: "3.11.9"
+
+      # --- storage ---------------------------------------------------------
+      # NOTE the OCR_ prefix: settings are read with `env_prefix="OCR_"`, so a
+      # bare DATA_DIR is silently ignored and data lands on ephemeral disk.
+      - key: OCR_DATA_DIR
+        value: /var/data
+      - key: PADDLE_PDX_CACHE_HOME
+        value: /var/data/.paddlex # keep models on the disk across restarts
+
+      # --- OCR engine ------------------------------------------------------
+      - key: OCR_OCR_LANG
+        value: ta
+      - key: OCR_OCR_VERSION
+        value: PP-OCRv5 # the version with a published Tamil model
+      - key: OCR_OCR_DEVICE
+        value: cpu
+
+      # 0 = run jobs on a thread inside the API process, reusing the models it
+      # has already loaded. Roughly halves memory versus a worker process,
+      # which is what keeps this inside a 2 GB instance. Raise to 1-2 only on
+      # pro or larger.
+      - key: OCR_OCR_WORKERS
+        value: "0"
+
+      # The mobile detector is materially lighter than the default
+      # PP-OCRv5_server_det and costs little accuracy on clean printed forms.
+      # Drop this variable on a larger plan to get the server detector back.
+      - key: OCR_OCR_DET_MODEL
+        value: PP-OCRv5_mobile_det
+
+      - key: OMP_NUM_THREADS
+        value: "2" # Paddle spawns per-core OpenMP threads; unbounded on a
+        # shared vCPU this thrashes and inflates memory.
+
+      # --- security --------------------------------------------------------
+      # /api/files/import-folder reads paths supplied by the caller. That is a
+      # local-workflow convenience; on a public host it is a filesystem probe.
+      - key: OCR_ALLOW_FOLDER_IMPORT
+        value: "false"
+
+      # --- CORS ------------------------------------------------------------
+      # The browser calls the frontend origin and Next proxies server-side, so
+      # this is belt-and-braces for direct API access.
+      - key: OCR_CORS_ORIGINS
+        fromService:
+          type: web
+          name: ocr-web
+          property: host
 
   # ---------------------------------------------------------------------------
-  # 2. Next.js Frontend Web App
+  # Frontend (Next.js)
   # ---------------------------------------------------------------------------
   - type: web
-    name: tamil-nadu-ocr-web
-    env: node
+    name: ocr-web
+    runtime: node
     region: singapore
-    plan: free
-    buildCommand: "npm install && npm run build"
-    startCommand: "npm run start"
+    plan: starter
     rootDir: apps/web
+    # `npm ci` at the repo root: this is an npm workspace, and installing from
+    # apps/web alone will not link the local @ocr/shared-types package.
+    buildCommand: cd ../.. && npm ci && npm run build --workspace @ocr-workspace/web
+    startCommand: npm run start
+    healthCheckPath: /
+    autoDeploy: true
+
     envVars:
       - key: NODE_VERSION
-        value: "20.10.0"
-      - key: NEXT_PUBLIC_API_BASE
-        value: "https://tamil-nadu-ocr-api.onrender.com"
+        value: "20.18.1"
+      - key: NODE_ENV
+        value: production
+
+      # Server-side rewrite target. `fromService` keeps the two wired together
+      # without hardcoding a hostname, and survives a service rename.
       - key: BACKEND_URL
         fromService:
           type: web
-          name: tamil-nadu-ocr-api
+          name: ocr-api
           property: url

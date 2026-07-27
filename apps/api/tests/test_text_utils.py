@@ -214,3 +214,24 @@ def test_degraded_husband_label_still_beats_generic_name():
     result = parse("கணவா பெயர் : சண்முகம்")
     assert result.get("relation_husband") == "சண்முகம்"
     assert "name" not in result
+
+
+# ---------------------------------------------------------------------------
+# A label whose value wrapped onto the next OCR line.
+#
+# Observed on page 13_26 records 666/668/670: the cell reads
+#     "தந்தையின் பெயர்:"
+#     "கடமடைமுனியப்பன் -"
+# The label line alone yields an empty value, which must not be mistaken for
+# a genuinely blank field.
+# ---------------------------------------------------------------------------
+
+
+def test_label_with_no_value_yields_empty_not_garbage():
+    result = parse("தந்தையின் பெயர்:")
+    assert result.get("relation_father", "") == ""
+
+
+def test_bare_value_line_matches_no_label():
+    """The continuation line must look label-free, or it would self-consume."""
+    assert parse("கடமடைமுனியப்பன் -") == {}

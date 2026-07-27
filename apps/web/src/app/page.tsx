@@ -12,6 +12,7 @@ import { UploadModal } from "@/components/UploadModal";
 import { BulkExtractModal } from "@/components/BulkExtractModal";
 import { ShortcutsModal } from "@/components/ShortcutsModal";
 import { Toaster } from "sonner";
+import { PanelLeft, X } from "lucide-react";
 
 export default function Home() {
   const { loadFiles, activeTab, setActiveTab, setIsShortcutsOpen, isShortcutsOpen } = useOcrStore();
@@ -19,6 +20,7 @@ export default function Home() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isBulkExtractOpen, setIsBulkExtractOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
     loadFiles();
@@ -62,10 +64,29 @@ export default function Home() {
       />
 
       {/* Main Workspace */}
-      <div className="flex-1 flex overflow-hidden">
-        <Sidebar />
+      <div className="flex-1 flex overflow-hidden relative">
+        <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
-        <main className="flex-1 flex overflow-hidden">
+        {/* Backdrop for the mobile drawer */}
+        {isSidebarOpen && (
+          <div
+            className="fixed inset-0 top-16 z-30 bg-slate-900/50 backdrop-blur-sm lg:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* Drawer toggle -- only exists on narrow screens */}
+        <button
+          onClick={() => setIsSidebarOpen((v) => !v)}
+          className="lg:hidden fixed bottom-5 left-5 z-50 h-12 w-12 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center transition-colors"
+          aria-label={isSidebarOpen ? "Close document list" : "Open document list"}
+          aria-expanded={isSidebarOpen}
+        >
+          {isSidebarOpen ? <X className="w-5 h-5" /> : <PanelLeft className="w-5 h-5" />}
+        </button>
+
+        <main className="flex-1 flex overflow-hidden min-w-0">
           {activeTab === "table" && <TableView />}
           {activeTab === "page" && <PageView />}
           {activeTab === "review" && <ReviewQueue />}

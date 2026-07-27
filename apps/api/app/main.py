@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import settings
-from .db import init_db
+from .db import init_db, reconcile_interrupted_work
 from .routers import export, files, jobs, pages, records, templates
 from .services.job_queue import manager
 
@@ -30,6 +30,10 @@ logger = logging.getLogger(__name__)
 async def lifespan(_app: FastAPI):
     settings.ensure_dirs()
     init_db()
+    # Jobs cannot outlive the process that runs them, so anything still
+    # marked in-flight at boot was orphaned by a restart. Clear it before
+    # serving traffic, or the UI shows work that will never complete.
+    reconcile_interrupted_work()
     logger.info("Data directory: %s", settings.data_dir)
     logger.info(
         "OCR: lang=%s version=%s device=%s workers=%d",
@@ -53,12 +57,39 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+def _cors_origins() -> list[str]:
+    """Normalise the configured origins.
+
+    CORS matches on a full origin (`https://host`), but Render's
+    `fromService: property: host` injects a bare hostname. Accept either form
+    and add the scheme, otherwise every cross-origin request is rejected with
+    no obvious cause.
+    """
+    origins: list[str] = []
+    for raw in settings.cors_origins.split(","):
+        value = raw.strip().rstrip("/")
+        if not value:
+            continue
+        if value == "*":
+            return ["*"]
+        if "://" not in value:
+            # localhost keeps http; anything else on the internet is https.
+            scheme = "http" if value.startswith(("localhost", "127.0.0.1")) else "https"
+            value = f"{scheme}://{value}"
+        origins.append(value)
+    return origins
+
+
+_origins = _cors_origins()
+logger.info("CORS origins: %s", _origins)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],  # so the browser can read export filenames
 )
 
 app.include_router(files.router, prefix="/api/files", tags=["files"])

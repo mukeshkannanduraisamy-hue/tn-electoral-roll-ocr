@@ -1,0 +1,60 @@
+# =============================================================================
+# Local one-command stack:  docker compose up --build
+#
+#   frontend  http://localhost:3000
+#   api       http://localhost:8000/docs
+#
+# First build downloads ~1 GB of Python wheels; first OCR request downloads
+# ~92 MB of models into the named volume, after which restarts are fast.
+# =============================================================================
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ocr-data:/var/data
+      # Mount a read-only corpus to use /api/files/import-folder locally:
+      # - ./PDF:/corpus:ro
+    environment:
+      OCR_DATA_DIR: /var/data
+      PADDLE_PDX_CACHE_HOME: /var/data/.paddlex
+      OCR_OCR_LANG: ta
+      OCR_OCR_VERSION: PP-OCRv5
+      OCR_OCR_DEVICE: cpu
+      # 0 = single in-process thread, one copy of the models. Raise only if
+      # you have given Docker several GB of RAM.
+      OCR_OCR_WORKERS: "0"
+      OCR_CORS_ORIGINS: http://localhost:3000
+      OMP_NUM_THREADS: "2"
+    deploy:
+      resources:
+        limits:
+          # Below ~1.5 GB the container is OOM-killed the moment models load.
+          memory: 3G
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      # Service name, not localhost: the rewrite runs inside the container.
+      BACKEND_URL: http://api:8000
+      NODE_ENV: production
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  ocr-data:

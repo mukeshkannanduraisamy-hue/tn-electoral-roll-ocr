@@ -19,6 +19,18 @@ interface ExportModalProps {
   onClose: () => void;
 }
 
+/** Shown while the preview is unavailable, so the dialog never looks broken. */
+const DEFAULT_PREVIEW_COLUMNS = [
+  "வரிசை எண் (S.No)",
+  "அடையாள அட்டை எண் (EPIC ID)",
+  "பெயர் (Name)",
+  "உறவு முறை (Relation)",
+  "உறவினரின் பெயர் (Relation Name)",
+  "வீட்டு எண் (House No)",
+  "வயது (Age)",
+  "பாலினம் (Gender)",
+];
+
 export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
   const { activeFileId } = useOcrStore();
   const [exportScope, setExportScope] = useState<"active" | "all">("all");
@@ -35,6 +47,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
   } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
+  // An empty `file_ids` means "every file in the workspace" to the backend.
+  // So falling back to [] when the active-file scope has no active file
+  // would silently export the ENTIRE corpus instead of the one file the
+  // user asked for. Block that state outright rather than widening scope.
+  const activeScopeUnavailable = exportScope === "active" && !activeFileId;
+
   const requestPayload: ExportRequest = {
     format,
     mode,
@@ -48,20 +66,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
 
   useEffect(() => {
     if (!isOpen) return;
+    if (activeScopeUnavailable) {
+      setPreviewData({ columns: DEFAULT_PREVIEW_COLUMNS, rows: [], total_rows: 0 });
+      return;
+    }
     previewExport(requestPayload)
       .then((res) => setPreviewData(res))
       .catch(() =>
         setPreviewData({
-          columns: [
-            "வரிசை எண் (S.No)",
-            "அடையாள அட்டை எண் (EPIC ID)",
-            "பெயர் (Name)",
-            "உறவு முறை (Relation)",
-            "உறவினரின் பெயர் (Relation Name)",
-            "வீட்டு எண் (House No)",
-            "வயது (Age)",
-            "பாலினம் (Gender)",
-          ],
+          columns: DEFAULT_PREVIEW_COLUMNS,
           rows: [],
           total_rows: 0,
         })
@@ -71,6 +84,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
   if (!isOpen) return null;
 
   const handleDownload = async () => {
+    // Belt and braces: the button is disabled in this state, but sending the
+    // request anyway would export every file instead of the intended one.
+    if (activeScopeUnavailable) {
+      toast.error("Select a file first, or switch the scope to all files.");
+      return;
+    }
     try {
       setIsExporting(true);
       await triggerDownloadExport(requestPayload);
@@ -127,7 +146,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
               </button>
               <button
                 onClick={() => setExportScope("active")}
-                className={`py-2 px-3 text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-all ${
+                disabled={!activeFileId}
+                title={
+                  activeFileId
+                    ? undefined
+                    : "Select a file in the sidebar to export just that file"
+                }
+                className={`py-2 px-3 text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
                   exportScope === "active"
                     ? "bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow-sm"
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
@@ -253,8 +278,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
             </button>
             <button
               onClick={handleDownload}
-              disabled={isExporting}
-              className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-emerald-600/30 transition-all"
+              disabled={isExporting || activeScopeUnavailable}
+              className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-emerald-600/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-600"
             >
               <Download className="w-4 h-4" />
               {isExporting ? "Generating..." : "Download File"}

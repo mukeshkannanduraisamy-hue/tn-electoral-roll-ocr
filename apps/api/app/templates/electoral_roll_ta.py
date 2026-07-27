@@ -273,13 +273,50 @@ class ElectoralRollTamilTemplate:
                     put("serial", digits, line)
                     consumed.add(line.id)
 
+        def _is_noise(text: str) -> bool:
+            lowered = text.lower()
+            return any(noise in lowered for noise in PHOTO_NOISE)
+
+        def _continuation_value(index: int) -> tuple[str, OcrLine] | None:
+            """Value that wrapped onto the following line.
+
+            OCR sometimes breaks a field between the label and its value, so
+            the cell reads:
+
+                தந்தையின் பெயர்:
+                கடமடைமுனியப்பன் -
+
+            The label line then yields an empty value and the value line
+            carries no label, so both are discarded and the field is lost.
+            Adopt the next line when it is plain text with no label of its
+            own -- otherwise leave it for its own iteration.
+            """
+            if index + 1 >= len(lines):
+                return None
+            nxt = lines[index + 1]
+            if nxt.id in consumed:
+                return None
+            nxt_text = normalize(nxt.text)
+            if not nxt_text or _is_noise(nxt_text):
+                return None
+            if segment_labels(
+                nxt_text, LABELS,
+                threshold=settings.label_fuzzy_threshold,
+                priority=RELATION_KEYS,
+            ):
+                return None
+            # A bare identifier or serial belongs to the header, not here.
+            if EPIC_PERMISSIVE_RE.match(clean_identifier(nxt_text)):
+                return None
+            value = strip_value(nxt_text)
+            return (value, nxt) if value else None
+
         # --- pass 2: labelled fields ---------------------------------------
-        for line in lines:
+        for line_index, line in enumerate(lines):
             if line.id in consumed:
                 continue
             text = normalize(line.text)
-            lowered = text.lower()
-            if any(noise in lowered for noise in PHOTO_NOISE):
+            if _is_noise(text):
                 continue
 
             pairs = segment_labels(
@@ -291,35 +328,46 @@ class ElectoralRollTamilTemplate:
             if not pairs:
                 continue
 
-            for match, raw_value in pairs:
+            for pair_index, (match, raw_value) in enumerate(pairs):
                 key = match.key
                 value = strip_value(raw_value)
+                source = line
+
+                # Only the last label on a line can wrap; an earlier one is
+                # bounded by the next label, so an empty value there is a
+                # genuine blank rather than a line break.
+                if not value and pair_index == len(pairs) - 1:
+                    carried = _continuation_value(line_index)
+                    if carried:
+                        value, source = carried
+                        consumed.add(source.id)
+
                 if not value:
                     continue
 
+                # Attribute confidence and geometry to whichever line the
+                # value actually came from -- `line` for the normal case,
+                # the following line when the value wrapped.
                 if key in RELATION_KEYS:
-                    put("relation_name", value, line)
+                    put("relation_name", value, source)
                     if "relation_type" not in values:
                         values["relation_type"] = (
                             RELATION_TYPE_LABEL[key],
-                            line.confidence,
-                            line.bbox,
-                            [line.id],
+                            source.confidence,
+                            source.bbox,
+                            [source.id],
                         )
                 elif key == "age":
                     digits = extract_digits(value)
                     if digits:
-                        put("age", digits[:3], line)
+                        put("age", digits[:3], source)
                 elif key == "gender":
                     canonical = best_enum_match(value, GENDER_OPTIONS)
-                    if canonical:
-                        put("gender", canonical, line)
-                    else:
-                        put("gender", value, line)
+                    put("gender", canonical or value, source)
                 elif key == "house_number":
-                    put("house_number", value, line)
+                    put("house_number", value, source)
                 elif key == "name":
-                    put("name", value, line)
+                    put("name", value, source)
                 consumed.add(line.id)
 
         # --- pass 3: leftovers become an audit trail ------------------------

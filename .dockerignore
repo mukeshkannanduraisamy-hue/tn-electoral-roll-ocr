@@ -1,0 +1,30 @@
+# Build context hygiene. Without this the ~900 MB venv and the PDF corpus get
+# uploaded to the daemon on every build.
+.git/
+data/
+PDF/
+2026-EROLLGEN-*/
+samples/
+
+**/.venv/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+
+**/node_modules/
+**/.next/
+**/out/
+**/dist/
+
+.env
+.env.local
+**/.env
+!.env.example
+
+.vscode/
+.idea/
+**/.DS_Store
+**/Thumbs.db
+docs/

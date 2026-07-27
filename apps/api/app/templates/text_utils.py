@@ -41,7 +41,10 @@ from rapidfuzz import fuzz
 _SEP_CHARS = ":;：﹕∶|"
 _SEP_SPLIT_RE = re.compile(f"[{re.escape(_SEP_CHARS)}]")
 _LEADING_JUNK_RE = re.compile(r"^[\s\-–—.,;:]+")
-_TRAILING_JUNK_RE = re.compile(r"[\s\-–—_.,;:\"'\u201c\u201d\u2018\u2019]+")
+# NOTE: the `$` anchor is load-bearing. Without it, `.sub()` strips these
+# characters from *anywhere* in the value, silently turning house number
+# "5/179-3" into "5/1793". Only trailing punctuation may be removed.
+_TRAILING_JUNK_RE = re.compile(r"[\s\-–—_.,;:\"'\u201c\u201d\u2018\u2019]+$")
 _WS_RE = re.compile(r"\s+")
 
 # A label is short; no need to test suffixes longer than this.

@@ -1,19 +1,8 @@
-# ---------------------------------------------------------------------------
-# OCR backend dependencies (Compatible with Python 3.10 and 3.11).
-# ---------------------------------------------------------------------------
-
-paddlepaddle>=3.0.0b0,<3.2.0
-paddleocr>=3.0.0,<4.0.0
-PyMuPDF>=1.24.0
-numpy>=1.26,<2.2
-Pillow>=10.3
-rapidfuzz>=3.0.0
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
-python-multipart>=0.0.20
-pydantic>=2.10.0
-pydantic-settings>=2.7.0
-sse-starlette>=2.2.0
-SQLAlchemy>=2.0.0
-openpyxl>=3.1.0
-httpx>=0.28.0
+# Root-level shim so a build that runs from the repository root still works.
+#
+# The real dependency list lives with the service that needs it. Keeping a
+# second copy here guarantees the two drift apart, so this just points at it.
+#
+# Render uses `rootDir: apps/api`, which resolves `requirements.txt` to
+# apps/api/requirements.txt directly and never reads this file.
+-r apps/api/requirements.txt

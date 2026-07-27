@@ -95,7 +95,30 @@ class Settings(BaseSettings):
     rasterisations, so the extra models cost time and add failure modes."""
 
     ocr_workers: int = 1
-    """Persistent worker process holding a warm PaddleOCR instance."""
+    """Persistent worker processes, each holding a warm PaddleOCR instance.
+
+    Model load is ~8s, so workers must not be recycled per page.
+
+    MEMORY: each worker is a separate process with its own copy of the
+    weights. Measured on this corpus the API process sits at ~1.1 GB once
+    models are warm, and every extra worker adds roughly 0.9 GB. Size the
+    host accordingly -- or set this to 0.
+
+    Set to **0** to run jobs on a background thread inside the API process
+    instead. That reuses the single already-loaded model set (about half the
+    memory) at the cost of page-level parallelism. This is the right setting
+    for small cloud instances; see README "Choosing a Render plan".
+    """
+
+    ocr_det_model: str = ""
+    """Override the text-detection model.
+
+    Left empty, PaddleOCR selects `PP-OCRv5_server_det`: accurate, but the
+    single largest contributor to memory and CPU here. On a constrained host
+    set `PP-OCRv5_mobile_det` to cut both substantially -- detection of these
+    clean printed forms barely suffers, because the hard part is recognising
+    Tamil glyphs, not locating them.
+    """
 
     # ------------------------------------------------------- layout / cells
     expected_grid_cols: int = 3
@@ -138,6 +161,18 @@ class Settings(BaseSettings):
 
     # ------------------------------------------------------------- runtime
     cors_origins: str = "*"
+    """Comma-separated allowed origins. A bare hostname is accepted and gets
+    a scheme applied (see `main._cors_origins`), because Render's
+    `fromService: property: host` injects hostnames without one."""
+
+    allow_folder_import: bool = True
+    """Enable `POST /api/files/import-folder`.
+
+    That endpoint registers PDFs straight off the server's filesystem, which
+    is exactly what you want when the corpus is already on the same machine
+    -- and exactly what you do not want on a public host, where it lets a
+    caller probe for readable paths. Disabled in the Render blueprint.
+    """
 
     @property
     def uploads_dir(self) -> Path:

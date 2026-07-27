@@ -13,7 +13,13 @@ import {
 import { useOcrStore } from "@/store/useOcrStore";
 import { fetchFilePages } from "@/lib/api";
 
-export const Sidebar: React.FC = () => {
+interface SidebarProps {
+  /** Drawer visibility below the `lg` breakpoint. Ignored on wide screens. */
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => {
   const {
     files,
     activeFileId,
@@ -76,7 +82,25 @@ export const Sidebar: React.FC = () => {
   };
 
   return (
-    <aside className="w-64 border-r border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-950 flex flex-col h-[calc(100vh-4rem)] select-none transition-colors duration-200 shrink-0">
+    // Below `lg` the sidebar is an overlay drawer: at 375px a fixed 16rem
+    // column left the table roughly 110px wide, which is unusable. On wide
+    // screens it stays an ordinary inline column.
+    //
+    // The slide uses a data attribute + plain CSS rather than conditional
+    // `translate-x-*` utilities. Toggling between two same-specificity
+    // Tailwind translate classes leaves the resolved transform dependent on
+    // stylesheet order, which is not something the markup should have to
+    // reason about. See `globals.css` -> [data-drawer].
+    <aside
+      data-drawer={isOpen ? "open" : "closed"}
+      className="
+        w-64 shrink-0 border-r border-slate-200 dark:border-slate-800/80
+        bg-slate-50/95 dark:bg-slate-950/95 lg:bg-slate-50/50 lg:dark:bg-slate-950
+        backdrop-blur lg:backdrop-blur-none
+        flex flex-col h-[calc(100vh-4rem)] select-none
+        fixed lg:static top-16 lg:top-auto left-0 z-40
+      "
+    >
       {/* Files List Header */}
       <div className="px-4 py-3 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
         <span>Document List ({files.length})</span>
@@ -103,7 +127,11 @@ export const Sidebar: React.FC = () => {
           return (
             <div key={file.id} className="group relative">
               <button
-                onClick={() => setActiveFileId(file.id)}
+                onClick={() => {
+                  setActiveFileId(file.id);
+                  // On mobile the drawer covers the content it just loaded.
+                  onClose?.();
+                }}
                 className={`w-full text-left p-3 rounded-xl border transition-all flex items-start gap-3 ${
                   isActive
                     ? "bg-white dark:bg-slate-900 border-indigo-500/50 dark:border-indigo-500/50 text-slate-900 dark:text-slate-100 shadow-sm"

@@ -73,14 +73,19 @@ async def reocr_page(
     try:
         if upscale is not None:
             settings.upscale_factor = upscale
+        # Pass by KEYWORD. `process_page`'s 6th positional parameter is
+        # `save_image`, not `page_id` -- sending these positionally silently
+        # bound page_id to save_image, left page_id None, and made the
+        # pipeline mint a fresh page row on every re-OCR. That orphaned the
+        # old row and duplicated all 30 records for the page.
         page = await run_in_threadpool(
             pipeline.process_page,
             file_row.stored_path,
             row.page_number,
             row.file_id,
-            template_id,
-            lang,
-            page_id,
+            template_id=template_id,
+            lang=lang,
+            page_id=page_id,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Re-OCR failed for page %s", page_id)

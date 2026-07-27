@@ -58,3 +58,40 @@
   backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
+
+/* ---------------------------------------------------------------------------
+   Mobile navigation drawer (the document sidebar).
+
+   Driven by a data attribute instead of conditional `translate-x-*` utility
+   classes: those have identical specificity, so which one wins depends on the
+   order Tailwind happens to emit them, and the panel can end up stuck
+   off-screen even with the correct class applied.
+
+   Above `lg` the sidebar is an ordinary inline column, so the transform is
+   removed entirely.
+--------------------------------------------------------------------------- */
+@media (max-width: 1023.98px) {
+  [data-drawer] {
+    transition: transform 200ms ease;
+  }
+  [data-drawer="closed"] {
+    transform: translateX(-100%);
+  }
+  [data-drawer="open"] {
+    transform: translateX(0);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.45);
+  }
+}
+
+/* Above `lg` the sidebar is a plain inline column. Both the transform and the
+   transition are scoped OUT rather than overridden: an animated transform
+   that has to settle back to `none` leaves the panel's resting position
+   dependent on the transition actually running to completion. Crossing the
+   breakpoint should be an instant layout change, not an animation. */
+@media (min-width: 1024px) {
+  [data-drawer] {
+    transform: none;
+    box-shadow: none;
+    transition: none;
+  }
+}

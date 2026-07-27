@@ -77,6 +77,10 @@ def get_engine(
     }
     if version:
         kwargs["ocr_version"] = version
+    if settings.ocr_det_model:
+        # Explicit detection model -- used to drop to the mobile detector on
+        # memory-constrained hosts. See config.ocr_det_model.
+        kwargs["text_detection_model_name"] = settings.ocr_det_model
 
     try:
         engine = PaddleOCR(**kwargs)

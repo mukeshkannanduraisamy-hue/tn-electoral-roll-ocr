@@ -22,6 +22,23 @@ router = APIRouter()
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 
+def _is_managed_upload(stored_path: str) -> bool:
+    """True when we created this file and may therefore delete it.
+
+    Uploaded PDFs are copied into `settings.uploads_dir`; folder-imported
+    PDFs are referenced where they already live. Only the former are ours
+    to remove.
+    """
+    if not stored_path:
+        return False
+    try:
+        resolved = Path(stored_path).resolve()
+        uploads = settings.uploads_dir.resolve()
+    except (OSError, ValueError):
+        return False
+    return resolved.is_relative_to(uploads)
+
+
 @router.post("", response_model=list[SourceFile])
 async def upload(
     files: list[UploadFile] = File(...),
@@ -118,7 +135,17 @@ def import_folder(
 
     Declared *before* ``/{file_id}`` so FastAPI does not mistake the literal
     string "import-folder" for a file id.
+
+    Disabled unless ``OCR_ALLOW_FOLDER_IMPORT`` is on: reading paths chosen by
+    the caller is a local-workflow convenience, not something to expose on a
+    public host.
     """
+    if not settings.allow_folder_import:
+        raise HTTPException(
+            403,
+            "Folder import is disabled on this deployment. Upload the PDFs instead.",
+        )
+
     folder = Path(str(payload.get("path", ""))).expanduser()
     recursive = bool(payload.get("recursive", True))
     if not folder.is_dir():
@@ -241,7 +268,14 @@ def delete_file(file_id: str, session: Session = Depends(get_session)) -> Respon
         if page_row.image_path:
             (settings.pages_dir / page_row.image_path).unlink(missing_ok=True)
 
-    if row.stored_path:
+    # Only delete PDFs we own.
+    #
+    # `import-folder` registers files *in place*, so `stored_path` points at
+    # the user's original document rather than a copy in our uploads
+    # directory. Unlinking unconditionally would destroy the source corpus
+    # -- removing a file from the workspace must never delete the user's
+    # data. Anything outside `uploads_dir` is only ever dereferenced.
+    if row.stored_path and _is_managed_upload(row.stored_path):
         Path(row.stored_path).unlink(missing_ok=True)
 
     session.query(RecordRow).filter(RecordRow.file_id == file_id).delete(

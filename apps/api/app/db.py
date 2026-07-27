@@ -22,8 +22,6 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterator
-
-logger = logging.getLogger(__name__)
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
@@ -38,16 +36,21 @@ from sqlalchemy import (
     Text,
     create_engine,
     event,
+    func,
     select,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
+logger = logging.getLogger(__name__)
+
 from .config import settings
 from .schemas.core import (
     FieldValue,
+    FileStatus,
     Issue,
     IssueSeverity,
     Job,
+    JobStatus,
     Page,
     Record,
     SourceFile,
@@ -184,6 +187,69 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
 
 
+def reconcile_interrupted_work() -> dict[str, int]:
+    """Clear state owned by a process that no longer exists.
+
+    OCR runs in an in-process worker pool, so a job only lives as long as the
+    server does. If the process dies mid-job -- a deploy, a crash, a
+    free-tier idle spin-down -- the rows it was updating keep their in-flight
+    status forever: files stay "processing" and jobs stay "running", and the
+    UI shows work that will never finish.
+
+    Nothing can resume those runs, so on startup we mark the jobs failed and
+    return their files to "pending" where they can simply be queued again.
+    Runs at boot, before any request is served.
+    """
+    stats = {"jobs_failed": 0, "files_reset": 0}
+
+    with session_scope() as session:
+        orphan_jobs = (
+            session.execute(
+                select(JobRow).where(
+                    JobRow.status.in_([JobStatus.RUNNING.value, JobStatus.QUEUED.value])
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for job in orphan_jobs:
+            job.status = JobStatus.FAILED.value
+            job.error = "Interrupted by a server restart; re-run the extraction."
+            job.finished_at = _utcnow()
+            stats["jobs_failed"] += 1
+
+        orphan_files = (
+            session.execute(
+                select(FileRow).where(FileRow.status == FileStatus.PROCESSING.value)
+            )
+            .scalars()
+            .all()
+        )
+        for file_row in orphan_files:
+            # Anything already extracted is kept; the file just becomes
+            # queueable again.
+            done = session.execute(
+                select(func.count())
+                .select_from(PageRow)
+                .where(PageRow.file_id == file_row.id)
+            ).scalar_one()
+            file_row.pages_done = done
+            file_row.status = (
+                FileStatus.COMPLETED.value
+                if done and done >= file_row.page_count
+                else FileStatus.PENDING.value
+            )
+            stats["files_reset"] += 1
+
+    if stats["jobs_failed"] or stats["files_reset"]:
+        logger.warning(
+            "Startup reconciliation: %d interrupted job(s) failed, %d file(s) reset",
+            stats["jobs_failed"],
+            stats["files_reset"],
+        )
+    return stats
+
+
 @contextmanager
 def session_scope() -> Iterator[Session]:
     session = SessionLocal()
@@ -270,6 +336,32 @@ def save_page(session: Session, page: Page, file_id: str) -> None:
     payload = json.loads(page.model_dump_json())
     # Records live in their own table; don't duplicate them in the blob.
     payload.pop("records", None)
+
+    # A physical page must map to exactly one row. Anything else claiming the
+    # same (file_id, page_number) is a stale row from an earlier run, and
+    # leaving it behind means the page's records are counted twice in the
+    # table, the review queue and every export. Enforce the invariant here so
+    # a caller that mishandles page identity cannot corrupt the data set.
+    stale = (
+        session.execute(
+            select(PageRow).where(
+                PageRow.file_id == file_id,
+                PageRow.page_number == page.page_number,
+                PageRow.id != page.id,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for stale_row in stale:
+        logger.warning(
+            "Removing stale duplicate page %s for %s p%s",
+            stale_row.id, file_id, page.page_number,
+        )
+        session.query(RecordRow).filter(RecordRow.page_id == stale_row.id).delete(
+            synchronize_session=False
+        )
+        session.delete(stale_row)
 
     row = session.get(PageRow, page.id)
     if row is None:
