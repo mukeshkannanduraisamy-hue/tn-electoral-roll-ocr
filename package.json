@@ -1,0 +1,14 @@
+{
+  "name": "ocr-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "powershell -ExecutionPolicy Bypass -File ./scripts/dev.ps1",
+    "bootstrap": "powershell -ExecutionPolicy Bypass -File ./scripts/bootstrap.ps1",
+    "test:backend": "cd apps/api && .venv/Scripts/python.exe -m pytest"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}

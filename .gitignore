@@ -1,0 +1,48 @@
+# ---- Runtime data (never commit: contains PII from electoral rolls) ----
+/data/
+*.sqlite
+*.sqlite3
+*.db
+
+# ---- Source PDF corpora (PII — keep out of git) ----
+/2026-EROLLGEN-*/
+/samples/*.pdf
+PDF/
+/PDF/
+
+# ---- Python ----
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# ---- PaddleOCR model cache (large, re-downloadable) ----
+.paddlex/
+models/
+
+# ---- Node / Next.js ----
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+.turbo/
+
+# ---- Env ----
+.env
+.env.local
+.env*.local
+!.env.example
+
+# ---- Editors / OS ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
