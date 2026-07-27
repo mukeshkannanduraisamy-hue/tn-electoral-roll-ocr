@@ -34,6 +34,18 @@ def _collect_pages(session: Session, request: ExportRequest) -> list[Page]:
     return [_page_from_row(session, row) for row in rows]
 
 
+DEFAULT_TAMIL_COLUMNS = [
+    "வரிசை எண் (S.No)",
+    "அடையாள அட்டை எண் (EPIC ID)",
+    "பெயர் (Name)",
+    "உறவு முறை (Relation)",
+    "உறவினரின் பெயர் (Relation Name)",
+    "வீட்டு எண் (House No)",
+    "வயது (Age)",
+    "பாலினம் (Gender)",
+]
+
+
 @router.post("/preview")
 def preview_export(
     request: ExportRequest, session: Session = Depends(get_session)
@@ -41,7 +53,7 @@ def preview_export(
     """Header and first rows of the export, so the user sees it before saving."""
     pages = _collect_pages(session, request)
     if not pages:
-        raise HTTPException(404, "No pages match the selection")
+        return {"columns": DEFAULT_TAMIL_COLUMNS, "rows": [], "total_rows": 0}
     return export_service.preview(pages, request)
 
 
@@ -50,9 +62,6 @@ def download_export(
     request: ExportRequest, session: Session = Depends(get_session)
 ) -> Response:
     pages = _collect_pages(session, request)
-    if not pages:
-        raise HTTPException(404, "No pages match the selection")
-
     try:
         content, filename, media_type = export_service.export(pages, request)
     except export_service.ExportError as exc:

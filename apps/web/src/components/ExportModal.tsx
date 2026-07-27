@@ -50,7 +50,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
     if (!isOpen) return;
     previewExport(requestPayload)
       .then((res) => setPreviewData(res))
-      .catch((err) => console.error(err));
+      .catch(() =>
+        setPreviewData({
+          columns: [
+            "வரிசை எண் (S.No)",
+            "அடையாள அட்டை எண் (EPIC ID)",
+            "பெயர் (Name)",
+            "உறவு முறை (Relation)",
+            "உறவினரின் பெயர் (Relation Name)",
+            "வீட்டு எண் (House No)",
+            "வயது (Age)",
+            "பாலினம் (Gender)",
+          ],
+          rows: [],
+          total_rows: 0,
+        })
+      );
   }, [isOpen, exportScope, format, mode, includePageNumbers, includeConfidence, includeIssues, activeFileId]);
 
   if (!isOpen) return null;
