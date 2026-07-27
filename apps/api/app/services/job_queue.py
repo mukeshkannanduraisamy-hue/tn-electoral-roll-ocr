@@ -258,8 +258,8 @@ class JobManager:
                         failed += 1
                     else:
                         completed += 1
-                    touched_files.add(file_id)
 
+                    touched_files.add(file_id)
                     self._publish(
                         JobEvent(
                             type="page_done",
@@ -273,9 +273,9 @@ class JobManager:
                             },
                         )
                     )
-                except Exception as exc:  # noqa: BLE001 - one bad page must not
-                    failed += 1               # take the whole job down
-                    logger.exception("Page %s of %s failed", page_number, file_name)
+                except Exception as exc:  # noqa: BLE001
+                    failed += 1
+                    logger.exception("Page %d of %s failed: %s", page_number, file_name, exc)
                     self._publish(
                         JobEvent(type="error", job_id=job_id,
                                  data={"file_id": file_id,

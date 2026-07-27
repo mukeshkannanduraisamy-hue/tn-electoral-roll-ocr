@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     """Guard against decompression bombs / absurd page sizes."""
 
     # ------------------------------------------------------- preprocessing
-    upscale_factor: float = 3.0
+    upscale_factor: float = 2.0
     """Bicubic upscale applied before OCR. Source scans are ~144 DPI; small
     Tamil glyphs recognise far better after upscaling."""
 
@@ -94,9 +94,8 @@ class Settings(BaseSettings):
     """All three off by default: these pages are axis-aligned digital
     rasterisations, so the extra models cost time and add failure modes."""
 
-    ocr_workers: int = 2
-    """Persistent worker processes, each holding a warm PaddleOCR instance.
-    Model load is ~8s, so workers must not be recycled per page."""
+    ocr_workers: int = 1
+    """Persistent worker process holding a warm PaddleOCR instance."""
 
     # ------------------------------------------------------- layout / cells
     expected_grid_cols: int = 3
@@ -132,20 +131,13 @@ class Settings(BaseSettings):
     """Minimum total readings of a name before a vote is meaningful."""
 
     consensus_min_ratio: float = 3.0
-    """The winner must outnumber the runner-up by this factor.
-
-    Deliberately conservative. A bare majority is NOT enough: in the sample
-    corpus `இராஜெந்திரன்` (wrong) outnumbered `இராஜேந்திரன்` (right) 2:1 on
-    a single page, so a >50% rule would have corrupted a correct name. At
-    3.0 that case stays unresolved and gets flagged for a human, while
-    `இராகவன்` 5:1 resolves cleanly. Ratios improve as more pages are
-    processed, so more groups resolve on larger batches."""
+    """The winner must outnumber the runner-up by this factor."""
 
     consensus_min_length: int = 3
     """Ignore very short values; too little signal to group safely."""
 
     # ------------------------------------------------------------- runtime
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "*"
 
     @property
     def uploads_dir(self) -> Path:
@@ -163,7 +155,12 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     s = Settings()
-    s.ensure_dirs()
+    try:
+        s.ensure_dirs()
+    except OSError:
+        import tempfile
+        s.data_dir = Path(tempfile.gettempdir()) / "data"
+        s.ensure_dirs()
     return s
 
 
