@@ -4,6 +4,12 @@
 # Build context is the REPOSITORY ROOT (this is an npm workspace and the build
 # needs packages/shared-types):
 #     docker build -f apps/web/Dockerfile -t ocr-web .
+#
+# KNOWN SIZE TRADE-OFF: the runner stage reuses the full `deps` node_modules,
+# devDependencies included, so the image is ~600 MB larger than it needs to be.
+# Fixing that properly means `output: "standalone"` in next.config.ts plus a
+# prod-only install stage -- a change worth making, but only alongside a real
+# container build to verify it, which has not been run.
 # =============================================================================
 
 FROM node:20-alpine AS deps

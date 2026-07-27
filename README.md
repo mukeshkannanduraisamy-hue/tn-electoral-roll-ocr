@@ -82,7 +82,16 @@ npm ci && npm run build --workspace @ocr-workspace/web && npm run start --worksp
 docker compose up --build
 ```
 
-Give Docker at least 3 GB of RAM — see [Memory](#memory-the-thing-that-decides-your-plan).
+Give the Docker engine at least 3 GB — on Docker Desktop that is the VM's
+allocation under *Settings → Resources*, not merely free host RAM. See
+[Memory](#memory-the-thing-that-decides-your-plan).
+
+The compose file pins `platform: linux/amd64` because PaddlePaddle ships
+manylinux x86_64 wheels only; on Apple Silicon the build runs under emulation
+and is slow but works.
+
+> The compose stack is reviewed and statically validated, but has not been
+> executed end-to-end. The native setup above is the tested path.
 
 ---
 
@@ -321,3 +330,6 @@ npm run build --workspace @ocr-workspace/web
 | CORS errors in the browser | `OCR_CORS_ORIGINS` must be the frontend origin; bare hostnames are fine. |
 | Tamil renders as boxes in Excel | Open the `.xlsx`, not the `.csv`; or import the CSV as UTF-8. |
 | `npm run build` fails on `@ocr/shared-types` | Install from the repo root — it is an npm workspace. |
+| Compose: container killed as soon as OCR starts | Docker engine has under ~1.5 GB. Raise the Desktop VM allocation. |
+| Compose: `mem_limit` seems ignored | You are on legacy `docker-compose` (v1). Use `docker compose` (v2). |
+| Compose on Apple Silicon: pip fails on paddlepaddle | Missing `--platform=linux/amd64` on a standalone `docker build`. |

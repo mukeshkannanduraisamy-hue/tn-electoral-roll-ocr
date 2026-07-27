@@ -3,6 +3,10 @@
 #
 # Build context is the REPOSITORY ROOT, not this directory:
 #     docker build -f apps/api/Dockerfile -t ocr-api .
+#
+# On Apple Silicon add --platform=linux/amd64: paddlepaddle publishes
+# manylinux x86_64 wheels only, and an arm64 build fails at pip install.
+# docker-compose.yml already pins this; a standalone build does not.
 # =============================================================================
 
 FROM python:3.11-slim AS base

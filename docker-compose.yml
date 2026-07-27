@@ -4,8 +4,11 @@
 #   frontend  http://localhost:3000
 #   api       http://localhost:8000/docs
 #
-# First build downloads ~1 GB of Python wheels; first OCR request downloads
+# First build downloads ~1 GB of Python wheels; the first OCR request pulls
 # ~92 MB of models into the named volume, after which restarts are fast.
+#
+# Requires roughly 3 GB available to the Docker engine. On Docker Desktop that
+# comes out of the VM's allocation (Settings -> Resources), not just host RAM.
 # =============================================================================
 
 services:
@@ -13,32 +16,62 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+    # paddlepaddle publishes manylinux **x86_64** wheels only. Without this,
+    # a build on Apple Silicon resolves to arm64 and fails at pip install.
+    # On an amd64 host this line is a no-op.
+    platform: linux/amd64
     ports:
       - "8000:8000"
     volumes:
       - ocr-data:/var/data
-      # Mount a read-only corpus to use /api/files/import-folder locally:
+      # To use /api/files/import-folder locally, mount the corpus read-only
+      # and point the endpoint at /corpus:
       # - ./PDF:/corpus:ro
     environment:
       OCR_DATA_DIR: /var/data
       PADDLE_PDX_CACHE_HOME: /var/data/.paddlex
+
       OCR_OCR_LANG: ta
-      OCR_OCR_VERSION: PP-OCRv5
+      OCR_OCR_VERSION: PP-OCRv5 # the version with a published Tamil model
       OCR_OCR_DEVICE: cpu
-      # 0 = single in-process thread, one copy of the models. Raise only if
-      # you have given Docker several GB of RAM.
+
+      # 0 = run jobs on a thread inside the API process, reusing the one copy
+      # of the models it already loaded (~1.1 GB). Each worker *process*
+      # instead adds ~0.9 GB, so raise this only if you have given Docker
+      # several more GB.
       OCR_OCR_WORKERS: "0"
+
+      # Left unset, PaddleOCR picks PP-OCRv5_server_det. That fits in the 3 GB
+      # below; drop to the mobile detector if you shrink the limit.
+      # OCR_OCR_DET_MODEL: PP-OCRv5_mobile_det
+
+      # Safe locally -- the corpus is on this machine. The Render blueprint
+      # sets this to false, because on a public host it lets a caller probe
+      # the server's filesystem.
+      OCR_ALLOW_FOLDER_IMPORT: "true"
+
       OCR_CORS_ORIGINS: http://localhost:3000
-      OMP_NUM_THREADS: "2"
-    deploy:
-      resources:
-        limits:
-          # Below ~1.5 GB the container is OOM-killed the moment models load.
-          memory: 3G
+      OMP_NUM_THREADS: "2" # Paddle spawns one OpenMP thread per core;
+        # unbounded on a shared vCPU this thrashes.
+
+    # `mem_limit`, not `deploy.resources.limits`: the latter is honoured by
+    # `docker compose` (v2) but silently ignored by the legacy `docker-compose`
+    # (v1) binary, so the cap would quietly not exist. Below ~1.5 GB the
+    # container is OOM-killed the moment the models load.
+    mem_limit: 3g
+    mem_reservation: 1500m
+
+    init: true # reap stray children; uvicorn is not a good PID 1
+    restart: unless-stopped
+    # OCR pages take ~20-25 s. Give an in-flight request room to finish
+    # instead of being SIGKILLed 10 s after Ctrl+C.
+    stop_grace_period: 30s
+
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
+      # Generous: the image is large and the first boot creates the database.
       start_period: 120s
       retries: 3
 
@@ -46,15 +79,27 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+    platform: linux/amd64
     ports:
       - "3000:3000"
     environment:
-      # Service name, not localhost: the rewrite runs inside the container.
+      # Service name, not localhost: the Next rewrite runs server-side inside
+      # this container, where "localhost" is the web container itself.
       BACKEND_URL: http://api:8000
       NODE_ENV: production
+    mem_limit: 1g
+    init: true
+    restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test:
+        ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
 
 volumes:
   ocr-data:
