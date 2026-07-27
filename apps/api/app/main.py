@@ -100,6 +100,18 @@ app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(templates.router, prefix="/api/templates", tags=["templates"])
 
 
+@app.get("/", tags=["meta"])
+def root() -> dict:
+    """Root endpoint welcoming visitors and providing system links."""
+    return {
+        "service": "Tamil Nadu Electoral Roll OCR API",
+        "status": "online",
+        "docs": "/docs",
+        "health": "/api/health",
+        "settings": "/api/settings",
+    }
+
+
 @app.get("/api/health", tags=["meta"])
 def health() -> dict:
     return {
