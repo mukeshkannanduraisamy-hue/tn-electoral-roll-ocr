@@ -1,48 +1,19 @@
 # ---------------------------------------------------------------------------
-# OCR backend dependencies.
-#
-# Install order matters: paddlepaddle (the framework) must land before
-# paddleocr (the toolkit), otherwise pip may resolve an incompatible pair.
-# `scripts/bootstrap.ps1` handles this for you.
+# OCR backend dependencies (Compatible with Python 3.10 and 3.11).
 # ---------------------------------------------------------------------------
 
-# --- Deep learning framework (CPU build) -----------------------------------
-# For GPU instead, see README "GPU acceleration":
-#   pip install paddlepaddle-gpu==3.1.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
-paddlepaddle==3.1.0
-
-# --- OCR toolkit -----------------------------------------------------------
-paddleocr==3.7.0
-
-# --- PDF rasterisation -----------------------------------------------------
-PyMuPDF==1.24.14
-
-# --- Imaging / CV ----------------------------------------------------------
-# NOTE: cv2 is intentionally NOT pinned here. paddleocr depends on
-# `opencv-contrib-python`, and adding `opencv-python(-headless)` alongside it
-# installs a second package into the same `cv2` namespace -- whichever lands
-# last wins, and the result is a subtly broken install. Let paddleocr own it.
+paddlepaddle>=3.0.0b0,<3.2.0
+paddleocr>=3.0.0,<4.0.0
+PyMuPDF>=1.24.0
 numpy>=1.26,<2.2
 Pillow>=10.3
-
-# --- Fuzzy label matching (Tamil labels get mangled by OCR) -----------------
-rapidfuzz==3.10.1
-
-# --- Web API ---------------------------------------------------------------
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-python-multipart==0.0.20
-pydantic==2.10.4
-pydantic-settings==2.7.0
-sse-starlette==2.2.1
-
-# --- Persistence -----------------------------------------------------------
-SQLAlchemy==2.0.36
-
-# --- Export ----------------------------------------------------------------
-openpyxl==3.1.5
-
-# --- Dev / test ------------------------------------------------------------
-pytest==8.3.4
-pytest-cov==6.0.0
-httpx==0.28.1
+rapidfuzz>=3.0.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.20
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+sse-starlette>=2.2.0
+SQLAlchemy>=2.0.0
+openpyxl>=3.1.0
+httpx>=0.28.0

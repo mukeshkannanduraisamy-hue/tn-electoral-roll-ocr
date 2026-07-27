@@ -1,21 +1,19 @@
 # ---------------------------------------------------------------------------
-# OCR backend dependencies (Root copy for cloud build compatibility).
+# OCR backend dependencies (Compatible with Python 3.10 and 3.11).
 # ---------------------------------------------------------------------------
 
-paddlepaddle==3.1.0
-paddleocr==3.7.0
-PyMuPDF==1.24.14
+paddlepaddle>=3.0.0b0,<3.2.0
+paddleocr>=3.0.0,<4.0.0
+PyMuPDF>=1.24.0
 numpy>=1.26,<2.2
 Pillow>=10.3
-rapidfuzz==3.10.1
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-python-multipart==0.0.20
-pydantic==2.10.4
-pydantic-settings==2.7.0
-sse-starlette==2.2.1
-SQLAlchemy==2.0.36
-openpyxl==3.1.5
-pytest==8.3.4
-pytest-cov==6.0.0
-httpx==0.28.1
+rapidfuzz>=3.0.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.20
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+sse-starlette>=2.2.0
+SQLAlchemy>=2.0.0
+openpyxl>=3.1.0
+httpx>=0.28.0
