@@ -32,3 +32,8 @@ services:
         value: "20.10.0"
       - key: NEXT_PUBLIC_API_BASE
         value: "https://tamil-nadu-ocr-api.onrender.com"
+      - key: BACKEND_URL
+        fromService:
+          type: web
+          name: tamil-nadu-ocr-api
+          property: url
