@@ -51,6 +51,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
+      - key: PYTHONPATH
+        value: "apps/api:."
 
       # --- storage ---------------------------------------------------------
       # NOTE the OCR_ prefix: settings are read with `env_prefix="OCR_"`, so a
