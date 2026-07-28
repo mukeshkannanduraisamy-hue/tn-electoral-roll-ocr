@@ -11,6 +11,7 @@ import {
   AuthStatus,
   AuthUser,
   PhotoList,
+  PollingStation,
   PromotionResult,
   Voter,
   VoterExportFormat,
@@ -182,6 +183,17 @@ export function listPhotos(query: {
   photo_type?: string;
 }): Promise<PhotoList> {
   return request<PhotoList>(`/api/photos${toQuery(query as Record<string, unknown>)}`);
+}
+
+export function listPollingStations(query: {
+  file_id?: string;
+  part_number?: string;
+  district?: string;
+  search?: string;
+  reconciled?: boolean;
+  limit?: number;
+}): Promise<{ items: PollingStation[]; total: number }> {
+  return request(`/api/polling-stations${toQuery(query as Record<string, unknown>)}`);
 }
 
 export function promoteRecords(payload: {

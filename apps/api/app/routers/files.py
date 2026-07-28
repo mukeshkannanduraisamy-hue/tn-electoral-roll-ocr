@@ -242,6 +242,11 @@ def list_pages(file_id: str, session: Session = Depends(get_session)) -> list[di
                 "width": row.width,
                 "height": row.height,
                 "template_id": row.template_id,
+                # Drives the document view: a cover sheet and a voter grid
+                # hold entirely different things and cannot be rendered the
+                # same way.
+                "page_type": row.page_type,
+                "classification_confidence": row.classification_confidence,
                 "record_count": len(counts),
                 "error_count": sum(c[0] for c in counts),
                 "warning_count": sum(c[1] for c in counts),

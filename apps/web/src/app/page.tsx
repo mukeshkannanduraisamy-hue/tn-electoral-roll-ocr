@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useOcrStore } from "@/store/useOcrStore";
 import { Navbar } from "@/components/Navbar";
 import { Sidebar } from "@/components/Sidebar";
-import { TableView } from "@/components/TableView";
+import { DocumentView } from "@/components/DocumentView";
 import { PageView } from "@/components/PageView";
 import { ReviewQueue } from "@/components/ReviewQueue";
 import { ExportModal } from "@/components/ExportModal";
@@ -131,7 +131,7 @@ export default function Home() {
           {activeTab === "dashboard"        && <DashboardView />}
           {activeTab === "voters"           && <VotersView />}
           {activeTab === "polling_stations" && <PollingStationsView />}
-          {activeTab === "table"            && <TableView />}
+          {activeTab === "table"            && <DocumentView />}
           {activeTab === "analytics"        && <AnalyticsView />}
           {activeTab === "page"             && <PageView />}
           {activeTab === "review"           && <ReviewQueue />}
