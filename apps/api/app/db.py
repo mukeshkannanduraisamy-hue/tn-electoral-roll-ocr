@@ -149,6 +149,104 @@ class JobRow(Base):
 
 
 # ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+
+class UserRow(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    username: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    """bcrypt hash. The plaintext password is never stored or logged."""
+    display_name: Mapped[str] = mapped_column(String(128), default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    failed_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    """Set after repeated failures, so a stolen username cannot be brute-forced."""
+
+
+class SessionRow(Base):
+    """Server-side sessions.
+
+    A signed stateless cookie would avoid this table, but it cannot be
+    revoked: logging out, or disabling a compromised account, would leave
+    every issued token valid until it expired. Sessions live in the database
+    so "log out" actually means something.
+    """
+
+    __tablename__ = "sessions"
+
+    token: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    user_agent: Mapped[str] = mapped_column(String(256), default="")
+
+
+# ---------------------------------------------------------------------------
+# Curated voter records
+# ---------------------------------------------------------------------------
+
+
+class VoterRow(Base):
+    """The database of record, distinct from raw OCR output.
+
+    OCR records are *evidence*: they may contain duplicate EPIC numbers
+    because the recogniser misread a digit, and rejecting those would lose
+    the 29 good records that share the page. This table is the curated set
+    a human has accepted, so here EPIC genuinely is unique and the database
+    enforces it.
+
+    Provenance columns point back at the OCR record a row was promoted from,
+    so any value can be traced to the page image it came from.
+    """
+
+    __tablename__ = "voters"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+
+    # The uniqueness guarantee the whole table exists to provide.
+    epic: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+
+    serial: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), default="", index=True)
+    relation_type: Mapped[str] = mapped_column(String(32), default="")
+    relation_name: Mapped[str] = mapped_column(String(255), default="")
+    house_number: Mapped[str] = mapped_column(String(64), default="")
+    age: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    gender: Mapped[str] = mapped_column(String(16), default="", index=True)
+
+    # Page furniture, denormalised so a voter row stands alone in an export.
+    part_number: Mapped[str] = mapped_column(String(32), default="", index=True)
+    constituency: Mapped[str] = mapped_column(String(255), default="")
+
+    # --- provenance ------------------------------------------------------
+    source_record_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_page_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_file_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    source_file_name: Mapped[str] = mapped_column(String(512), default="")
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    notes: Mapped[str] = mapped_column(Text, default="")
+    verified: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+    # Lower-cased concatenation of the searchable fields, so search is one
+    # indexed LIKE instead of an OR across six columns.
+    search_text: Mapped[str] = mapped_column(Text, default="", index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+    created_by: Mapped[str] = mapped_column(String(128), default="")
+    updated_by: Mapped[str] = mapped_column(String(128), default="")
+
+
+# ---------------------------------------------------------------------------
 # Engine / session
 # ---------------------------------------------------------------------------
 

@@ -159,6 +159,36 @@ class Settings(BaseSettings):
     consensus_min_length: int = 3
     """Ignore very short values; too little signal to group safely."""
 
+    # ---------------------------------------------------------- auth
+    auth_enabled: bool = True
+    """Set false ONLY for local development. When off, every endpoint is
+    open to anyone who can reach the port."""
+
+    admin_username: str = "admin"
+
+    admin_password: str = "Admin@123456"
+    """Initial admin password, used once at first boot."""
+
+    auth_session_hours: int = 12
+    auth_min_password_length: int = 10
+
+    auth_max_failed_attempts: int = 8
+    auth_lockout_minutes: int = 15
+    """Locks a username after repeated failures so it cannot be brute-forced."""
+
+    auth_cookie_secure: bool = False
+    """Send the session cookie only over HTTPS. MUST be true in production;
+    false locally because dev runs on plain http://localhost."""
+
+    # ---------------------------------------------------------- reports
+    pdf_font_path: str = ""
+    """TTF/TTC with Tamil coverage, for PDF export.
+
+    Auto-detected when empty. ReportLab's built-in fonts have no Tamil
+    glyphs, so without a real font every name renders as empty boxes --
+    which looks like working software while silently producing unusable
+    reports. See `services/voter_export.resolve_font`."""
+
     # ------------------------------------------------------------- runtime
     cors_origins: str = "*"
     """Comma-separated allowed origins. A bare hostname is accepted and gets

@@ -12,7 +12,11 @@ import { UploadModal } from "@/components/UploadModal";
 import { BulkExtractModal } from "@/components/BulkExtractModal";
 import { ShortcutsModal } from "@/components/ShortcutsModal";
 import { Toaster } from "sonner";
-import { PanelLeft, X } from "lucide-react";
+import { Loader2, PanelLeft, X } from "lucide-react";
+import { VotersView } from "@/components/VotersView";
+import { LoginScreen } from "@/components/LoginScreen";
+import { useAuthStore } from "@/store/useAuthStore";
+import { setUnauthorizedHandler } from "@/lib/voterApi";
 
 export default function Home() {
   const { loadFiles, activeTab, setActiveTab, setIsShortcutsOpen, isShortcutsOpen } = useOcrStore();
@@ -22,9 +26,26 @@ export default function Home() {
   const [isBulkExtractOpen, setIsBulkExtractOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  const { user, authEnabled, checked, check, handleUnauthorized } = useAuthStore();
+  const signedIn = !authEnabled || user !== null;
+
+  // Any API call that 401s routes through here, so a session that expires
+  // mid-session drops straight back to the login screen instead of leaving
+  // the UI silently failing every request.
   useEffect(() => {
-    loadFiles();
+    setUnauthorizedHandler(handleUnauthorized);
+    return () => setUnauthorizedHandler(null);
+  }, [handleUnauthorized]);
+
+  useEffect(() => {
+    void check();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load workspace data only once there is a session; firing these while
+  // signed out would just produce a burst of 401s.
+  useEffect(() => {
+    if (signedIn) loadFiles();
+  }, [signedIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Global keydown listeners for ?, 1, 2, 3, Esc
   useEffect(() => {
@@ -51,6 +72,25 @@ export default function Home() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isShortcutsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Hold the splash until the session check resolves. Rendering the login
+  // form first would flash it at an already-signed-in user on every reload.
+  if (!checked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+      </div>
+    );
+  }
+
+  if (!signedIn) {
+    return (
+      <>
+        <Toaster position="top-right" richColors />
+        <LoginScreen />
+      </>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
@@ -90,6 +130,7 @@ export default function Home() {
           {activeTab === "table" && <TableView />}
           {activeTab === "page" && <PageView />}
           {activeTab === "review" && <ReviewQueue />}
+          {activeTab === "voters" && <VotersView />}
         </main>
       </div>
 

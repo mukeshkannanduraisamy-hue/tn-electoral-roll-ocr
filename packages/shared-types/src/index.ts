@@ -311,3 +311,125 @@ export function confidenceBand(confidence: number): ConfidenceBand {
   if (confidence >= 0.6) return 'medium';
   return 'low';
 }
+
+// ---------------------------------------------------------------------------
+// Authentication
+// ---------------------------------------------------------------------------
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  display_name: string;
+  last_login_at: string | null;
+}
+
+export interface AuthStatus {
+  auth_enabled: boolean;
+  authenticated: boolean;
+  user: AuthUser | null;
+}
+
+// ---------------------------------------------------------------------------
+// Curated voter records
+//
+// Distinct from `Record_`, which is raw OCR output. A Voter has been reviewed
+// and promoted, which is why `epic` is guaranteed unique here and not there.
+// ---------------------------------------------------------------------------
+
+export type Gender = 'Male' | 'Female' | 'Other';
+export type RelationType = 'Husband' | 'Father' | 'Mother' | 'Other';
+
+export interface Voter {
+  id: string;
+  epic: string;
+  name: string;
+  serial: number | null;
+  relation_type: RelationType | '';
+  relation_name: string;
+  house_number: string;
+  age: number | null;
+  gender: Gender | '';
+  part_number: string;
+  constituency: string;
+  notes: string;
+  verified: boolean;
+  source_record_id: string | null;
+  source_page_id: string | null;
+  source_file_id: string | null;
+  source_file_name: string;
+  page_number: number | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string;
+  updated_by: string;
+}
+
+/** Fields a user may set. Server-managed columns are omitted. */
+export type VoterInput = Pick<
+  Voter,
+  | 'epic'
+  | 'name'
+  | 'serial'
+  | 'relation_type'
+  | 'relation_name'
+  | 'house_number'
+  | 'age'
+  | 'gender'
+  | 'part_number'
+  | 'constituency'
+  | 'notes'
+  | 'verified'
+>;
+
+export interface VoterPage {
+  items: Voter[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface VoterQuery {
+  search?: string;
+  gender?: string;
+  part_number?: string;
+  source_file_id?: string;
+  verified?: boolean;
+  min_age?: number;
+  max_age?: number;
+  sort?: string;
+  order?: 'asc' | 'desc';
+  offset?: number;
+  limit?: number;
+}
+
+export interface VoterStats {
+  total: number;
+  verified: number;
+  unverified: number;
+  by_gender: Record<string, number>;
+  by_relation_type: Record<string, number>;
+  age_buckets: Record<string, number>;
+  by_part: Array<{ part: string; count: number }>;
+  average_age: number | null;
+  missing_age: number;
+}
+
+/** A record that could not be promoted, and why. */
+export interface PromotionConflict {
+  record_id: string;
+  epic: string;
+  reason: string;
+  existing_voter_id: string | null;
+  existing_name: string;
+  incoming_name: string;
+}
+
+export interface PromotionResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  conflicts: PromotionConflict[];
+  voter_ids: string[];
+}
+
+export type VoterExportFormat = 'xlsx' | 'csv' | 'pdf';

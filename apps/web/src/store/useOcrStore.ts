@@ -11,7 +11,7 @@ import {
 } from "@/lib/api";
 import { toast } from "sonner";
 
-export type ViewTab = "table" | "page" | "review";
+export type ViewTab = "table" | "page" | "review" | "voters";
 
 // Per-file extraction progress tracked from SSE
 export interface FileJobProgress {

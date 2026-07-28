@@ -26,6 +26,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libglib2.0-0 \
         libgomp1 \
         curl \
+        # PDF reports embed a Tamil font. Without it ReportLab falls back to
+        # a Latin-only face and every name renders as an empty box, so this
+        # package is a functional requirement, not a nicety.
+        fonts-noto-core \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

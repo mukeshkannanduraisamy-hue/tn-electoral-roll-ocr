@@ -17,7 +17,10 @@ import {
   Table as TableIcon,
   Eye,
   CheckSquare,
+  Database,
+  LogOut,
 } from "lucide-react";
+import { useAuthStore } from "@/store/useAuthStore";
 import { useOcrStore } from "@/store/useOcrStore";
 
 interface NavbarProps {
@@ -31,6 +34,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenExport,
   onOpenBulkExtract,
 }) => {
+  const authUser = useAuthStore((s) => s.user);
+  const signOut = useAuthStore((s) => s.signOut);
+
   const {
     theme,
     toggleTheme,
@@ -147,6 +153,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             </span>
           )}
         </button>
+
+        {/* The curated database, as opposed to raw OCR output above. */}
+        <button
+          onClick={() => setActiveTab("voters")}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            activeTab === "voters"
+              ? "bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+          }`}
+        >
+          <Database className="w-3.5 h-3.5" />
+          <span>Voter Database</span>
+        </button>
       </div>
 
       {/* Right: Stats & Main Action Buttons */}
@@ -239,6 +258,26 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           {theme === "dark" ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
         </button>
+
+        {/* Signed-in user + sign out */}
+        {authUser && (
+          <div className="flex items-center gap-2 pl-2 ml-1 border-l border-slate-200 dark:border-slate-800">
+            <span
+              className="hidden lg:inline text-[11px] font-semibold text-slate-600 dark:text-slate-400 max-w-[120px] truncate"
+              title={authUser.username}
+            >
+              {authUser.display_name || authUser.username}
+            </span>
+            <button
+              onClick={() => void signOut()}
+              className="p-2 rounded-lg bg-slate-100 hover:bg-rose-50 dark:bg-slate-900 dark:hover:bg-rose-500/10 text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 transition-colors border border-slate-200 dark:border-slate-800"
+              title="Sign out"
+              aria-label="Sign out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

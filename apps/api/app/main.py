@@ -10,13 +10,14 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import settings
 from .db import init_db, reconcile_interrupted_work
-from .routers import export, files, jobs, pages, records, templates
+from .auth import ensure_admin_user, require_user
+from .routers import auth, export, files, jobs, pages, records, templates, voters
 from .services.job_queue import manager
 
 logging.basicConfig(
@@ -34,6 +35,8 @@ async def lifespan(_app: FastAPI):
     # marked in-flight at boot was orphaned by a restart. Clear it before
     # serving traffic, or the UI shows work that will never complete.
     reconcile_interrupted_work()
+    # Creates the admin account on first boot and prunes expired sessions.
+    ensure_admin_user()
     logger.info("Data directory: %s", settings.data_dir)
     logger.info(
         "OCR: lang=%s version=%s device=%s workers=%d",
@@ -81,23 +84,61 @@ def _cors_origins() -> list[str]:
 
 
 _origins = _cors_origins()
+
+# A wildcard origin and credentials are mutually exclusive: browsers refuse
+# `Access-Control-Allow-Origin: *` on any request carrying cookies, and the
+# session cookie is now exactly that. `allow_origin_regex=".*"` makes
+# Starlette echo the caller's actual origin instead, which is the only way to
+# express "any origin, with credentials".
+#
+# In the supported setup this never fires -- the browser talks to Next, which
+# proxies to the API server-side, so requests are same-origin.
+_cors_kwargs: dict = {
+    "allow_credentials": True,
+    "allow_methods": ["*"],
+    "allow_headers": ["*"],
+    "expose_headers": ["Content-Disposition"],  # lets the browser read export filenames
+}
+if _origins == ["*"]:
+    _cors_kwargs["allow_origin_regex"] = ".*"
+    _cors_kwargs["allow_origins"] = []
+    if settings.auth_enabled:
+        logger.warning(
+            "OCR_CORS_ORIGINS is '*'. Set it to the frontend origin in "
+            "production so a hostile page cannot call this API with the "
+            "user's session cookie."
+        )
+else:
+    _cors_kwargs["allow_origins"] = _origins
+
 logger.info("CORS origins: %s", _origins)
+app.add_middleware(CORSMiddleware, **_cors_kwargs)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["Content-Disposition"],  # so the browser can read export filenames
-)
+# Everything that touches voter data sits behind authentication.
+#
+# Applied at the router level rather than on each function: there are ~30
+# endpoints, and a per-signature dependency is one forgotten parameter away
+# from silently exposing PII. A new endpoint added to any of these routers is
+# protected by construction.
+PROTECTED = [Depends(require_user)]
 
-app.include_router(files.router, prefix="/api/files", tags=["files"])
-app.include_router(pages.router, prefix="/api/pages", tags=["pages"])
-app.include_router(records.router, prefix="/api/records", tags=["records"])
-app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
-app.include_router(export.router, prefix="/api/export", tags=["export"])
-app.include_router(templates.router, prefix="/api/templates", tags=["templates"])
+# Open by design: login itself cannot require a session, and /api/auth/status
+# is what the UI polls to decide whether to show the login screen.
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+
+app.include_router(voters.router, prefix="/api/voters", tags=["voters"])
+app.include_router(files.router, prefix="/api/files", tags=["files"],
+                   dependencies=PROTECTED)
+app.include_router(pages.router, prefix="/api/pages", tags=["pages"],
+                   dependencies=PROTECTED)
+app.include_router(records.router, prefix="/api/records", tags=["records"],
+                   dependencies=PROTECTED)
+app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"],
+                   dependencies=PROTECTED)
+app.include_router(export.router, prefix="/api/export", tags=["export"],
+                   dependencies=PROTECTED)
+app.include_router(templates.router, prefix="/api/templates", tags=["templates"],
+                   dependencies=PROTECTED)
 
 
 @app.get("/", tags=["meta"])
