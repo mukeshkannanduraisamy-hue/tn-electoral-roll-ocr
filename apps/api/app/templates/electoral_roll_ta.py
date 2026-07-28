@@ -55,17 +55,37 @@ from .text_utils import (
 # Multiple spellings per key: the printed form varies between districts and
 # OCR reliably drops the odd vowel sign, so variants earn their keep.
 LABELS: dict[str, list[str]] = {
-    "relation_husband": ["கணவர் பெயர்", "கணவரின் பெயர்", "கணவர்பெயர்", "கணவர்"],
-    "relation_father": ["தந்தையின் பெயர்", "தந்தை பெயர்", "தந்தையின்பெயர்", "தந்தையின்"],
-    "relation_mother": ["தாயின் பெயர்", "தாய் பெயர்", "தாயின்பெயர்", "தாயின்"],
-    "relation_other": ["மற்றவை பெயர்", "இதர பெயர்"],
-    "house_number": ["வீட்டு எண்", "வீட்டுஎண்", "வீடு எண்", "வீட்டு எஸ்"],
-    "age": ["வயது"],
-    "gender": ["பாலினம்", "பாலினம"],
+    "relation_husband": [
+        "கணவர் பெயர்", "கணவரின் பெயர்", "கணவர்பெயர்", "கணவர்",
+        "கணவா பெயர்", "கணவா் பெயர்", "கணவர் பெயர்:", "கணவரின் பெயா"
+    ],
+    "relation_father": [
+        "தந்தையின் பெயர்", "தந்தை பெயர்", "தந்தையின்பெயர்", "தந்தையின்",
+        "தநதையின் பெயர்", "தந்தையின் பெயா", "தந்தை பெயா", "தந்தையின் பெயர்:"
+    ],
+    "relation_mother": [
+        "தாயின் பெயர்", "தாய் பெயர்", "தாயின்பெயர்", "தாயின்",
+        "தாயின் பெயா", "தாய் பெயா", "தாயின் பெயர்:"
+    ],
+    "relation_other": [
+        "மற்றவை பெயர்", "இதர பெயர்", "மற்றவை பெயா", "இதர பெயா"
+    ],
+    "house_number": [
+        "வீட்டு எண்", "வீட்டுஎண்", "வீடு எண்", "வீட்டு எஸ்",
+        "வீட்டு என", "வீட்டு எண", "வீட்டு எண்:", "வீட்டுஎண"
+    ],
+    "age": [
+        "வயது", "வயது:", "வயது -", "வயது :"
+    ],
+    "gender": [
+        "பாலினம்", "பாலினம", "பாலினம்:", "பாலினம:"
+    ],
     # Generic name label MUST be matched last -- it is a substring of every
     # relation label above. `RELATION_KEYS` is passed as the priority set so
     # a relation always wins an overlapping match.
-    "name": ["பெயர்"],
+    "name": [
+        "பெயர்", "பெயா", "பெயா்", "பெயர்:", "பெயா:"
+    ],
 }
 
 RELATION_KEYS = [

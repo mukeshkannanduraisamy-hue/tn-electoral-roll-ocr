@@ -330,11 +330,27 @@ def extract_digits(text: str) -> str:
     return "".join(ch for ch in fixed if ch.isdigit())
 
 
+_LETTER_CORRECTIONS = {"0": "O", "1": "I", "5": "S", "8": "B", "2": "Z"}
+_DIGIT_CORRECTIONS = {
+    "O": "0", "o": "0", "Q": "0", "I": "1", "l": "1", "|": "1",
+    "S": "5", "B": "8", "Z": "2"
+}
+
+
 def clean_identifier(text: str) -> str:
-    """Uppercase alphanumerics only -- for EPIC-style identifiers."""
+    """Uppercase alphanumerics only -- with intelligent EPIC format repair."""
     if not text:
         return ""
-    return "".join(ch for ch in text.upper() if ch.isalnum())
+    raw = "".join(ch for ch in text.upper() if ch.isalnum())
+    if len(raw) == 10:
+        prefix = raw[:3]
+        suffix = raw[3:]
+        fixed_prefix = "".join(_LETTER_CORRECTIONS.get(ch, ch) for ch in prefix)
+        fixed_suffix = "".join(_DIGIT_CORRECTIONS.get(ch, ch) for ch in suffix)
+        candidate = fixed_prefix + fixed_suffix
+        if re.match(r"^[A-Z]{3}\d{7}$", candidate):
+            return candidate
+    return raw
 
 
 def best_enum_match(
