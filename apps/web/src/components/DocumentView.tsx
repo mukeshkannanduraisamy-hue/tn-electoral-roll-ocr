@@ -28,6 +28,7 @@ import {
   MapPin,
   RefreshCw,
   Table2,
+  Trash2,
   Users,
 } from "lucide-react";
 import {
@@ -228,7 +229,7 @@ function DetailRow({ label, value: v }: { label: string; value: React.ReactNode 
 }
 
 export const DocumentView: React.FC = () => {
-  const { activeFileId, setActiveFileId, files, setSelectedRecordId, selectedRecordId } =
+  const { activeFileId, setActiveFileId, files, setSelectedRecordId, selectedRecordId, deleteFile, setConfirmModal } =
     useOcrStore();
 
   const [pages, setPages] = useState<PageSummary[]>([]);
@@ -467,6 +468,25 @@ export const DocumentView: React.FC = () => {
           )}
 
           <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (!activeFileId || !file) return;
+                setConfirmModal({
+                  isOpen: true,
+                  title: "Delete Document?",
+                  message: `Are you sure you want to delete "${file.name}"? All associated page extractions, OCR blocks, and voter records will be permanently removed from the system.`,
+                  danger: true,
+                  confirmText: "Delete Document",
+                  onConfirm: async () => {
+                    await deleteFile(activeFileId);
+                  },
+                });
+              }}
+              className="px-2.5 py-1.5 rounded-lg border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 text-xs flex items-center gap-1.5 font-medium transition-colors"
+              title="Permanently delete this document and its extracted voter records"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
             <button
               onClick={() => void loadPages()}
               className="px-2.5 py-1.5 rounded-lg border border-border hover:bg-muted text-xs flex items-center gap-1.5"

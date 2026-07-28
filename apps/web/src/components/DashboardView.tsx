@@ -20,6 +20,7 @@ import {
   Zap,
   Home,
   UserCheck,
+  Trash2,
 } from "lucide-react";
 
 interface VoterStats {
@@ -93,7 +94,7 @@ function AgeBar({ label, count, max }: { label: string; count: number; max: numb
 }
 
 export function DashboardView() {
-  const { files, recordStats, setActiveTab } = useOcrStore();
+  const { files, recordStats, setActiveTab, deleteFile, setConfirmModal } = useOcrStore();
   const [stats, setStats] = useState<VoterStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -356,6 +357,25 @@ export function DashboardView() {
                   }`}>
                     {f.status}
                   </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmModal({
+                        isOpen: true,
+                        title: "Delete Document?",
+                        message: `Are you sure you want to delete "${f.name}"? All associated page extractions and voter records will be permanently removed.`,
+                        danger: true,
+                        confirmText: "Delete Document",
+                        onConfirm: async () => {
+                          await deleteFile(f.id);
+                        },
+                      });
+                    }}
+                    className="p-1.5 rounded-lg hover:bg-rose-500/10 text-muted-foreground hover:text-rose-500 transition-colors ml-1"
+                    title="Delete document"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               ))}
             </div>
