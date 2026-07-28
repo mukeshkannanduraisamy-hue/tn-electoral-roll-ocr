@@ -62,29 +62,29 @@ def _extract_rules(binary: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 def _find_body_region(grid_mask: np.ndarray) -> BBox:
     """Largest enclosing rectangle = the bordered body of the form.
 
-    Falls back to the whole image when no convincing border is present.
+    The vertical extent is taken from the ink as-is and never stretched to
+    fill the sheet. A part file routinely ends on a part-full page -- the
+    supplement sheet on the reference document carries 9 records in 3 rows
+    across the top 28% of the paper -- and padding that out to a full-height
+    body puts the first row of cells *above* the body, where its text is
+    dropped on the floor. A short grid is a short grid.
     """
     h, w = grid_mask.shape[:2]
-    full = BBox(x=0, y=0, w=float(w), h=float(h))
+    default_body = BBox(x=float(w * 0.03), y=float(h * 0.08), w=float(w * 0.94), h=float(h * 0.87))
 
-    contours, _ = cv2.findContours(grid_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
-        return full
+    pts = cv2.findNonZero(grid_mask)
+    if pts is None:
+        return default_body
 
-    best: BBox | None = None
-    best_area = 0.0
-    page_area = float(w * h)
-    for c in contours:
-        x, y, cw, ch = cv2.boundingRect(c)
-        area = float(cw * ch)
-        # A body border covers most of the page but is not the entire canvas.
-        if area / page_area < 0.30 or area / page_area > 0.99:
-            continue
-        if area > best_area:
-            best_area = area
-            best = BBox(x=float(x), y=float(y), w=float(cw), h=float(ch))
+    x, y, bw, bh = cv2.boundingRect(pts)
+    # Width is what identifies the printed frame: every grid spans the sheet.
+    # Height is measured, not assumed.
+    if bw >= w * 0.60 and bh >= h * 0.05:
+        return BBox(x=float(x), y=float(y), w=float(bw), h=float(bh))
 
-    return best or full
+    return default_body
+
+
 
 
 def _candidate_cells(grid_mask: np.ndarray, body: BBox) -> list[BBox]:
@@ -194,49 +194,69 @@ def _cluster_1d(values: list[float], tolerance: float) -> list[list[float]]:
     return clusters
 
 
-def infer_grid_from_detected(
-    detected: list[BBox], rows: int, cols: int, body: BBox
-) -> list[BBox] | None:
-    """Reconstruct a full grid from a partial detection.
+def group_rows(cells: list[BBox]) -> list[list[BBox]]:
+    """Cluster cells into rows by vertical overlap, top to bottom."""
+    rows: list[list[BBox]] = []
+    for cell in sorted(cells, key=lambda b: (b.y, b.x)):
+        for row in rows:
+            ref = row[0]
+            if abs(cell.cy - ref.cy) < max(ref.h, cell.h) * 0.5:
+                row.append(cell)
+                break
+        else:
+            rows.append([cell])
+    rows.sort(key=lambda r: min(c.y for c in r))
+    return rows
 
-    When cell detection finds most-but-not-all cells (a broken rule, a scan
-    artefact), the detected cells still pin down the grid's true origin,
-    pitch and cell size far better than dividing the page body evenly. This
-    recovers the missing cells from that structure.
 
-    Returns None when the detections don't resolve into the expected number
-    of rows and columns, in which case the caller should use the plain
-    proportional grid.
+def infer_row_count(detected: list[BBox], body: BBox, nominal_rows: int) -> int | None:
+    """How many record rows this page actually holds.
+
+    `nominal_rows` is what the template expects of a *full* page (10 here),
+    but the last page of a roll and every supplement sheet are part-full. The
+    row pitch is constant across the corpus -- it is the printed cell height
+    -- so measuring the pitch from whatever cells were detected and dividing
+    the body by it recovers the true row count without assuming fullness.
+
+    Returns None when there is too little ink to measure honestly.
     """
-    if len(detected) < max(4, (rows * cols) // 2):
+    if not detected:
         return None
 
-    median_w = float(np.median([c.w for c in detected]))
-    median_h = float(np.median([c.h for c in detected]))
-    if median_w <= 0 or median_h <= 0:
+    rows = group_rows(detected)
+    tops = [min(c.y for c in row) for row in rows]
+
+    if len(tops) >= 2:
+        pitch = float(np.median(np.diff(tops)))
+    else:
+        # One row is enough to measure a cell, and the gap between printed
+        # cells is small relative to the cell itself.
+        pitch = float(np.median([c.h for c in detected])) * 1.08
+
+    if pitch <= 0:
         return None
 
-    col_clusters = _cluster_1d([c.cx for c in detected], median_w * 0.5)
-    row_clusters = _cluster_1d([c.cy for c in detected], median_h * 0.5)
+    count = int(round(body.h / pitch))
+    # Never claim more rows than the template's full page, and never zero.
+    return max(1, min(nominal_rows, count))
 
-    if len(col_clusters) != cols or len(row_clusters) != rows:
-        return None
 
-    col_centres = [float(np.median(c)) for c in col_clusters]
-    row_centres = [float(np.median(r)) for r in row_clusters]
 
-    cells: list[BBox] = []
-    for cy in row_centres:
-        for cx in col_centres:
-            cells.append(
-                BBox(
-                    x=cx - median_w / 2,
-                    y=cy - median_h / 2,
-                    w=median_w,
-                    h=median_h,
-                )
-            )
-    return cells
+
+
+def fit_deviation(detected: list[BBox], grid: list[BBox]) -> float:
+    """How badly a reconstructed grid misses the cells actually found.
+
+    Unlike `grid_deviation` this does not require the two lists to be the
+    same length, which is the whole point on a part-full page: we have (say)
+    6 detected cells and a reconstructed 3x3 grid. Each detected cell is
+    scored against its best match in the grid, so the result answers "does
+    the lattice we built actually sit on the printed rules?".
+    """
+    if not detected or not grid:
+        return 1.0
+    best = [max(d.iou(g) for g in grid) for d in detected]
+    return 1.0 - (sum(best) / len(best))
 
 
 def grid_deviation(detected: list[BBox], expected: list[BBox]) -> float:
@@ -293,24 +313,35 @@ def detect_layout(
         len(detected) == expected_count and deviation <= settings.grid_deviation_tolerance
     )
 
+    actual_rows = rows
+
     if use_detected:
         source = GridSource.DETECTED
         cells = detected
         alternative = fallback
     else:
-        # Before giving up on the ink, try to rebuild the full grid from the
-        # cells we *did* find -- they locate the grid far more accurately
-        # than dividing the page body into equal parts.
-        inferred = infer_grid_from_detected(detected, rows, cols, body)
-        if inferred:
+        # Before giving up on the ink, rebuild the grid from the cells we
+        # *did* find. They locate the grid -- and, critically, tell us how
+        # many rows it has -- far better than assuming a full page.
+        inferred_rows = (
+            infer_row_count(detected, body, rows)
+            if len(detected) >= max(2, cols)
+            else None
+        )
+        if inferred_rows:
+            actual_rows = inferred_rows
+            cells = build_proportional_grid(body, actual_rows, cols)
             source = GridSource.DETECTED
-            cells = inferred
             alternative = fallback
-            deviation = grid_deviation(inferred, fallback)
-            confidence = round(max(confidence, 0.75), 4)
+            # Score the lattice against the ink it was built from, not
+            # against the nominal full-page grid -- on a part-full page the
+            # latter compares two different shapes and means nothing.
+            deviation = fit_deviation(detected, cells)
+            confidence = round(max(confidence, 1.0 - deviation), 4)
             logger.info(
-                "Reconstructed %dx%d grid from %d detected cells",
-                rows, cols, len(detected),
+                "Reconstructed %dx%d grid from %d detected cells "
+                "(template expects %d rows)",
+                actual_rows, cols, len(detected), rows,
             )
         else:
             source = GridSource.FALLBACK
@@ -330,22 +361,86 @@ def detect_layout(
         confidence=round(confidence, 4),
         cells=cells,
         fallback_cells=alternative,
-        rows=rows,
+        rows=actual_rows,
         cols=cols,
         deviation=round(deviation, 4),
     )
 
 
-def assign_lines_to_cells(lines, cells: list[BBox]) -> dict[int, list]:
-    """Map each OCR line to the cell containing its centroid.
+def assign_lines_to_cells(lines: list, cells: list[BBox], rows: int = 10, cols: int = 3) -> dict[int, list]:
+    """Map each OCR line to the cell containing it.
 
-    Lines that fall outside every cell get bucket -1 (page furniture:
-    headers, footers, stray marks).
+    When `cells` forms a structured grid (e.g. 10x3), lines are assigned by
+    row and column band boundaries to guarantee no lines spill over to adjacent
+    cells above or below.
     """
     buckets: dict[int, list] = {-1: []}
     for i in range(len(cells)):
         buckets[i] = []
 
+    if not cells or not lines:
+        return buckets
+
+    # Structured grid mapping using median step smoothing
+    if len(cells) == rows * cols:
+        row_centers = [
+            float(np.mean([cells[r * cols + c].cy for c in range(cols)]))
+            for r in range(rows)
+        ]
+        row_steps = [row_centers[r + 1] - row_centers[r] for r in range(rows - 1)]
+        # With a single row there is no pitch to measure, so the band has to
+        # come from the cell itself. A fixed guess would be narrower than a
+        # real cell and would drop the lines nearest its top and bottom
+        # edges -- which on a one-row supplement sheet is the serial number
+        # and the age/gender line.
+        row_step = (
+            float(np.median(row_steps))
+            if row_steps
+            else float(np.median([c.h for c in cells]))
+        )
+        first_row_top = row_centers[0] - row_step * 0.5
+        row_bounds = [first_row_top + r * row_step for r in range(rows + 1)]
+
+        col_centers = [
+            float(np.mean([cells[r * cols + c].cx for r in range(rows)]))
+            for c in range(cols)
+        ]
+        col_steps = [col_centers[c + 1] - col_centers[c] for c in range(cols - 1)]
+        col_step = (
+            float(np.median(col_steps))
+            if col_steps
+            else float(np.median([c.w for c in cells]))
+        )
+        first_col_left = col_centers[0] - col_step * 0.5
+        col_bounds = [first_col_left + c * col_step for c in range(cols + 1)]
+
+        for line in lines:
+            cx, cy = line.bbox.cx, line.bbox.cy
+            target_r = -1
+            for r in range(rows):
+                if row_bounds[r] <= cy < row_bounds[r + 1]:
+                    target_r = r
+                    break
+            target_c = -1
+            for c in range(cols):
+                if col_bounds[c] <= cx < col_bounds[c + 1]:
+                    target_c = c
+                    break
+
+            if target_r >= 0 and target_c >= 0:
+                idx = target_r * cols + target_c
+                line.cell_index = idx
+                buckets[idx].append(line)
+            else:
+                line.cell_index = None
+                buckets[-1].append(line)
+
+        return buckets
+
+
+
+
+    # Fallback point-in-polygon mapping for irregular layouts
     for line in lines:
         cx, cy = line.bbox.cx, line.bbox.cy
         target = -1
@@ -354,8 +449,6 @@ def assign_lines_to_cells(lines, cells: list[BBox]) -> dict[int, list]:
                 target = i
                 break
         else:
-            # No containment -- fall back to nearest cell if it's very close,
-            # which rescues lines whose box slightly overhangs a rule.
             best_i, best_d = -1, float("inf")
             for i, cell in enumerate(cells):
                 dx = max(cell.x - cx, 0, cx - cell.x2)
@@ -370,3 +463,4 @@ def assign_lines_to_cells(lines, cells: list[BBox]) -> dict[int, list]:
         buckets[target].append(line)
 
     return buckets
+

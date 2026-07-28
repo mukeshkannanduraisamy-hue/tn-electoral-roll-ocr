@@ -29,6 +29,10 @@ sse-starlette>=2.2.0
 
 # --- Persistence -----------------------------------------------------------
 SQLAlchemy>=2.0.0
+# Schema migrations. `create_all` only ever creates missing tables, so
+# without this any change to an existing column -- a rename, a type change,
+# a backfill -- has no way to reach a database that already exists.
+alembic>=1.14.0
 
 # --- Authentication --------------------------------------------------------
 bcrypt>=4.2.0,<5

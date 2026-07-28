@@ -132,11 +132,20 @@ class VoterUpdate(BaseModel):
 
 class Voter(VoterBase):
     id: str
+    polling_station_id: str | None = None
+    is_supplement: bool = False
+    """Added by a supplement rather than carried from the base roll.
+
+    Exposed because the distinction is not cosmetic: a supplement elector
+    joined the roll after the base list was published, and a report that
+    cannot separate the two misstates the revision.
+    """
     source_record_id: str | None = None
     source_page_id: str | None = None
     source_file_id: str | None = None
     source_file_name: str = ""
     page_number: int | None = None
+    page_id: str | None = None
     created_at: datetime
     updated_at: datetime
     created_by: str = ""

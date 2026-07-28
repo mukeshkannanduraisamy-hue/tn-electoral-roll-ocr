@@ -98,20 +98,23 @@ class Settings(BaseSettings):
     ocr_workers: int = Field(
         default_factory=lambda: max(1, min(os.cpu_count() or 2, 8))
     )
-    """Persistent worker processes, each holding a warm PaddleOCR instance.
+    """Persistent worker processes, each holding a warm PaddleOCR instance."""
 
-    Model load is ~8s, so workers must not be recycled per page.
+    max_retries: int = 3
+    """Maximum automatic retry attempts per page if OCR or rendering encounters a transient error."""
 
-    MEMORY: each worker is a separate process with its own copy of the
-    weights. Measured on this corpus the API process sits at ~1.1 GB once
-    models are warm, and every extra worker adds roughly 0.9 GB. Size the
-    host accordingly -- or set this to 0.
+    enable_caching: bool = True
+    """Skip re-extracting pages whose file hash and page parameters match cached extraction outputs."""
 
-    Set to **0** to run jobs on a background thread inside the API process
-    instead. That reuses the single already-loaded model set (about half the
-    memory) at the cost of page-level parallelism. This is the right setting
-    for small cloud instances; see README "Choosing a Render plan".
-    """
+    auto_gpu: bool = True
+    """Automatically detect CUDA GPU availability and switch PaddleOCR device to GPU when present."""
+
+    batch_ocr_size: int = 4
+    """Batch size for processing image crops / pages in parallel."""
+
+    image_optimization_mode: str = "fast"
+    """Preprocessing optimization preset: 'fast', 'balanced', or 'high_quality'."""
+
 
     ocr_det_model: str = ""
     """Override the text-detection model.
@@ -172,7 +175,8 @@ class Settings(BaseSettings):
     admin_password: str = "Admin@123456"
     """Initial admin password, used once at first boot."""
 
-    auth_session_hours: int = 12
+    auth_session_hours: int = 720
+
     auth_min_password_length: int = 10
 
     auth_max_failed_attempts: int = 8
@@ -215,8 +219,13 @@ class Settings(BaseSettings):
     def pages_dir(self) -> Path:
         return self.data_dir / "pages"
 
+    @property
+    def photos_dir(self) -> Path:
+        """Crops taken off page images: station imagery and voter photos."""
+        return self.data_dir / "photos"
+
     def ensure_dirs(self) -> None:
-        for d in (self.data_dir, self.uploads_dir, self.pages_dir):
+        for d in (self.data_dir, self.uploads_dir, self.pages_dir, self.photos_dir):
             d.mkdir(parents=True, exist_ok=True)
 
 

@@ -56,8 +56,22 @@ export interface BulkUpdatePayload {
   reset_all?: boolean;
 }
 
+async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(path, {
+    credentials: "same-origin",
+    ...init,
+    headers: {
+      ...(init.body && !(init.body instanceof FormData)
+        ? { "Content-Type": "application/json" }
+        : {}),
+      ...(init.headers || {}),
+    },
+  });
+}
+
+
 export async function fetchFiles(): Promise<SourceFile[]> {
-  const res = await fetch(`${API_BASE}/api/files`);
+  const res = await apiFetch(`${API_BASE}/api/files`);
   if (!res.ok) throw new Error("Failed to fetch files");
   return res.json();
 }
@@ -66,7 +80,7 @@ export async function uploadFiles(files: File[]): Promise<SourceFile[]> {
   const formData = new FormData();
   files.forEach((f) => formData.append("files", f));
 
-  const res = await fetch(`${API_BASE}/api/files`, {
+  const res = await apiFetch(`${API_BASE}/api/files`, {
     method: "POST",
     body: formData,
   });
@@ -78,9 +92,8 @@ export async function uploadFiles(files: File[]): Promise<SourceFile[]> {
 }
 
 export async function importFolder(path: string, recursive = true): Promise<SourceFile[]> {
-  const res = await fetch(`${API_BASE}/api/files/import-folder`, {
+  const res = await apiFetch(`${API_BASE}/api/files/import-folder`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path, recursive }),
   });
   if (!res.ok) {
@@ -91,7 +104,7 @@ export async function importFolder(path: string, recursive = true): Promise<Sour
 }
 
 export async function deleteFile(fileId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/files/${fileId}`, {
+  const res = await apiFetch(`${API_BASE}/api/files/${fileId}`, {
     method: "DELETE",
   });
   if (!res.ok && res.status !== 404) {
@@ -101,13 +114,13 @@ export async function deleteFile(fileId: string): Promise<void> {
 }
 
 export async function fetchFilePages(fileId: string): Promise<any[]> {
-  const res = await fetch(`${API_BASE}/api/files/${fileId}/pages`);
+  const res = await apiFetch(`${API_BASE}/api/files/${fileId}/pages`);
   if (!res.ok) throw new Error("Failed to fetch page index");
   return res.json();
 }
 
 export async function fetchPage(pageId: string): Promise<Page> {
-  const res = await fetch(`${API_BASE}/api/pages/${pageId}`);
+  const res = await apiFetch(`${API_BASE}/api/pages/${pageId}`);
   if (!res.ok) throw new Error("Failed to fetch page details");
   return res.json();
 }
@@ -120,7 +133,7 @@ export async function reocrPage(
   const params = new URLSearchParams({ template_id: templateId });
   if (upscale) params.set("upscale", upscale.toString());
 
-  const res = await fetch(`${API_BASE}/api/pages/${pageId}/reocr?${params}`, {
+  const res = await apiFetch(`${API_BASE}/api/pages/${pageId}/reocr?${params}`, {
     method: "POST",
   });
   if (!res.ok) throw new Error("Re-OCR failed");
@@ -140,22 +153,21 @@ export async function fetchRecords(query: RecordQuery): Promise<RecordPageRespon
   if (query.offset !== undefined) params.set("offset", query.offset.toString());
   if (query.limit !== undefined) params.set("limit", query.limit.toString());
 
-  const res = await fetch(`${API_BASE}/api/records?${params}`);
+  const res = await apiFetch(`${API_BASE}/api/records?${params}`);
   if (!res.ok) throw new Error("Failed to fetch records");
   return res.json();
 }
 
 export async function fetchRecordStats(fileId?: string): Promise<RecordStats> {
   const params = fileId ? `?file_id=${encodeURIComponent(fileId)}` : "";
-  const res = await fetch(`${API_BASE}/api/records/stats${params}`);
+  const res = await apiFetch(`${API_BASE}/api/records/stats${params}`);
   if (!res.ok) throw new Error("Failed to fetch record stats");
   return res.json();
 }
 
 export async function updateRecord(recordId: string, payload: RecordUpdatePayload): Promise<Record_> {
-  const res = await fetch(`${API_BASE}/api/records/${recordId}`, {
+  const res = await apiFetch(`${API_BASE}/api/records/${recordId}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error("Failed to update record");
@@ -163,7 +175,7 @@ export async function updateRecord(recordId: string, payload: RecordUpdatePayloa
 }
 
 export async function resetRecord(recordId: string): Promise<Record_> {
-  const res = await fetch(`${API_BASE}/api/records/${recordId}/reset`, {
+  const res = await apiFetch(`${API_BASE}/api/records/${recordId}/reset`, {
     method: "POST",
   });
   if (!res.ok) throw new Error("Failed to reset record");
@@ -171,9 +183,8 @@ export async function resetRecord(recordId: string): Promise<Record_> {
 }
 
 export async function bulkUpdateRecords(payload: BulkUpdatePayload): Promise<{ updated: number; requested: number }> {
-  const res = await fetch(`${API_BASE}/api/records/bulk`, {
+  const res = await apiFetch(`${API_BASE}/api/records/bulk`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error("Failed to execute bulk update");
@@ -181,19 +192,35 @@ export async function bulkUpdateRecords(payload: BulkUpdatePayload): Promise<{ u
 }
 
 export async function createJob(fileIds: string[], templateId = "auto", allPending = false): Promise<Job> {
-  const res = await fetch(`${API_BASE}/api/jobs`, {
+  const res = await apiFetch(`${API_BASE}/api/jobs`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ file_ids: fileIds, template_id: templateId, all_pending: allPending }),
   });
   if (!res.ok) throw new Error("Failed to submit OCR job");
   return res.json();
 }
 
+export async function pauseJobApi(jobId: string): Promise<Job> {
+  const res = await apiFetch(`${API_BASE}/api/jobs/${jobId}/pause`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to pause job");
+  return res.json();
+}
+
+export async function resumeJobApi(jobId: string): Promise<Job> {
+  const res = await apiFetch(`${API_BASE}/api/jobs/${jobId}/resume`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to resume job");
+  return res.json();
+}
+
+export async function cancelJobApi(jobId: string): Promise<Job> {
+  const res = await apiFetch(`${API_BASE}/api/jobs/${jobId}/cancel`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to cancel job");
+  return res.json();
+}
+
 export async function previewExport(req: ExportRequest): Promise<{ columns: string[]; rows: string[][]; total_rows: number }> {
-  const res = await fetch(`${API_BASE}/api/export/preview`, {
+  const res = await apiFetch(`${API_BASE}/api/export/preview`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
   if (!res.ok) throw new Error("Failed to preview export");
@@ -201,9 +228,8 @@ export async function previewExport(req: ExportRequest): Promise<{ columns: stri
 }
 
 export async function triggerDownloadExport(req: ExportRequest): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/export`, {
+  const res = await apiFetch(`${API_BASE}/api/export`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
   if (!res.ok) throw new Error("Export generation failed");
@@ -227,7 +253,8 @@ export async function triggerDownloadExport(req: ExportRequest): Promise<void> {
 }
 
 export async function fetchTemplates(): Promise<TemplateInfo[]> {
-  const res = await fetch(`${API_BASE}/api/templates`);
+  const res = await apiFetch(`${API_BASE}/api/templates`);
   if (!res.ok) throw new Error("Failed to fetch templates");
   return res.json();
 }
+

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import asc, desc, func, or_, select
@@ -12,7 +13,20 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..auth import require_user
-from ..db import FileRow, PageRow, RecordRow, UserRow, VoterRow, get_session, row_to_record
+from ..db import (
+    AuditLogRow,
+    FileRow,
+    OCRBlockRow,
+    PageRow,
+    PhotoRow,
+    PollingStationRow,
+    RecordRow,
+    UserRow,
+    VoterRow,
+    get_session,
+    record_audit,
+    row_to_record,
+)
 from ..schemas.voters import (
     SORTABLE,
     PromotionConflict,
@@ -41,13 +55,57 @@ def _search_text(row: VoterRow) -> str:
     return " ".join(p for p in parts if p).lower()
 
 
-def _apply_fields(row: VoterRow, data: dict, username: str) -> None:
+#: Fields whose changes are worth an audit entry. Bookkeeping columns
+#: (`search_text`, `updated_by`) change on every write and would bury the
+#: edits a reviewer actually made.
+AUDITED_FIELDS = (
+    "epic", "serial", "name", "relation_type", "relation_name",
+    "house_number", "age", "gender", "part_number", "constituency",
+    "verified", "notes",
+)
+
+
+def _apply_fields(
+    row: VoterRow,
+    data: dict,
+    username: str,
+    session: Session | None = None,
+    *,
+    audit_action: str = "updated",
+) -> int:
+    """Apply `data` to `row`, logging each field that actually changed.
+
+    Returns the number of audited changes. Auditing happens here rather than
+    in each endpoint because this is the one place every write path goes
+    through -- create, update and promotion all call it, and a per-endpoint
+    log is one forgotten call away from an incomplete trail.
+    """
+    changes = 0
     for key, value in data.items():
-        if value is not None:
-            setattr(row, key, value)
+        if value is None:
+            continue
+        previous = getattr(row, key, None)
+        setattr(row, key, value)
+
+        if session is None or key not in AUDITED_FIELDS or previous == value:
+            continue
+        record_audit(
+            session,
+            row.id,
+            action=audit_action,
+            user=username,
+            field_name=key,
+            old_value=None if previous is None else str(previous),
+            new_value=str(value),
+            file_id=row.source_file_id,
+            page_id=row.source_page_id,
+        )
+        changes += 1
+
     row.search_text = _search_text(row)
     row.updated_by = username
     row.updated_at = _utcnow()
+    return changes
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +296,100 @@ def get_voter(
     return Voter.model_validate(row)
 
 
+@router.get("/{voter_id}/ocr-blocks")
+def get_voter_ocr_blocks(
+    voter_id: str,
+    session: Session = Depends(get_session),
+    _user: UserRow = Depends(require_user),
+) -> dict[str, Any]:
+    """Per-field OCR provenance for one voter.
+
+    Boxes are on the LayoutLMv3 0-1000 grid, so a client scales them by the
+    size it is actually displaying the page at rather than by the DPI the
+    page happened to be rendered at.
+    """
+    row = session.get(VoterRow, voter_id)
+    if row is None:
+        raise HTTPException(404, "Voter not found")
+
+    blocks = (
+        session.execute(
+            select(OCRBlockRow)
+            .where(OCRBlockRow.record_id == row.source_record_id)
+            .order_by(OCRBlockRow.bbox_y0, OCRBlockRow.bbox_x0)
+        ).scalars().all()
+        if row.source_record_id
+        else []
+    )
+
+    page = session.get(PageRow, row.source_page_id) if row.source_page_id else None
+    confidences = [b.confidence for b in blocks if b.confidence > 0]
+
+    return {
+        "voter_id": voter_id,
+        "record_id": row.source_record_id,
+        "page_id": row.source_page_id,
+        "page_number": row.page_number,
+        "page_width": page.width if page else 0,
+        "page_height": page.height if page else 0,
+        "page_type": page.page_type if page else "",
+        # The scale the boxes are expressed on, so a client never has to
+        # guess or hard-code it.
+        "bbox_scale": 1000,
+        "mean_confidence": round(sum(confidences) / len(confidences), 4) if confidences else 0.0,
+        "min_confidence": round(min(confidences), 4) if confidences else 0.0,
+        "blocks": [
+            {
+                "id": b.id,
+                "field_name": b.field_name,
+                "bbox": [b.bbox_x0, b.bbox_y0, b.bbox_x1, b.bbox_y1],
+                "raw_text": b.raw_text,
+                "corrected_text": b.corrected_text,
+                "edited": bool(b.corrected_text),
+                "confidence": round(b.confidence, 4),
+            }
+            for b in blocks
+        ],
+    }
+
+
+@router.get("/{voter_id}/history")
+def get_voter_history(
+    voter_id: str,
+    limit: int = Query(100, ge=1, le=500),
+    session: Session = Depends(get_session),
+    _user: UserRow = Depends(require_user),
+) -> dict[str, Any]:
+    """The edit trail for one voter, newest first."""
+    row = session.get(VoterRow, voter_id)
+    if row is None:
+        raise HTTPException(404, "Voter not found")
+
+    entries = session.execute(
+        select(AuditLogRow)
+        .where(AuditLogRow.voter_id == voter_id)
+        .order_by(desc(AuditLogRow.timestamp), desc(AuditLogRow.id))
+        .limit(limit)
+    ).scalars().all()
+
+    return {
+        "voter_id": voter_id,
+        "total": len(entries),
+        "entries": [
+            {
+                "id": e.id,
+                "action": e.action,
+                "field_name": e.field_name,
+                "old_value": e.old_value,
+                "new_value": e.new_value,
+                "user": e.user_id,
+                "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+            }
+            for e in entries
+        ],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Write
 # ---------------------------------------------------------------------------
@@ -262,8 +414,14 @@ def create_voter(
         )
 
     row = VoterRow(id=uuid.uuid4().hex[:12], created_by=user.username)
+    # No per-field audit on creation: every field is "new", and listing all
+    # twelve says nothing a single "created" entry does not.
     _apply_fields(row, payload.model_dump(), user.username)
     session.add(row)
+    record_audit(
+        session, row.id, action="created", user=user.username,
+        new_value=f"{row.epic} {row.name}".strip(),
+    )
     try:
         session.flush()
     except IntegrityError as exc:  # lost a race between the check and the insert
@@ -298,12 +456,7 @@ def update_voter(
                 f"(record {clash.id})",
             )
 
-    # `verified` is a real boolean, so `if value is not None` in _apply_fields
-    # would drop an explicit False. Handle it before the generic pass.
-    if "verified" in data and data["verified"] is not None:
-        row.verified = bool(data.pop("verified"))
-
-    _apply_fields(row, data, user.username)
+    _apply_fields(row, data, user.username, session)
     try:
         session.flush()
     except IntegrityError as exc:
@@ -321,6 +474,14 @@ def delete_voter(
     row = session.get(VoterRow, voter_id)
     if row is not None:
         logger.info("User %r deleted voter %s (%s)", user.username, voter_id, row.epic)
+        # Logged before the delete, while the row can still be described.
+        # The entry outlives the voter deliberately -- "who removed this
+        # elector" is the question an audit trail exists to answer.
+        record_audit(
+            session, row.id, action="deleted", user=user.username,
+            old_value=f"{row.epic} {row.name}".strip(),
+            file_id=row.source_file_id, page_id=row.source_page_id,
+        )
         session.delete(row)
     # Idempotent: deleting something already gone is a success.
     return Response(status_code=204)
@@ -337,6 +498,11 @@ def bulk_delete(
         raise HTTPException(400, "No voter_ids provided")
     rows = session.execute(select(VoterRow).where(VoterRow.id.in_(ids))).scalars().all()
     for row in rows:
+        record_audit(
+            session, row.id, action="deleted", user=user.username,
+            old_value=f"{row.epic} {row.name}".strip(),
+            file_id=row.source_file_id, page_id=row.source_page_id,
+        )
         session.delete(row)
     logger.info("User %r bulk-deleted %d voters", user.username, len(rows))
     return {"deleted": len(rows), "requested": len(ids)}
@@ -386,10 +552,31 @@ def promote_records(
 
     # Page/file context, fetched once rather than per record.
     file_names = dict(session.execute(select(FileRow.id, FileRow.name)).all())
-    page_meta = {
-        p.id: (p.payload or {}) for p in
+    pages = {
+        p.id: p for p in
         session.execute(
             select(PageRow).where(PageRow.id.in_({r.page_id for r in rows}))
+        ).scalars().all()
+    }
+    # The cover sheet has already been read into a station row, so the part
+    # number and constituency come from there rather than from scraping the
+    # page header -- which is how they end up matching what the station is
+    # filed under, and therefore how a station's voters can be found at all.
+    stations = {
+        s.file_id: s for s in
+        session.execute(
+            select(PollingStationRow).where(
+                PollingStationRow.file_id.in_({r.file_id for r in rows})
+            )
+        ).scalars().all()
+    }
+    photos_by_record = {
+        p.record_id: p for p in
+        session.execute(
+            select(PhotoRow).where(
+                PhotoRow.record_id.in_({r.id for r in rows}),
+                PhotoRow.photo_type == "voter_crop",
+            )
         ).scalars().all()
     }
 
@@ -431,10 +618,24 @@ def promote_records(
             result.skipped += 1
             continue
 
-        meta = page_meta.get(row.page_id, {})
-        header = meta.get("header_text", "") or ""
+        page = pages.get(row.page_id)
+        station = stations.get(row.file_id)
+        header = ((page.payload or {}).get("header_text", "") if page else "") or ""
         age_raw = _field_value(record, "age")
         serial_raw = _field_value(record, "serial")
+
+        # An elector added by a supplement is not a base-roll elector: they
+        # were added after the base roll was published, and any report that
+        # cannot tell the two apart misstates the revision.
+        is_supplement = bool(page and page.page_type == "supplement_page")
+
+        constituency = header[:255]
+        if station and station.ac_name:
+            constituency = (
+                f"{station.ac_number}-{station.ac_name}"
+                if station.ac_number
+                else station.ac_name
+            )[:255]
 
         values = {
             "epic": epic,
@@ -445,24 +646,44 @@ def promote_records(
             "house_number": _field_value(record, "house_number"),
             "age": int(age_raw) if age_raw.isdigit() else None,
             "gender": _field_value(record, "gender"),
-            "constituency": header[:255],
+            "part_number": station.part_number if station else "",
+            "constituency": constituency,
+            "polling_station_id": station.id if station else None,
+            "is_supplement": is_supplement,
             "source_record_id": row.id,
             "source_page_id": row.page_id,
             "source_file_id": row.file_id,
             "source_file_name": file_names.get(row.file_id, ""),
             "page_number": row.page_number,
+            "page_id": row.page_id,
         }
 
         if existing is not None:  # on_conflict == "update"
-            _apply_fields(existing, values, user.username)
+            # Per-field here, unlike creation: re-promoting an existing
+            # elector overwrites values a reviewer may have corrected by
+            # hand, and the trail has to show exactly what was overwritten.
+            _apply_fields(
+                existing, values, user.username, session, audit_action="promoted"
+            )
             result.updated += 1
             result.voter_ids.append(existing.id)
         else:
             voter = VoterRow(id=uuid.uuid4().hex[:12], created_by=user.username)
             _apply_fields(voter, values, user.username)
             session.add(voter)
+            record_audit(
+                session, voter.id, action="promoted", user=user.username,
+                new_value=f"{voter.epic} {voter.name}".strip(),
+                file_id=row.file_id, page_id=row.page_id,
+            )
             result.created += 1
             result.voter_ids.append(voter.id)
+
+        # The crop was taken during extraction, before any voter existed;
+        # promotion is the first moment it can be attributed to one.
+        photo = photos_by_record.get(row.id)
+        if photo is not None:
+            photo.voter_id = existing.id if existing is not None else result.voter_ids[-1]
 
         seen_in_batch[epic] = row.id
 

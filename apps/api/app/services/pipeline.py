@@ -3,8 +3,10 @@
 This is the single place the stages are composed, so the API layer, the CLI
 and the tests all exercise exactly the same path.
 
-    render -> preprocess -> OCR -> detect template -> detect cells
-           -> parse -> validate -> Page
+    render -> preprocess -> OCR -> classify page -> detect template
+           -> detect cells -> parse -> validate -> Page
+
+    Pages that hold no voter records stop after classification.
 """
 
 from __future__ import annotations
@@ -26,7 +28,14 @@ from ..schemas.core import (
     PageStatus,
 )
 from ..templates import registry
-from . import layout_service, ocr_service, pdf_service, preprocess
+from . import (
+    layout_service,
+    ocr_service,
+    page_classifier,
+    pdf_service,
+    photo_service,
+    preprocess,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +100,41 @@ def process_page(
             )
         )
 
-    # ------------------------------------------------- 4. choose template
+    # ------------------------------------------------ 4. classify the page
+    # A roll PDF is not a stack of voter grids: the reference document is a
+    # cover, a signature sheet, a map sheet, six grids, a supplement, a
+    # summary and a legend. Running the record parser over the nine-tenths
+    # of a page that is prose or a photo produces confident nonsense -- 139
+    # phantom records out of 331 on that document -- so pages that hold no
+    # voters are classified, kept for their text and images, and skipped.
+    classification = page_classifier.classify_page(
+        page.lines, None, page.width, page.height
+    )
+    page.page_type = classification.page_type.value
+    page.classification_confidence = classification.confidence
+
+    if classification.page_type not in page_classifier.VOTER_BEARING:
+        logger.info(
+            "Page %s p%d classified %s (%.2f): %s -- skipping record extraction",
+            file_id, page_number, page.page_type,
+            classification.confidence, classification.reason,
+        )
+        # The map sheet holds no records but is the only visual record of
+        # where an elector votes, so its panels are still worth cropping.
+        if classification.page_type is page_classifier.PageType.MAP_PHOTO_PAGE:
+            try:
+                page.photos = photo_service.extract_station_photos(
+                    page.lines, display, page.id, settings.photos_dir
+                )
+            except Exception:  # noqa: BLE001 - imagery is not worth failing a page over
+                logger.exception("Station photo extraction failed on page %s", page_id)
+
+        page.layout = LayoutInfo(source=GridSource.NONE, confidence=0.0, cells=[])
+        page.header_text = " ".join(ln.text for ln in page.lines[:2])
+        page.status = PageStatus.COMPLETED
+        return page
+
+    # ------------------------------------------------- 5. choose template
     page_size = (page.width, page.height)
     if template_id in ("auto", "", None):
         template, confidence = registry.detect(page.lines, page_size)
@@ -105,7 +148,7 @@ def process_page(
     page.template_id = template.id
     page.template_confidence = confidence
 
-    # --------------------------------------------------- 5. detect layout
+    # --------------------------------------------------- 6. detect layout
     grid = template.expected_grid()
     if grid:
         rows, cols = grid
@@ -129,7 +172,7 @@ def process_page(
 
     page.layout = layout
 
-    # ------------------------------------------------------------ 6. parse
+    # ------------------------------------------------------------ 7. parse
     try:
         records = template.parse(page.lines, layout, page.id, page_size)
     except Exception as exc:  # noqa: BLE001 - never let one page kill a batch
@@ -138,7 +181,7 @@ def process_page(
         page.error = f"Parsing failed: {exc}"
         return page
 
-    # --------------------------------------------------------- 7. validate
+    # --------------------------------------------------------- 8. validate
     try:
         template.validate(records)
     except Exception as exc:  # noqa: BLE001
@@ -153,8 +196,30 @@ def process_page(
 
     page.records = records
 
+    # A crop is attempted per record but kept only when the box holds an
+    # actual photograph; on a final SIR roll every box is the printed words
+    # "Photo is available", so this legitimately yields nothing.
+    try:
+        cells = layout.cells or []
+        page.photos = [
+            photo
+            for record in records
+            if record.index < len(cells)
+            for photo in [
+                photo_service.extract_voter_photo(
+                    cells[record.index], page.lines, display,
+                    page.id, record.id, settings.photos_dir,
+                )
+            ]
+            if photo is not None
+        ]
+    except Exception:  # noqa: BLE001 - never fail a page over a thumbnail
+        logger.exception("Voter photo extraction failed on page %s", page_id)
+
     if grid:
-        expected = grid[0] * grid[1]
+        # The number of slots this page actually has, which for a part-full
+        # page is fewer than the template's nominal full-page grid.
+        expected = len(layout.cells) or grid[0] * grid[1]
         if len(records) > expected:
             page.issues.append(
                 Issue(
@@ -175,7 +240,7 @@ def process_page(
                 )
             )
 
-    # ------------------------------------------------ 8. header and footer
+    # ------------------------------------------------ 9. header and footer
     page.header_text, page.footer_text = _split_furniture(page, layout)
 
     page.status = PageStatus.COMPLETED
@@ -203,6 +268,47 @@ def _split_furniture(page: Page, layout: LayoutInfo) -> tuple[str, str]:
     return " ".join(header).strip(), " ".join(footer).strip()
 
 
+def process_page_with_retry(
+    pdf_path: str | Path,
+    page_number: int,
+    file_id: str,
+    template_id: str = "auto",
+    lang: str | None = None,
+    save_image: bool = True,
+    page_id: str | None = None,
+    max_retries: int | None = None,
+) -> Page:
+    """Process one page with automatic retry logic on transient errors."""
+    retries = max_retries if max_retries is not None else settings.max_retries
+    attempts = 0
+    last_page = None
+    while attempts <= retries:
+        attempts += 1
+        last_page = process_page(
+            pdf_path=pdf_path,
+            page_number=page_number,
+            file_id=file_id,
+            template_id=template_id,
+            lang=lang,
+            save_image=save_image,
+            page_id=page_id,
+        )
+        if last_page.status == PageStatus.COMPLETED:
+            return last_page
+        if attempts <= retries:
+            logger.warning(
+                "Retrying page %d (attempt %d/%d) due to error: %s",
+                page_number, attempts, retries, last_page.error,
+            )
+    return last_page if last_page is not None else Page(
+        id=page_id or uuid.uuid4().hex[:12],
+        file_id=file_id,
+        page_number=page_number,
+        status=PageStatus.ERROR,
+        error="Processing failed after retries",
+    )
+
+
 def process_pdf(
     pdf_path: str | Path,
     file_id: str,
@@ -213,7 +319,7 @@ def process_pdf(
     """Process every page of a PDF, yielding pages as they complete."""
     info = pdf_service.inspect(pdf_path)
     for n in range(1, info.page_count + 1):
-        yield process_page(
+        yield process_page_with_retry(
             pdf_path,
             n,
             file_id,
@@ -221,3 +327,4 @@ def process_pdf(
             lang=lang,
             save_image=save_image,
         )
+

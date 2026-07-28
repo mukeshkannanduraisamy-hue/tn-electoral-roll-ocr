@@ -11,7 +11,9 @@ import {
 } from "@/lib/api";
 import { toast } from "sonner";
 
-export type ViewTab = "table" | "page" | "review" | "voters";
+import { pauseJobApi, resumeJobApi, cancelJobApi } from "@/lib/api";
+
+export type ViewTab = "dashboard" | "table" | "page" | "review" | "voters" | "settings" | "analytics" | "polling_stations";
 
 // Per-file extraction progress tracked from SSE
 export interface FileJobProgress {
@@ -21,6 +23,15 @@ export interface FileJobProgress {
   pagesFailed: number;
   pagesTotal: number;
   done: boolean;
+}
+
+export interface ConfirmModalState {
+  isOpen: boolean;
+  title: string;
+  message: string;
+  danger?: boolean;
+  confirmText?: string;
+  onConfirm: () => void | Promise<void>;
 }
 
 interface OcrState {
@@ -44,6 +55,8 @@ interface OcrState {
   activeJobId: string | null;
   activeJobProgress: number; // 0-100
   activeJobStatus: string | null;
+  pagesPerSec: number;
+  etaSeconds: number;
   fileJobProgress: Record<string, FileJobProgress>;
 
   // Per-page refresh tracking (pageId -> isLoading boolean)
@@ -59,6 +72,8 @@ interface OcrState {
 
   // Modals & Overlays
   isShortcutsOpen: boolean;
+  confirmModal: ConfirmModalState | null;
+  setConfirmModal: (modal: ConfirmModalState | null) => void;
 
   // Actions
   loadFiles: () => Promise<void>;
@@ -80,6 +95,11 @@ interface OcrState {
   setActiveJob: (jobId: string | null, status?: string | null) => void;
   updateJobProgress: (progress: number, status?: string) => void;
 
+  // Job Control Actions
+  pauseJob: () => Promise<void>;
+  resumeJob: () => Promise<void>;
+  cancelJob: () => Promise<void>;
+
   // Page-by-Page Refresh Action
   reocrSinglePage: (pageId: string, templateId?: string, upscale?: number) => Promise<Page | null>;
 
@@ -89,6 +109,7 @@ interface OcrState {
   // Starts an OCR job for given fileIds
   startBulkJob: (fileIds: string[], templateId?: string, allPending?: boolean) => Promise<Job | null>;
 }
+
 
 // Subscribe to a job's SSE stream and update store state progressively
 function attachJobSSE(
@@ -101,7 +122,7 @@ function attachJobSSE(
   const handleProgress = (e: MessageEvent) => {
     try {
       const data = JSON.parse(e.data);
-      const { completed = 0, failed = 0, total = 1, file_id, file_name } = data;
+      const { completed = 0, failed = 0, total = 1, file_id, file_name, pages_per_sec = 0, eta_seconds = 0 } = data;
       const pct = total > 0 ? ((completed + failed) / total) * 100 : 0;
 
       set((state) => {
@@ -115,6 +136,8 @@ function attachJobSSE(
         };
         return {
           activeJobProgress: pct,
+          pagesPerSec: pages_per_sec,
+          etaSeconds: eta_seconds,
           fileJobProgress: file_id
             ? {
                 ...state.fileJobProgress,
@@ -154,7 +177,7 @@ function attachJobSSE(
 
   const handleJobDone = () => {
     evtSource.close();
-    set({ activeJobId: null, activeJobStatus: "completed", activeJobProgress: 100 });
+    set({ activeJobId: null, activeJobStatus: "completed", activeJobProgress: 100, pagesPerSec: 0, etaSeconds: 0 });
     get().loadFiles();
     get().refreshStats(get().activeFileId || undefined);
     toast.success("Bulk OCR processing completed!");
@@ -163,7 +186,7 @@ function attachJobSSE(
 
   const handleError = () => {
     evtSource.close();
-    set({ activeJobId: null, activeJobStatus: null });
+    set({ activeJobId: null, activeJobStatus: null, pagesPerSec: 0, etaSeconds: 0 });
     get().loadFiles();
     toast.error("OCR job processing encountered an error");
   };
@@ -204,7 +227,7 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   files: [],
   activeFileId: null,
   activePageId: null,
-  activeTab: "table",
+  activeTab: "dashboard",
   recordStats: null,
 
   hoveredRecordId: null,
@@ -213,6 +236,8 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   activeJobId: null,
   activeJobProgress: 0,
   activeJobStatus: null,
+  pagesPerSec: 0,
+  etaSeconds: 0,
   fileJobProgress: {},
 
   pageRefreshing: {},
@@ -224,6 +249,8 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   minConfidenceFilter: null,
   isUploading: false,
   isShortcutsOpen: false,
+  confirmModal: null,
+  setConfirmModal: (modal) => set({ confirmModal: modal }),
 
   loadFiles: async () => {
     try {
@@ -281,7 +308,7 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   },
 
   setActiveJob: (jobId, status = "queued") => {
-    set({ activeJobId: jobId, activeJobStatus: status, activeJobProgress: 0, fileJobProgress: {} });
+    set({ activeJobId: jobId, activeJobStatus: status, activeJobProgress: 0, pagesPerSec: 0, etaSeconds: 0, fileJobProgress: {} });
   },
 
   updateJobProgress: (progress, status) => {
@@ -290,6 +317,44 @@ export const useOcrStore = create<OcrState>((set, get) => ({
       activeJobStatus: status || state.activeJobStatus,
     }));
   },
+
+  pauseJob: async () => {
+    const jobId = get().activeJobId;
+    if (!jobId) return;
+    try {
+      await pauseJobApi(jobId);
+      set({ activeJobStatus: "paused" });
+      toast.info("OCR job paused");
+    } catch (e) {
+      toast.error("Failed to pause job");
+    }
+  },
+
+  resumeJob: async () => {
+    const jobId = get().activeJobId;
+    if (!jobId) return;
+    try {
+      await resumeJobApi(jobId);
+      set({ activeJobStatus: "running" });
+      toast.info("OCR job resumed");
+    } catch (e) {
+      toast.error("Failed to resume job");
+    }
+  },
+
+  cancelJob: async () => {
+    const jobId = get().activeJobId;
+    if (!jobId) return;
+    try {
+      await cancelJobApi(jobId);
+      set({ activeJobId: null, activeJobStatus: "cancelled", activeJobProgress: 0, pagesPerSec: 0, etaSeconds: 0 });
+      toast.warning("OCR job cancelled");
+
+    } catch (e) {
+      toast.error("Failed to cancel job");
+    }
+  },
+
 
   reocrSinglePage: async (pageId, templateId = "auto", upscale = 2.0) => {
     set((state) => ({

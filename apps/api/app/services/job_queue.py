@@ -48,6 +48,7 @@ from ..db import (
     PageRow,
     load_pages_for_file,
     save_page,
+    save_part_metadata,
     session_scope,
 )
 from ..schemas.core import (
@@ -104,7 +105,7 @@ def _process_page_task(
     """Top-level so it is picklable. Returns the Page as a JSON string."""
     from . import pipeline
 
-    page = pipeline.process_page(
+    page = pipeline.process_page_with_retry(
         pdf_path,
         page_number,
         file_id,
@@ -126,6 +127,7 @@ class JobManager:
         self._lock = threading.Lock()
         self._subscribers: dict[str, list[tuple[asyncio.AbstractEventLoop, asyncio.Queue]]] = {}
         self._cancelled: set[str] = set()
+        self._paused: set[str] = set()
 
     # ------------------------------------------------------------- lifecycle
 
@@ -138,7 +140,7 @@ class JobManager:
         """
         with self._lock:
             if self._executor is None:
-                workers = max(1, min(settings.ocr_workers, 4)) if settings.ocr_workers >= 1 else 1
+                workers = max(1, min(settings.ocr_workers, 8)) if settings.ocr_workers >= 1 else 1
                 logger.info("Starting OCR ThreadPoolExecutor with %d worker(s)", workers)
                 self._executor = ThreadPoolExecutor(
                     max_workers=workers, thread_name_prefix="ocr-worker"
@@ -184,6 +186,19 @@ class JobManager:
     def is_cancelled(self, job_id: str) -> bool:
         with self._lock:
             return job_id in self._cancelled
+
+    def pause(self, job_id: str) -> None:
+        with self._lock:
+            self._paused.add(job_id)
+
+    def resume(self, job_id: str) -> None:
+        with self._lock:
+            self._paused.discard(job_id)
+
+    def is_paused(self, job_id: str) -> bool:
+        with self._lock:
+            return job_id in self._paused
+
 
     # ---------------------------------------------------------------- submit
 
@@ -278,7 +293,12 @@ class JobManager:
                 for future, file_id, file_name, page_number in futures
             }
 
+            start_time = time.perf_counter()
+
             for future in as_completed(future_map):
+                while self.is_paused(job_id) and not self.is_cancelled(job_id):
+                    time.sleep(0.5)
+
                 file_id, file_name, page_number = future_map[future]
                 if self.is_cancelled(job_id):
                     future.cancel()
@@ -331,6 +351,12 @@ class JobManager:
                                        "message": str(exc)})
                     )
 
+                elapsed_sec = max(time.perf_counter() - start_time, 0.001)
+                processed = completed + failed
+                pages_per_sec = round(processed / elapsed_sec, 2)
+                remaining = max(0, len(futures) - processed)
+                eta_seconds = round(remaining / pages_per_sec, 1) if pages_per_sec > 0 else 0
+
                 self._update_job(job_id, completed_pages=completed,
                                  failed_pages=failed,
                                  current_item=f"{file_name} p{page_number}")
@@ -340,13 +366,17 @@ class JobManager:
                                    "total": len(futures),
                                    "file_id": file_id,
                                    "file_name": file_name,
-                                   "page_number": page_number})
+                                   "page_number": page_number,
+                                   "pages_per_sec": pages_per_sec,
+                                   "eta_seconds": eta_seconds})
                 )
+
 
             # Spelling consensus needs every page of a file at once, so it
             # runs after the fan-in rather than per page.
             for file_id in touched_files:
                 self._apply_consensus(file_id)
+                self._extract_part_metadata(file_id)
                 with session_scope() as session:
                     file_row = session.get(FileRow, file_id)
                     if file_row:
@@ -393,6 +423,35 @@ class JobManager:
                     )
         except Exception:  # noqa: BLE001 - never fail a job over post-processing
             logger.exception("Consensus failed for file %s", file_id)
+
+    def _extract_part_metadata(self, file_id: str) -> None:
+        """Read the cover and summary sheets, and reconcile against them.
+
+        Runs after the fan-in for the same reason consensus does: it needs
+        every page of the file at once, both to find the two sheets and to
+        count what extraction actually produced.
+        """
+        try:
+            from . import roll_metadata
+
+            with session_scope() as session:
+                pages = load_pages_for_file(session, file_id)
+                if not pages:
+                    return
+                metadata = roll_metadata.build(pages, file_id)
+                save_part_metadata(session, file_id, metadata)
+
+            reconciliation = metadata.reconciliation
+            logger.info(
+                "Part metadata for %s: %d records extracted, %s prints %s (%s)",
+                file_id,
+                reconciliation.extracted_records,
+                reconciliation.source or "no sheet",
+                reconciliation.printed_total,
+                "reconciled" if reconciliation.matches else "MISMATCH",
+            )
+        except Exception:  # noqa: BLE001 - never fail a job over post-processing
+            logger.exception("Part metadata extraction failed for file %s", file_id)
 
     # --------------------------------------------------------------- helpers
 

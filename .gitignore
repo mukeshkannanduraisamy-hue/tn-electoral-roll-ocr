@@ -1,5 +1,6 @@
 # ---- Runtime data (never commit: contains PII from electoral rolls) ----
 /data/
+/exports/
 *.sqlite
 *.sqlite3
 *.db

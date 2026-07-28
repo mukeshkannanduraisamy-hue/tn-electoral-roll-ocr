@@ -52,6 +52,45 @@ class BBox(BaseModel):
         union = self.w * self.h + other.w * other.h - inter
         return inter / union if union > 0 else 0.0
 
+    def to_layoutlm(self, page_width: int, page_height: int) -> list[int]:
+        """Scale to LayoutLMv3's [x0, y0, x1, y1] on a 0-1000 grid.
+
+        Resolution-independent by construction, which is the point: a stored
+        box stays valid when the page is re-rendered at a different DPI.
+        Guarantees 0 <= x0 < x1 <= 1000 and 0 <= y0 < y1 <= 1000, so a
+        consumer never has to defend against a degenerate box.
+        """
+        return normalize_box(self.x, self.y, self.x2, self.y2, page_width, page_height)
+
+
+def normalize_box(
+    xmin: float, ymin: float, xmax: float, ymax: float,
+    page_width: int, page_height: int,
+) -> list[int]:
+    """The 0-1000 normalisation rule, in one place.
+
+    Both the OCR-block writer and the PaddleOCR polygon converter need it,
+    and two implementations of "what counts as a valid box" is one too many.
+    """
+    if page_width <= 0 or page_height <= 0:
+        return [0, 0, 1000, 1000]
+
+    x0 = max(0, min(1000, int(round((xmin / page_width) * 1000))))
+    y0 = max(0, min(1000, int(round((ymin / page_height) * 1000))))
+    x1 = max(0, min(1000, int(round((xmax / page_width) * 1000))))
+    y1 = max(0, min(1000, int(round((ymax / page_height) * 1000))))
+
+    # A box that rounds flat is still a box; give it a pixel rather than
+    # emitting x1 == x0, which breaks every downstream area calculation.
+    if x1 <= x0:
+        x1 = min(1000, x0 + 1)
+        x0 = max(0, x1 - 1)
+    if y1 <= y0:
+        y1 = min(1000, y0 + 1)
+        y0 = max(0, y1 - 1)
+
+    return [x0, y0, x1, y1]
+
 
 # ---------------------------------------------------------------------------
 # Raw OCR output (immutable)
@@ -216,6 +255,20 @@ class TemplateInfo(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class PhotoRef(BaseModel):
+    """An image cropped out of a page, on its way to the `photos` table."""
+
+    photo_type: str = "voter_crop"
+    """voter_crop | station_front | station_building | nazri_naksha
+    | google_map | cad_map | key_map"""
+    file_path: str = ""
+    """Filename within the photos directory, served by `/api/photos/{id}`."""
+    width: int = 0
+    height: int = 0
+    page_id: str = ""
+    record_id: str | None = None
+
+
 class PageStatus(str, Enum):
     PENDING = "pending"
     RENDERING = "rendering"
@@ -254,8 +307,16 @@ class Page(BaseModel):
     height: int = 0
     template_id: str | None = None
     template_confidence: float = 0.0
+    page_type: str = "other"
+    """What kind of sheet this is -- see `services.page_classifier.PageType`.
+
+    Only voter-bearing types are parsed for records; the rest are kept for
+    their text and images (cover metadata, station photos, summary totals).
+    """
+    classification_confidence: float = 0.0
     lines: list[OcrLine] = Field(default_factory=list)
     records: list[Record] = Field(default_factory=list)
+    photos: list[PhotoRef] = Field(default_factory=list)
     layout: LayoutInfo | None = None
     issues: list[Issue] = Field(default_factory=list)
     header_text: str = ""

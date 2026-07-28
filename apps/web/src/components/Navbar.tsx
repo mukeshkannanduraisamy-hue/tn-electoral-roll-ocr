@@ -1,32 +1,41 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
-  FileText,
   Upload,
   Play,
-  Download,
-  AlertTriangle,
-  RefreshCw,
-  CheckCircle2,
-  XCircle,
-  Layers,
+  Pause,
+  XSquare,
   Sun,
   Moon,
   Keyboard,
-  Table as TableIcon,
-  Eye,
-  CheckSquare,
-  Database,
   LogOut,
+  Search,
+  Bell,
+  Zap,
+  User,
+  ChevronDown,
+  X,
+  Loader2,
 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useOcrStore } from "@/store/useOcrStore";
+import { listVoters } from "@/lib/voterApi";
 
 interface NavbarProps {
   onOpenUpload: () => void;
   onOpenExport: () => void;
   onOpenBulkExtract: () => void;
+}
+
+interface SearchResult {
+  id: string;
+  epic: string;
+  name: string;
+  gender: string;
+  age: number | null;
+  house_number: string;
+  part_number: string;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -40,244 +49,238 @@ export const Navbar: React.FC<NavbarProps> = ({
   const {
     theme,
     toggleTheme,
-    files,
-    activeFileId,
-    setActiveFileId,
-    activeTab,
-    setActiveTab,
-    recordStats,
-    searchQuery,
-    setSearchQuery,
-    onlyIssuesFilter,
-    setOnlyIssuesFilter,
     activeJobStatus,
     activeJobProgress,
-    startBulkJob,
+    pagesPerSec,
+    etaSeconds,
+    pauseJob,
+    resumeJob,
+    cancelJob,
     setIsShortcutsOpen,
+    setActiveTab,
   } = useOcrStore();
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
-  const pendingCount = files.filter((f) => f.status === "pending").length;
-
-  const handleRunCurrent = async () => {
-    if (!activeFileId || isSubmitting) return;
-    try {
-      setIsSubmitting(true);
-      await startBulkJob([activeFileId]);
-    } finally {
-      setIsSubmitting(false);
+  // Debounced search
+  useEffect(() => {
+    if (!searchQuery.trim() || searchQuery.length < 2) {
+      setSearchResults([]);
+      setSearchOpen(false);
+      return;
     }
-  };
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const data = await listVoters({ search: searchQuery, limit: 8 });
+        setSearchResults((data.items || []) as unknown as SearchResult[]);
+        setSearchOpen(true);
+      } catch {
+        // silent
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 280);
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, [searchQuery]);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   const isRunning = activeJobStatus === "running";
+  const isPaused = activeJobStatus === "paused";
+  const isActive = isRunning || isPaused;
+
+  const etaLabel = (() => {
+    if (!etaSeconds || etaSeconds <= 0) return null;
+    if (etaSeconds < 60) return `${Math.round(etaSeconds)}s`;
+    return `${Math.round(etaSeconds / 60)}m`;
+  })();
+
+  const handleSelectVoter = (voterId: string) => {
+    setSearchQuery("");
+    setSearchOpen(false);
+    setActiveTab("voters" as any);
+    // store voter id for profile navigation — we broadcast via a custom event
+    window.dispatchEvent(new CustomEvent("vims:open-voter", { detail: { id: voterId } }));
+  };
 
   return (
-    <header className="h-16 border-b border-slate-200 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md px-4 flex items-center justify-between gap-4 sticky top-0 z-30 shadow-sm transition-colors duration-200">
-      {/* Brand & File Switcher */}
-      <div className="flex items-center gap-4 shrink-0">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-500 flex items-center justify-center shadow-md shadow-indigo-500/20">
-            <FileText className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              OCR Workspace
-              <span className="text-[10px] uppercase font-extrabold tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300 border border-indigo-500/20">
-                TN Electoral Roll
-              </span>
-            </h1>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              PaddleOCR v5 · 3x10 Grid Centroid Engine
-            </p>
-          </div>
+    <header className="h-14 shrink-0 flex items-center gap-3 px-4 glass border-b border-white/10 dark:border-white/5 z-50 relative">
+      {/* Brand — visible on mobile where sidebar is hidden */}
+      <div className="flex items-center gap-2 lg:hidden mr-2">
+        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
+          <Zap className="w-4 h-4 text-white" fill="white" />
         </div>
-
-        <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 hidden md:block" />
-
-        {/* File Select Dropdown */}
-        {files.length > 0 && (
-          <select
-            value={activeFileId || ""}
-            onChange={(e) => setActiveFileId(e.target.value || null)}
-            className="bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors max-w-[200px] truncate"
-          >
-            {files.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name} ({f.page_count}p)
-              </option>
-            ))}
-          </select>
-        )}
+        <span className="text-sm font-bold tracking-tight">VIMS</span>
       </div>
 
-      {/* Center View Tabs Switcher */}
-      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900/90 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
-        <button
-          onClick={() => setActiveTab("table")}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-            activeTab === "table"
-              ? "bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm"
-              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-          }`}
-        >
-          <TableIcon className="w-3.5 h-3.5" />
-          <span>Table View</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("page")}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-            activeTab === "page"
-              ? "bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm"
-              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-          }`}
-        >
-          <Eye className="w-3.5 h-3.5" />
-          <span>Page Image</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("review")}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-            activeTab === "review"
-              ? "bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm"
-              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-          }`}
-        >
-          <CheckSquare className="w-3.5 h-3.5" />
-          <span>Review Queue</span>
-          {recordStats && recordStats.with_errors > 0 && (
-            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-bold">
-              {recordStats.with_errors}
-            </span>
-          )}
-        </button>
-
-        {/* The curated database, as opposed to raw OCR output above. */}
-        <button
-          onClick={() => setActiveTab("voters")}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-            activeTab === "voters"
-              ? "bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm"
-              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-          }`}
-        >
-          <Database className="w-3.5 h-3.5" />
-          <span>Voter Database</span>
-        </button>
-      </div>
-
-      {/* Right: Stats & Main Action Buttons */}
-      <div className="flex items-center gap-2 shrink-0">
-        {/* Search */}
-        <div className="hidden xl:flex items-center relative w-48">
+      {/* Global Search */}
+      <div ref={searchRef} className="relative flex-1 max-w-xl mx-auto lg:mx-0 lg:ml-2">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search record text... (/)"
+            placeholder="Search voters by name, EPIC, house…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs rounded-lg px-3 py-1.5 text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full pl-9 pr-9 py-2 rounded-lg border border-border bg-muted/60 dark:bg-slate-900/80 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
           />
+          {searchLoading && (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 animate-spin" />
+          )}
+          {searchQuery && !searchLoading && (
+            <button
+              onClick={() => { setSearchQuery(""); setSearchOpen(false); }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 hover:text-slate-600"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
-        {/* Job Progress Indicator */}
-        {isRunning && (
-          <div className="flex items-center gap-2 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-500/30 rounded-lg px-3 py-1.5">
-            <RefreshCw className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 animate-spin" />
-            <div className="w-20 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-              <div
-                className="h-full bg-indigo-600 dark:bg-indigo-500 transition-all duration-300"
-                style={{ width: `${activeJobProgress}%` }}
-              />
+        {/* Search Dropdown */}
+        {searchOpen && (
+          <div className="absolute top-full left-0 right-0 mt-1.5 card-vims rounded-xl overflow-hidden z-50 shadow-xl border border-border animate-scale-in">
+            {searchResults.length === 0 ? (
+              <div className="px-4 py-3 text-sm text-muted-foreground text-center">
+                No voters found for "{searchQuery}"
+              </div>
+            ) : (
+              <div>
+                <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground border-b border-border bg-muted/40">
+                  Voters — {searchResults.length} result{searchResults.length !== 1 ? "s" : ""}
+                </div>
+                {searchResults.map((v) => (
+                  <button
+                    key={v.id}
+                    onClick={() => handleSelectVoter(v.id)}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-primary/5 transition-colors text-left"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
+                      {(v.name || "?")[0]}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate">{v.name || "—"}</div>
+                      <div className="text-xs text-muted-foreground font-mono truncate">{v.epic}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-xs text-muted-foreground">{v.gender} · {v.age ?? "?"}</div>
+                      <div className="text-[10px] text-muted-foreground">{v.house_number}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-1.5 ml-auto">
+        {/* Job Progress */}
+        {isActive && (
+          <div className="hidden md:flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 text-indigo-700 dark:text-indigo-300">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            <span className="font-medium">{Math.round(activeJobProgress ?? 0)}%</span>
+            {etaLabel && <span className="text-indigo-400">· {etaLabel}</span>}
+            <div className="flex items-center gap-1 ml-1 border-l border-indigo-200 dark:border-indigo-500/30 pl-2">
+              {isRunning ? (
+                <button onClick={() => void pauseJob()} title="Pause" className="hover:text-indigo-500">
+                  <Pause className="w-3 h-3" />
+                </button>
+              ) : (
+                <button onClick={() => void resumeJob()} title="Resume" className="hover:text-indigo-500">
+                  <Play className="w-3 h-3" />
+                </button>
+              )}
+              <button onClick={() => void cancelJob()} title="Cancel" className="hover:text-rose-500">
+                <XSquare className="w-3 h-3" />
+              </button>
             </div>
-            <span className="text-xs text-indigo-700 dark:text-indigo-300 font-bold tabular-nums">
-              {activeJobProgress.toFixed(0)}%
-            </span>
           </div>
         )}
 
-        {/* Upload PDF */}
+        {/* Import button */}
         <button
           onClick={onOpenUpload}
-          className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-all border border-slate-200 dark:border-slate-800"
+          className="vims-btn-primary h-8 text-xs"
         >
-          <Upload className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-          <span>Upload</span>
+          <Upload className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Import PDF</span>
         </button>
 
-        {/* Extract All (Bulk) */}
-        {pendingCount > 0 && (
-          <button
-            onClick={onOpenBulkExtract}
-            disabled={isRunning}
-            className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>Extract All ({pendingCount})</span>
-          </button>
-        )}
-
-        {/* Run OCR */}
+        {/* Theme toggle */}
         <button
-          onClick={handleRunCurrent}
-          disabled={isRunning || isSubmitting || !activeFileId}
-          className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm shadow-indigo-600/30 transition-all"
+          onClick={toggleTheme}
+          className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          title="Toggle theme"
         >
-          {isRunning ? (
-            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <Play className="w-3.5 h-3.5 fill-current" />
-          )}
-          <span>{isRunning ? "Running…" : "Run OCR"}</span>
+          {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
 
-        {/* Export */}
-        <button
-          onClick={onOpenExport}
-          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm shadow-emerald-600/30 transition-all"
-        >
-          <Download className="w-3.5 h-3.5" />
-          <span>Export</span>
-        </button>
-
-        {/* Keyboard Shortcuts Trigger */}
+        {/* Keyboard shortcuts */}
         <button
           onClick={() => setIsShortcutsOpen(true)}
-          className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors border border-slate-200 dark:border-slate-800"
-          title="Keyboard Shortcuts (?)"
+          className="hidden lg:flex h-8 w-8 items-center justify-center rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          title="Keyboard shortcuts (?)"
         >
           <Keyboard className="w-4 h-4" />
         </button>
 
-        {/* Light/Dark Theme Switcher */}
-        <button
-          onClick={toggleTheme}
-          className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors border border-slate-200 dark:border-slate-800"
-          title={`Switch to ${theme === "dark" ? "Light" : "Dark"} Mode`}
-        >
-          {theme === "dark" ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
-        </button>
-
-        {/* Signed-in user + sign out */}
-        {authUser && (
-          <div className="flex items-center gap-2 pl-2 ml-1 border-l border-slate-200 dark:border-slate-800">
-            <span
-              className="hidden lg:inline text-[11px] font-semibold text-slate-600 dark:text-slate-400 max-w-[120px] truncate"
-              title={authUser.username}
-            >
-              {authUser.display_name || authUser.username}
+        {/* User menu */}
+        <div ref={userMenuRef} className="relative">
+          <button
+            onClick={() => setUserMenuOpen((v) => !v)}
+            className="flex items-center gap-2 h-8 px-2.5 rounded-lg hover:bg-muted transition-colors"
+          >
+            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-[10px] font-bold">
+              {(authUser?.username || "A")[0].toUpperCase()}
+            </div>
+            <span className="hidden md:inline text-xs font-medium text-foreground">
+              {authUser?.display_name || authUser?.username || "Admin"}
             </span>
-            <button
-              onClick={() => void signOut()}
-              className="p-2 rounded-lg bg-slate-100 hover:bg-rose-50 dark:bg-slate-900 dark:hover:bg-rose-500/10 text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 transition-colors border border-slate-200 dark:border-slate-800"
-              title="Sign out"
-              aria-label="Sign out"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        )}
+            <ChevronDown className="w-3 h-3 text-muted-foreground" />
+          </button>
+
+          {userMenuOpen && (
+            <div className="absolute right-0 top-full mt-2 w-44 card-vims rounded-xl shadow-xl border border-border z-50 py-1 animate-scale-in">
+              <div className="px-3 py-2 border-b border-border">
+                <div className="text-xs font-semibold text-foreground">
+                  {authUser?.display_name || authUser?.username}
+                </div>
+                <div className="text-[11px] text-muted-foreground">Administrator</div>
+              </div>
+              <button
+                onClick={() => void signOut()}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Sign out
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

@@ -84,6 +84,25 @@ def cancel_job(job_id: str, session: Session = Depends(get_session)) -> Job:
     return job_to_schema(row)
 
 
+@router.post("/{job_id}/pause", response_model=Job)
+def pause_job(job_id: str, session: Session = Depends(get_session)) -> Job:
+    row = session.get(JobRow, job_id)
+    if row is None:
+        raise HTTPException(404, "Job not found")
+    manager.pause(job_id)
+    return job_to_schema(row)
+
+
+@router.post("/{job_id}/resume", response_model=Job)
+def resume_job(job_id: str, session: Session = Depends(get_session)) -> Job:
+    row = session.get(JobRow, job_id)
+    if row is None:
+        raise HTTPException(404, "Job not found")
+    manager.resume(job_id)
+    return job_to_schema(row)
+
+
+
 @router.get("/{job_id}/events")
 async def job_events(job_id: str):
     """Server-sent events for live progress.

@@ -215,7 +215,15 @@ class ElectoralRollTamilTemplate:
         page_size: tuple[int, int],
     ) -> list[Record]:
         cells = layout.cells or []
-        buckets = assign_lines_to_cells(lines, cells)
+        # Pass the layout's own geometry: a part-full page (the last sheet of
+        # a roll, or a supplement) has fewer rows than the template's nominal
+        # 10, and the banded assignment only works on the real dimensions.
+        buckets = assign_lines_to_cells(
+            lines,
+            cells,
+            rows=layout.rows or settings.expected_grid_rows,
+            cols=layout.cols or settings.expected_grid_cols,
+        )
 
         records: list[Record] = []
         for index, cell in enumerate(cells):

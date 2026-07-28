@@ -7,18 +7,20 @@ import {
   BadgeCheck,
   ChevronLeft,
   ChevronRight,
-  Database,
   Download,
-  FileSpreadsheet,
-  FileText,
   Loader2,
   Pencil,
   Plus,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   Trash2,
   Users,
   X,
+  Filter,
+  FileSpreadsheet,
+  FileText,
+  Database,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Voter, VoterQuery, VoterStats } from "@ocr/shared-types";
@@ -30,50 +32,27 @@ import {
   voterStats,
 } from "@/lib/voterApi";
 import { VoterFormModal } from "./VoterFormModal";
+import { VoterProfilePage } from "./VoterProfilePage";
 
 const PAGE_SIZES = [25, 50, 100, 200];
 
-const COLUMNS: Array<{ key: string; label: string; sortable: boolean; className?: string }> = [
-  { key: "serial", label: "S.No", sortable: true, className: "w-20" },
-  { key: "epic", label: "EPIC ID", sortable: true, className: "w-36" },
-  { key: "name", label: "பெயர் · Name", sortable: true },
-  { key: "relation_name", label: "உறவினர் · Relation", sortable: false },
-  { key: "house_number", label: "வீட்டு எண்", sortable: true, className: "w-28" },
-  { key: "age", label: "வயது", sortable: true, className: "w-16" },
-  { key: "gender", label: "பாலினம்", sortable: true, className: "w-24" },
-  { key: "part_number", label: "Part", sortable: true, className: "w-20" },
-];
+type SortKey = "serial" | "epic" | "name" | "age" | "gender" | "house_number" | "part_number" | "created_at";
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  tone = "indigo",
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: React.ReactNode;
-  tone?: "indigo" | "emerald" | "amber" | "slate";
-}) {
-  const tones = {
-    indigo: "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-300",
-    emerald: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
-    amber: "bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-300",
-    slate: "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
-  };
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3">
-      <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${tones[tone]}`}>
-        <Icon className="h-4 w-4" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 truncate">
-          {label}
-        </p>
-        <p className="text-lg font-bold text-slate-900 dark:text-slate-100 leading-tight">{value}</p>
-      </div>
-    </div>
-  );
+function GenderBadge({ gender }: { gender: string }) {
+  if (gender === "Male")
+    return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold badge-blue">{gender}</span>;
+  if (gender === "Female")
+    return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold badge-rose">{gender}</span>;
+  if (gender)
+    return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold badge-slate">{gender}</span>;
+  return <span className="text-xs text-muted-foreground">—</span>;
+}
+
+function SortIcon({ col, sort, order }: { col: string; sort: string; order: string }) {
+  if (sort !== col) return null;
+  return order === "asc"
+    ? <ArrowUpAZ className="w-3 h-3 text-primary inline-block ml-1" />
+    : <ArrowDownAZ className="w-3 h-3 text-primary inline-block ml-1" />;
 }
 
 export const VotersView: React.FC = () => {
@@ -81,493 +60,425 @@ export const VotersView: React.FC = () => {
   const [total, setTotal] = useState(0);
   const [stats, setStats] = useState<VoterStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [gender, setGender] = useState("");
-  const [verified, setVerified] = useState<"" | "yes" | "no">("");
-  const [sort, setSort] = useState("serial");
-  const [order, setOrder] = useState<"asc" | "desc">("asc");
-  const [pageSize, setPageSize] = useState(50);
-  const [page, setPage] = useState(0);
+  const [partNumber, setPartNumber] = useState("");
+  const [minAge, setMinAge] = useState("");
+  const [maxAge, setMaxAge] = useState("");
+  const [verified, setVerified] = useState<"" | "true" | "false">("");
+  const [sort, setSort] = useState<SortKey>("created_at");
+  const [order, setOrder] = useState<"asc" | "desc">("desc");
+  const [offset, setOffset] = useState(0);
+  const [limit, setLimit] = useState(50);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showFilters, setShowFilters] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingVoter, setEditingVoter] = useState<Voter | null>(null);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [openVoterId, setOpenVoterId] = useState<string | null>(null);
 
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [editing, setEditing] = useState<Voter | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
-  const [exporting, setExporting] = useState<string | null>(null);
-
-  // Debounce so typing does not fire a request per keystroke.
+  // Listen for global profile open events
   useEffect(() => {
-    const t = setTimeout(() => {
-      setDebouncedSearch(search);
-      setPage(0);
-    }, 300);
-    return () => clearTimeout(t);
-  }, [search]);
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent).detail?.id;
+      if (id) setOpenVoterId(id);
+    };
+    window.addEventListener("vims:open-voter", handler);
+    return () => window.removeEventListener("vims:open-voter", handler);
+  }, []);
 
-  const query = useMemo<VoterQuery>(
-    () => ({
-      search: debouncedSearch || undefined,
-      gender: gender || undefined,
-      verified: verified === "" ? undefined : verified === "yes",
-      sort,
-      order,
-      offset: page * pageSize,
-      limit: pageSize,
-    }),
-    [debouncedSearch, gender, verified, sort, order, page, pageSize],
-  );
-
-  const load = useCallback(async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setSelectedIds(new Set());
     try {
-      const [data, s] = await Promise.all([listVoters(query), voterStats()]);
-      setRows(data.items);
-      setTotal(data.total);
-      setStats(s);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load voters");
+      const query: VoterQuery = {
+        search: search || undefined,
+        gender: gender || undefined,
+        part_number: partNumber || undefined,
+        verified: verified === "" ? undefined : verified === "true",
+        min_age: minAge ? Number(minAge) : undefined,
+        max_age: maxAge ? Number(maxAge) : undefined,
+        sort,
+        order,
+        offset,
+        limit,
+      };
+      const data = await listVoters(query);
+      setRows(data.items || []);
+      setTotal(data.total || 0);
+    } catch {
+      toast.error("Failed to load voters");
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [search, gender, partNumber, verified, minAge, maxAge, sort, order, offset, limit]);
+
+  useEffect(() => { void loadData(); }, [loadData]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    voterStats().then(setStats).catch(() => null);
+  }, []);
 
-  const toggleSort = (key: string) => {
-    if (sort === key) setOrder((o) => (o === "asc" ? "desc" : "asc"));
-    else {
-      setSort(key);
-      setOrder("asc");
-    }
-    setPage(0);
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearch(searchInput);
+      setOffset(0);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const handleSort = (col: SortKey) => {
+    if (sort === col) setOrder((o) => (o === "asc" ? "desc" : "asc"));
+    else { setSort(col); setOrder("asc"); }
+    setOffset(0);
   };
 
-  const toggleRow = (id: string) =>
-    setSelected((prev) => {
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  };
 
-  const allOnPageSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const toggleSelectAll = () => {
+    if (selectedIds.size === rows.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(rows.map((r) => r.id)));
+  };
 
-  const handleDelete = async (voter: Voter) => {
-    if (!confirm(`Delete ${voter.name || voter.epic}? This cannot be undone.`)) return;
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Delete voter "${name}"?`)) return;
     try {
-      await deleteVoter(voter.id);
+      await deleteVoter(id);
       toast.success("Voter deleted");
-      void load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Delete failed");
-    }
+      void loadData();
+    } catch { toast.error("Failed to delete"); }
   };
 
   const handleBulkDelete = async () => {
-    if (!confirm(`Delete ${selected.size} selected voter(s)? This cannot be undone.`)) return;
+    if (!confirm(`Delete ${selectedIds.size} voter(s)?`)) return;
     try {
-      const res = await bulkDeleteVoters([...selected]);
-      toast.success(`Deleted ${res.deleted} voter(s)`);
-      setSelected(new Set());
-      void load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Bulk delete failed");
-    }
+      const { deleted } = await bulkDeleteVoters([...selectedIds]);
+      toast.success(`Deleted ${deleted} voter(s)`);
+      void loadData();
+    } catch { toast.error("Bulk delete failed"); }
   };
 
-  const handleExport = async (format: "xlsx" | "csv" | "pdf") => {
-    setExporting(format);
+  const handleExport = async (format: "xlsx" | "csv") => {
+    setExportLoading(true);
     try {
-      // Export what is on screen: same filters, no pagination.
       await downloadVoterExport(format, {
-        search: debouncedSearch || undefined,
+        search: search || undefined,
         gender: gender || undefined,
-        verified: verified === "" ? undefined : verified === "yes",
-        sort,
-        order,
+        part_number: partNumber || undefined,
       });
-      toast.success(`${format.toUpperCase()} downloaded`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Export failed");
-    } finally {
-      setExporting(null);
-    }
+    } catch (e: any) { toast.error(e?.message || "Export failed"); }
+    finally { setExportLoading(false); }
   };
 
-  const lastPage = Math.max(0, Math.ceil(total / pageSize) - 1);
-  const filtersActive = Boolean(debouncedSearch || gender || verified);
+  const pages = Math.max(1, Math.ceil(total / limit));
+  const currentPage = Math.floor(offset / limit) + 1;
+  const hasFilters = !!(search || gender || partNumber || minAge || maxAge || verified);
+
+  const clearFilters = () => {
+    setSearchInput(""); setSearch(""); setGender("");
+    setPartNumber(""); setMinAge(""); setMaxAge(""); setVerified("");
+    setOffset(0);
+  };
+
+  const SortTh = ({ col, label, className = "" }: { col: SortKey; label: React.ReactNode; className?: string }) => (
+    <th
+      className={`cursor-pointer select-none hover:bg-muted/80 transition-colors ${className}`}
+      onClick={() => handleSort(col)}
+    >
+      {label}
+      <SortIcon col={col} sort={sort} order={order} />
+    </th>
+  );
+
+  // Show voter profile if one is open
+  if (openVoterId) {
+    return (
+      <VoterProfilePage
+        voterId={openVoterId}
+        onBack={() => setOpenVoterId(null)}
+      />
+    );
+  }
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
-      {/* ---------------------------------------------------------- stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4 pb-0">
-        <StatCard icon={Users} label="Total voters" value={stats?.total ?? "—"} />
-        <StatCard
-          icon={BadgeCheck}
-          label="Verified"
-          value={stats?.verified ?? "—"}
-          tone="emerald"
-        />
-        <StatCard
-          icon={Database}
-          label="Unverified"
-          value={stats?.unverified ?? "—"}
-          tone="amber"
-        />
-        <StatCard
-          icon={Users}
-          label="Average age"
-          value={stats?.average_age ?? "—"}
-          tone="slate"
-        />
-      </div>
+    <div className="flex-1 flex flex-col overflow-hidden">
 
-      {/* -------------------------------------------------------- toolbar */}
-      <div className="p-4 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+      {/* Header Bar */}
+      <div className="shrink-0 px-6 py-4 border-b border-border bg-card/60 backdrop-blur-sm">
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <div>
+            <h1 className="text-lg font-bold text-foreground">Voters</h1>
+            <p className="text-xs text-muted-foreground">
+              {loading ? "Loading…" : `${total.toLocaleString()} voter${total !== 1 ? "s" : ""} in database`}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-medium">
+                <span>{selectedIds.size} selected</span>
+                <button onClick={handleBulkDelete} className="flex items-center gap-1 hover:text-rose-700">
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </button>
+              </div>
+            )}
+            {/* Export */}
+            <div className="relative group">
+              <button className="vims-btn-ghost h-8 text-xs" disabled={exportLoading}>
+                {exportLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                Export
+              </button>
+              <div className="absolute right-0 top-full mt-1 w-36 card-vims rounded-xl shadow-xl border border-border z-50 py-1 hidden group-hover:block">
+                <button onClick={() => handleExport("xlsx")} className="flex items-center gap-2 px-3 py-2 text-xs w-full hover:bg-muted transition-colors">
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-green-500" />XLSX
+                </button>
+                <button onClick={() => handleExport("csv")} className="flex items-center gap-2 px-3 py-2 text-xs w-full hover:bg-muted transition-colors">
+                  <FileText className="w-3.5 h-3.5 text-blue-500" />CSV
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={() => { setEditingVoter(null); setIsFormOpen(true); }}
+              className="vims-btn-primary h-8 text-xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Voter
+            </button>
+          </div>
+        </div>
+
+        {/* Search + Filter Row */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
             <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, EPIC, house number…"
-              className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 pl-9 pr-8 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition"
+              type="text"
+              placeholder="Search name, EPIC, house…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="vims-input pl-9 h-8 text-xs"
             />
-            {search && (
-              <button
-                onClick={() => setSearch("")}
-                aria-label="Clear search"
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              >
-                <X className="h-3.5 w-3.5" />
+            {searchInput && (
+              <button onClick={() => { setSearchInput(""); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
-
-          <select
-            value={gender}
-            onChange={(e) => {
-              setGender(e.target.value);
-              setPage(0);
-            }}
-            className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500/40"
-          >
-            <option value="">All genders</option>
-            <option value="Male">Male</option>
-            <option value="Female">Female</option>
-            <option value="Other">Other</option>
-          </select>
-
-          <select
-            value={verified}
-            onChange={(e) => {
-              setVerified(e.target.value as "" | "yes" | "no");
-              setPage(0);
-            }}
-            className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500/40"
-          >
-            <option value="">Any status</option>
-            <option value="yes">Verified</option>
-            <option value="no">Unverified</option>
-          </select>
-
           <button
-            onClick={() => void load()}
-            title="Refresh"
-            className="p-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+            onClick={() => setShowFilters((v) => !v)}
+            className={`vims-btn-ghost h-8 text-xs ${showFilters || hasFilters ? "bg-primary/10 text-primary border-primary/30" : ""}`}
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            Filters
+            {hasFilters && <span className="ml-1 w-4 h-4 rounded-full bg-primary text-white text-[9px] flex items-center justify-center">!</span>}
           </button>
-
-          <button
-            onClick={() => {
-              setEditing(null);
-              setFormOpen(true);
-            }}
-            className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition"
-          >
-            <Plus className="h-4 w-4" />
-            Add voter
-          </button>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Export{filtersActive ? " (filtered)" : ""}:
-          </span>
-          {([
-            { fmt: "xlsx" as const, icon: FileSpreadsheet, label: "Excel" },
-            { fmt: "csv" as const, icon: FileText, label: "CSV" },
-            { fmt: "pdf" as const, icon: FileText, label: "PDF" },
-          ]).map(({ fmt, icon: Icon, label }) => (
-            <button
-              key={fmt}
-              onClick={() => void handleExport(fmt)}
-              disabled={exporting !== null}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 flex items-center gap-1.5 transition"
-            >
-              {exporting === fmt ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Icon className="h-3.5 w-3.5" />
-              )}
-              {label}
+          {hasFilters && (
+            <button onClick={clearFilters} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+              <X className="w-3 h-3" /> Clear
             </button>
-          ))}
-
-          {selected.size > 0 && (
-            <div className="ml-auto flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-300">
-                {selected.size} selected
-              </span>
-              <button
-                onClick={() => void handleBulkDelete()}
-                className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-bold flex items-center gap-1.5 transition"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Delete
-              </button>
-              <button
-                onClick={() => setSelected(new Set())}
-                className="px-2 py-1.5 rounded-lg text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition"
-              >
-                Clear
-              </button>
-            </div>
           )}
-        </div>
-      </div>
-
-      {/* ---------------------------------------------------------- table */}
-      <div className="flex-1 overflow-auto px-4 pb-4">
-        <div className="min-w-full overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
-              <tr>
-                <th className="w-10 px-3 py-2.5">
-                  <input
-                    type="checkbox"
-                    checked={allOnPageSelected}
-                    onChange={(e) =>
-                      setSelected((prev) => {
-                        const next = new Set(prev);
-                        rows.forEach((r) => (e.target.checked ? next.add(r.id) : next.delete(r.id)));
-                        return next;
-                      })
-                    }
-                    aria-label="Select all rows on this page"
-                    className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/40"
-                  />
-                </th>
-                {COLUMNS.map((col) => (
-                  <th
-                    key={col.key}
-                    className={`px-3 py-2.5 text-left font-bold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400 ${col.className ?? ""}`}
-                  >
-                    {col.sortable ? (
-                      <button
-                        onClick={() => toggleSort(col.key)}
-                        className="inline-flex items-center gap-1 hover:text-slate-800 dark:hover:text-slate-200 transition"
-                      >
-                        {col.label}
-                        {sort === col.key &&
-                          (order === "asc" ? (
-                            <ArrowUpAZ className="h-3 w-3" />
-                          ) : (
-                            <ArrowDownAZ className="h-3 w-3" />
-                          ))}
-                      </button>
-                    ) : (
-                      col.label
-                    )}
-                  </th>
-                ))}
-                <th className="w-24 px-3 py-2.5 text-right font-bold uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-400">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {loading &&
-                rows.length === 0 &&
-                Array.from({ length: 8 }).map((_, i) => (
-                  <tr key={`skeleton-${i}`}>
-                    <td colSpan={COLUMNS.length + 2} className="px-3 py-2.5">
-                      <div className="h-4 rounded bg-slate-100 dark:bg-slate-800 animate-pulse" />
-                    </td>
-                  </tr>
-                ))}
-
-              {!loading && rows.length === 0 && (
-                <tr>
-                  <td colSpan={COLUMNS.length + 2} className="px-3 py-16">
-                    <div className="flex flex-col items-center gap-2 text-center">
-                      <Database className="h-8 w-8 text-slate-300 dark:text-slate-700" />
-                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                        {filtersActive ? "No voters match these filters" : "No voters yet"}
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-500 max-w-sm">
-                        {filtersActive
-                          ? "Try clearing the search or filters."
-                          : "Promote reviewed records from the OCR workspace, or add a voter manually."}
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-
-              {rows.map((voter) => (
-                <tr
-                  key={voter.id}
-                  className={`transition hover:bg-slate-50 dark:hover:bg-slate-800/50 ${
-                    selected.has(voter.id) ? "bg-indigo-50/60 dark:bg-indigo-500/10" : ""
-                  }`}
-                >
-                  <td className="px-3 py-2">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(voter.id)}
-                      onChange={() => toggleRow(voter.id)}
-                      aria-label={`Select ${voter.name}`}
-                      className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/40"
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{voter.serial ?? "—"}</td>
-                  <td className="px-3 py-2 font-mono text-slate-800 dark:text-slate-200">{voter.epic}</td>
-                  <td className="px-3 py-2">
-                    <span className="font-medium text-slate-900 dark:text-slate-100">{voter.name}</span>
-                    {voter.verified && (
-                      <BadgeCheck className="inline-block ml-1.5 h-3.5 w-3.5 text-emerald-500 align-text-bottom" />
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-400">
-                    {voter.relation_name ? (
-                      <>
-                        <span className="text-[10px] uppercase text-slate-400 mr-1">
-                          {voter.relation_type}
-                        </span>
-                        {voter.relation_name}
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{voter.house_number || "—"}</td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{voter.age ?? "—"}</td>
-                  <td className="px-3 py-2">
-                    {voter.gender ? (
-                      <span
-                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                          voter.gender === "Female"
-                            ? "bg-fuchsia-50 dark:bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300"
-                            : voter.gender === "Male"
-                              ? "bg-sky-50 dark:bg-sky-500/10 text-sky-700 dark:text-sky-300"
-                              : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
-                        }`}
-                      >
-                        {voter.gender}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{voter.part_number || "—"}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => {
-                          setEditing(voter);
-                          setFormOpen(true);
-                        }}
-                        title="Edit"
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => void handleDelete(voter)}
-                        title="Delete"
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <button onClick={() => void loadData()} className="vims-btn-ghost h-8 w-8 p-0 justify-center" title="Refresh">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+          </button>
+          <select
+            value={limit}
+            onChange={(e) => { setLimit(Number(e.target.value)); setOffset(0); }}
+            className="vims-input h-8 text-xs w-20 pr-2"
+          >
+            {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} / pg</option>)}
+          </select>
         </div>
 
-        {error && (
-          <p className="mt-3 text-xs text-rose-600 dark:text-rose-400" role="alert">
-            {error}
-          </p>
+        {/* Advanced Filters */}
+        {showFilters && (
+          <div className="flex flex-wrap items-center gap-2 mt-3 p-3 rounded-xl bg-muted/40 border border-border animate-fade-slide">
+            <select value={gender} onChange={(e) => { setGender(e.target.value); setOffset(0); }} className="vims-input h-8 text-xs w-28">
+              <option value="">All Genders</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+            <input type="text" placeholder="Part No." value={partNumber} onChange={(e) => { setPartNumber(e.target.value); setOffset(0); }} className="vims-input h-8 text-xs w-24" />
+            <input type="number" placeholder="Min Age" value={minAge} onChange={(e) => { setMinAge(e.target.value); setOffset(0); }} className="vims-input h-8 text-xs w-20" />
+            <input type="number" placeholder="Max Age" value={maxAge} onChange={(e) => { setMaxAge(e.target.value); setOffset(0); }} className="vims-input h-8 text-xs w-20" />
+            <select value={verified} onChange={(e) => { setVerified(e.target.value as any); setOffset(0); }} className="vims-input h-8 text-xs w-32">
+              <option value="">Any Status</option>
+              <option value="true">Verified</option>
+              <option value="false">Unverified</option>
+            </select>
+          </div>
         )}
       </div>
 
-      {/* ----------------------------------------------------- pagination */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2.5">
-        <p className="text-[11px] text-slate-500 dark:text-slate-400">
-          {total === 0
-            ? "No records"
-            : `Showing ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} of ${total}`}
-        </p>
+      {/* Stats chips */}
+      {stats && (
+        <div className="shrink-0 px-6 py-2.5 flex items-center gap-3 border-b border-border bg-muted/20 overflow-x-auto">
+          {[
+            { label: "Total", value: stats.total, color: "text-foreground" },
+            { label: "Male", value: stats.by_gender?.["Male"] ?? 0, color: "text-blue-500" },
+            { label: "Female", value: stats.by_gender?.["Female"] ?? 0, color: "text-rose-500" },
+            { label: "Verified", value: stats.verified, color: "text-green-500" },
+            { label: "Avg Age", value: stats.average_age ? `${stats.average_age}y` : "—", color: "text-amber-500" },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="flex items-center gap-1.5 whitespace-nowrap">
+              <span className="text-[10px] text-muted-foreground font-medium">{label}</span>
+              <span className={`text-xs font-bold ${color}`}>{typeof value === "number" ? value.toLocaleString() : value}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
-            Rows
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setPage(0);
-              }}
-              className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-1.5 py-1 text-[11px] outline-none"
-            >
-              {PAGE_SIZES.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
-              aria-label="Previous page"
-              className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </button>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 px-1">
-              {page + 1} / {lastPage + 1}
-            </span>
-            <button
-              onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
-              disabled={page >= lastPage}
-              aria-label="Next page"
-              className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition"
-            >
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
+      {/* Table */}
+      <div className="flex-1 overflow-auto">
+        {loading && rows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Loading voters…</p>
           </div>
+        ) : rows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3">
+            <Users className="w-10 h-10 text-muted-foreground/30" />
+            <p className="text-sm font-medium text-muted-foreground">No voters found</p>
+            {hasFilters && (
+              <button onClick={clearFilters} className="text-xs text-primary hover:underline">Clear filters</button>
+            )}
+          </div>
+        ) : (
+          <table className="vims-table">
+            <thead>
+              <tr>
+                <th className="w-10 text-center">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.size === rows.length && rows.length > 0}
+                    onChange={toggleSelectAll}
+                    className="rounded border-border"
+                  />
+                </th>
+                <SortTh col="serial"       label="S.No" className="w-16" />
+                <SortTh col="epic"         label="EPIC" className="w-36" />
+                <SortTh col="name"         label="Name" />
+                <th>Relative</th>
+                <SortTh col="house_number" label="House" className="w-24" />
+                <SortTh col="age"          label="Age" className="w-14" />
+                <SortTh col="gender"       label="Gender" className="w-24" />
+                <SortTh col="part_number"  label="Part" className="w-16" />
+                <th className="w-20 text-center">Status</th>
+                <th className="w-16 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((voter) => {
+                const initials = (voter.name || "?")[0].toUpperCase();
+                const isSelected = selectedIds.has(voter.id);
+                return (
+                  <tr
+                    key={voter.id}
+                    onClick={() => setOpenVoterId(voter.id)}
+                    className={`${isSelected ? "bg-primary/5" : ""}`}
+                  >
+                    <td className="text-center" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(voter.id)}
+                        className="rounded border-border"
+                      />
+                    </td>
+                    <td className="text-xs text-muted-foreground font-mono">{voter.serial ?? "—"}</td>
+                    <td>
+                      <span className="font-mono text-xs text-primary bg-primary/8 px-2 py-0.5 rounded-md">
+                        {voter.epic}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-white font-bold text-[11px] shrink-0">
+                          {initials}
+                        </div>
+                        <span className="font-medium text-sm truncate max-w-[160px]">
+                          {voter.name || "—"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="text-xs text-muted-foreground">
+                      <span className="text-[10px] text-muted-foreground mr-1">{voter.relation_type}</span>
+                      <span className="truncate max-w-[100px] inline-block">{voter.relation_name || "—"}</span>
+                    </td>
+                    <td className="text-xs text-muted-foreground font-mono">{voter.house_number || "—"}</td>
+                    <td className="text-xs font-semibold text-foreground text-center">{voter.age ?? "—"}</td>
+                    <td><GenderBadge gender={voter.gender || ""} /></td>
+                    <td className="text-xs text-muted-foreground text-center">{voter.part_number || "—"}</td>
+                    <td className="text-center">
+                      {voter.verified && (
+                        <BadgeCheck className="w-4 h-4 text-green-500 mx-auto" />
+                      )}
+                    </td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => { setEditingVoter(voter); setIsFormOpen(true); }}
+                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(voter.id, voter.name || voter.epic)}
+                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors text-muted-foreground hover:text-rose-500"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Pagination */}
+      <div className="shrink-0 flex items-center justify-between px-6 py-3 border-t border-border bg-card/60 backdrop-blur-sm">
+        <div className="text-xs text-muted-foreground">
+          Showing {offset + 1}–{Math.min(offset + limit, total)} of {total.toLocaleString()} voters
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setOffset((o) => Math.max(0, o - limit))}
+            disabled={currentPage === 1}
+            className="vims-btn-ghost h-7 w-7 p-0 justify-center disabled:opacity-40"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+          <span className="text-xs font-medium text-foreground px-2">
+            {currentPage} / {pages}
+          </span>
+          <button
+            onClick={() => setOffset((o) => Math.min((pages - 1) * limit, o + limit))}
+            disabled={currentPage === pages}
+            className="vims-btn-ghost h-7 w-7 p-0 justify-center disabled:opacity-40"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 
-      <VoterFormModal
-        isOpen={formOpen}
-        voter={editing}
-        onClose={() => setFormOpen(false)}
-        onSaved={() => void load()}
-      />
+      {isFormOpen && (
+        <VoterFormModal
+          isOpen={isFormOpen}
+          voter={editingVoter ?? undefined}
+          onClose={() => { setIsFormOpen(false); setEditingVoter(null); }}
+          onSaved={(_v) => { setIsFormOpen(false); setEditingVoter(null); void loadData(); }}
+        />
+      )}
     </div>
   );
 };

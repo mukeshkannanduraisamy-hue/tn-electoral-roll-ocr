@@ -17,7 +17,10 @@ from fastapi.responses import JSONResponse
 from .config import settings
 from .db import init_db, reconcile_interrupted_work
 from .auth import ensure_admin_user, require_user
-from .routers import auth, export, files, jobs, pages, records, templates, voters
+from .routers import (
+    auth, export, files, jobs, pages, photos, polling_stations, records,
+    templates, voters,
+)
 from .services.job_queue import manager
 
 logging.basicConfig(
@@ -127,6 +130,9 @@ PROTECTED = [Depends(require_user)]
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 
 app.include_router(voters.router, prefix="/api/voters", tags=["voters"])
+app.include_router(polling_stations.router, prefix="/api/polling-stations", tags=["polling_stations"], dependencies=PROTECTED)
+app.include_router(photos.router, prefix="/api/photos", tags=["photos"],
+                   dependencies=PROTECTED)
 app.include_router(files.router, prefix="/api/files", tags=["files"],
                    dependencies=PROTECTED)
 app.include_router(pages.router, prefix="/api/pages", tags=["pages"],

@@ -10,10 +10,13 @@
 import {
   AuthStatus,
   AuthUser,
+  PhotoList,
   PromotionResult,
   Voter,
   VoterExportFormat,
+  VoterHistory,
   VoterInput,
+  VoterOcrBlocks,
   VoterPage,
   VoterQuery,
   VoterStats,
@@ -162,6 +165,23 @@ export function bulkDeleteVoters(
 
 export function voterStats(): Promise<VoterStats> {
   return request<VoterStats>("/api/voters/stats");
+}
+
+export function voterOcrBlocks(id: string): Promise<VoterOcrBlocks> {
+  return request<VoterOcrBlocks>(`/api/voters/${id}/ocr-blocks`);
+}
+
+export function voterHistory(id: string): Promise<VoterHistory> {
+  return request<VoterHistory>(`/api/voters/${id}/history`);
+}
+
+export function listPhotos(query: {
+  voter_id?: string;
+  polling_station_id?: string;
+  file_id?: string;
+  photo_type?: string;
+}): Promise<PhotoList> {
+  return request<PhotoList>(`/api/photos${toQuery(query as Record<string, unknown>)}`);
 }
 
 export function promoteRecords(payload: {

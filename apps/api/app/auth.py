@@ -146,7 +146,11 @@ def _lookup_user(session: Session, token: str | None) -> UserRow | None:
     user = session.get(UserRow, row.user_id)
     if user is None or not user.is_active:
         return None
+
+    # Sliding session expiration: auto-extend on active usage
+    row.expires_at = _utcnow() + timedelta(hours=settings.auth_session_hours)
     return user
+
 
 
 def current_user_optional(

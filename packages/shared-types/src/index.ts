@@ -153,6 +153,168 @@ export interface LayoutInfo {
   deviation: number;
 }
 
+export type PhotoType =
+  | 'voter_crop'
+  | 'station_front'
+  | 'station_building'
+  | 'nazri_naksha'
+  | 'google_map'
+  | 'cad_map'
+  | 'key_map';
+
+/** An image cropped out of a roll page. */
+export interface Photo {
+  id: string;
+  photo_type: PhotoType;
+  file_id: string | null;
+  page_id: string | null;
+  record_id: string | null;
+  voter_id: string | null;
+  polling_station_id: string | null;
+  width: number;
+  height: number;
+  /** Fetch the image itself from here. */
+  url: string;
+  created_at: string | null;
+}
+
+export interface PhotoList {
+  items: Photo[];
+  total: number;
+}
+
+/** One field's OCR provenance, with its box on the 0–1000 grid. */
+export interface OcrBlock {
+  id: string;
+  field_name: string;
+  /** [x0, y0, x1, y1] on a 0–1000 grid — scale by the displayed page size. */
+  bbox: [number, number, number, number];
+  raw_text: string;
+  corrected_text: string;
+  edited: boolean;
+  confidence: number;
+}
+
+/** Response of `GET /api/voters/{id}/ocr-blocks`. */
+export interface VoterOcrBlocks {
+  voter_id: string;
+  record_id: string | null;
+  page_id: string | null;
+  page_number: number | null;
+  page_width: number;
+  page_height: number;
+  page_type: PageType | "";
+  /** The grid `bbox` values are expressed on. Always 1000. */
+  bbox_scale: number;
+  mean_confidence: number;
+  min_confidence: number;
+  blocks: OcrBlock[];
+}
+
+export type AuditAction = 'created' | 'updated' | 'deleted' | 'promoted';
+
+export interface AuditEntry {
+  id: string;
+  action: AuditAction;
+  /** Empty for create/delete, which are logged once rather than per field. */
+  field_name: string;
+  old_value: string | null;
+  new_value: string | null;
+  user: string;
+  timestamp: string | null;
+}
+
+/** Response of `GET /api/voters/{id}/history`, newest first. */
+export interface VoterHistory {
+  voter_id: string;
+  total: number;
+  entries: AuditEntry[];
+}
+
+/**
+ * Extracted record count against the total the roll itself prints.
+ *
+ * `difference` is signed: positive means more records were extracted than
+ * the roll says exist (a page counted twice, a misdetected grid); negative
+ * means records are missing. `null` when neither sheet was readable.
+ */
+export interface PartReconciliation {
+  extracted_records: number;
+  printed_total: number | null;
+  difference: number | null;
+  reconciled: boolean;
+  /** Which sheet `printed_total` came from: `summary` or `cover`. */
+  source: string;
+  base_total: number;
+  additions_total: number;
+  deletions_total: number;
+  corrections: number;
+}
+
+/** One part, read off its cover sheet. Served by `/api/polling-stations`. */
+export interface PollingStation {
+  id: string;
+  file_id: string;
+  part_number: string;
+  name: string;
+  name_tam: string;
+  building_name: string;
+  section_details: string;
+
+  ac_number: string;
+  ac_name: string;
+  pc_number: string;
+  pc_name: string;
+
+  station_number: string;
+  /** ஆண் / பெண் / பொது — men's, women's or general. */
+  station_type: string;
+  address: string;
+
+  district: string;
+  taluk: string;
+  pincode: string;
+
+  serial_start: number | null;
+  serial_end: number | null;
+  total_electors: number;
+  male_electors: number;
+  female_electors: number;
+  third_gender_electors: number;
+  voter_count: number;
+
+  source_page_id: string;
+  /** Full cover-sheet detail, including fields not broken out above. */
+  details: Record<string, unknown>;
+  reconciliation: PartReconciliation | null;
+  photo_count: number;
+  photos: Array<{
+    id: string;
+    photo_type: string;
+    file_path: string;
+    width?: number;
+    height?: number;
+  }>;
+  created_at: string | null;
+}
+
+/** Mirrors `services.page_classifier.PageType`. */
+export type PageType =
+  | 'cover_page'
+  | 'map_photo_page'
+  | 'voter_list_page'
+  | 'supplement_page'
+  | 'summary_page'
+  | 'legend_page'
+  | 'blank_or_signature'
+  | 'other';
+
+/** The page types that carry voter records. */
+export const VOTER_BEARING_PAGE_TYPES: readonly PageType[] = [
+  'voter_list_page',
+  'supplement_page',
+];
+
 export interface Page {
   id: string;
   file_id: string;
@@ -164,6 +326,12 @@ export interface Page {
   height: number;
   template_id: string | null;
   template_confidence: number;
+  /**
+   * What kind of sheet this is. Only `voter_list_page` and `supplement_page`
+   * carry records; the rest are kept for their text and images.
+   */
+  page_type: PageType;
+  classification_confidence: number;
   lines: OcrLine[];
   records: Record_[];
   layout: LayoutInfo | null;
@@ -353,11 +521,19 @@ export interface Voter {
   constituency: string;
   notes: string;
   verified: boolean;
+  polling_station_id: string | null;
+  /**
+   * Added by a supplement rather than carried from the base roll. Not
+   * cosmetic: a supplement elector joined after the base list was
+   * published, and a report that conflates the two misstates the revision.
+   */
+  is_supplement: boolean;
   source_record_id: string | null;
   source_page_id: string | null;
   source_file_id: string | null;
   source_file_name: string;
   page_number: number | null;
+  page_id: string | null;
   created_at: string;
   updated_at: string;
   created_by: string;

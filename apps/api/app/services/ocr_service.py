@@ -16,6 +16,7 @@ can't silently break extraction.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -28,7 +29,50 @@ from ..schemas.core import BBox, OcrLine
 
 logger = logging.getLogger(__name__)
 
-_INSTANCES: dict[tuple[str, str, str], Any] = {}
+# Keyed on EVERY setting that affects construction, not just lang/version/
+# device. The detection model and side-length limit are baked into the
+# instance, so leaving them out of the key means changing them silently
+# returns the old engine -- a setting that looks configurable but is not.
+_InstanceKey = tuple[str, str, str, str, int]
+
+# ---------------------------------------------------------------------------
+# Engines are cached PER THREAD, and that is not an optimisation detail.
+#
+# A PaddleOCR predictor is NOT thread-safe. Two threads calling `predict()` on
+# the same instance segfault the process outright -- reproduced here as a
+# Windows ACCESS_VIOLATION (0xC0000005) inside
+# paddlex/inference/models/runners/paddle_static/runner.py, with no Python
+# traceback because the crash is below the interpreter.
+#
+# That is fatal rather than merely wrong: it takes down the whole API server
+# mid-job, so every other page in flight dies with it. A module-level cache
+# shared across a ThreadPoolExecutor hits this on the very first concurrent
+# page.
+#
+# Threading itself is fine -- verified: two threads with a private engine each
+# complete normally. So the cache is thread-local, and each worker thread pays
+# for its own copy of the weights (~1 GB). Size `ocr_workers` against RAM
+# accordingly; see config.ocr_workers.
+# ---------------------------------------------------------------------------
+_local = threading.local()
+
+
+def _cache() -> dict[_InstanceKey, Any]:
+    cache = getattr(_local, "instances", None)
+    if cache is None:
+        cache = {}
+        _local.instances = cache
+    return cache
+
+
+def reset() -> None:
+    """Drop this thread's cached engines so the next call rebuilds them.
+
+    Used by benchmarks and tests that vary model configuration in-process.
+    Only affects the calling thread -- there is no safe way to free another
+    thread's predictor from here.
+    """
+    _cache().clear()
 
 
 class OcrError(Exception):
@@ -50,9 +94,14 @@ def get_engine(
     version = version or settings.ocr_version
     device = device or settings.ocr_device
 
-    key = (lang, version, device)
-    if key in _INSTANCES:
-        return _INSTANCES[key]
+    key: _InstanceKey = (
+        lang, version, device,
+        settings.ocr_det_model or "",
+        settings.ocr_det_limit_side_len,
+    )
+    cache = _cache()
+    if key in cache:
+        return cache[key]
 
     try:
         from paddleocr import PaddleOCR
@@ -95,8 +144,11 @@ def get_engine(
             raise OcrError(f"Could not initialise PaddleOCR: {exc2}") from exc2
 
     elapsed = time.perf_counter() - started
-    logger.info("PaddleOCR ready in %.1fs", elapsed)
-    _INSTANCES[key] = engine
+    logger.info(
+        "PaddleOCR ready in %.1fs (thread %s, %d engine(s) held by this thread)",
+        elapsed, threading.current_thread().name, len(cache) + 1,
+    )
+    cache[key] = engine
     return engine
 
 
@@ -267,3 +319,22 @@ def run_ocr(
     lines.sort(key=lambda ln: (round(ln.bbox.cy / 10), ln.bbox.cx))
 
     return OcrPageResult(lines=lines, elapsed_ms=elapsed_ms, engine_lang=lang)
+
+
+def run_ocr_batch(
+    images: list[np.ndarray],
+    scales: list[float] | None = None,
+    lang: str | None = None,
+) -> list[OcrPageResult]:
+    """Run OCR on a batch of preprocessed RGB images for maximum throughput."""
+    if not images:
+        return []
+    if scales is None:
+        scales = [1.0] * len(images)
+    
+    # Process sequentially or in batch feed depending on PaddleOCR capabilities
+    out_results: list[OcrPageResult] = []
+    for img, scale in zip(images, scales):
+        out_results.append(run_ocr(img, scale=scale, lang=lang))
+    return out_results
+

@@ -1,0 +1,258 @@
+"""OCR blocks and the audit trail.
+
+Between them these answer "where did this value come from, and who has
+touched it since" -- the two questions an electoral roll has to be able to
+answer about any elector.
+"""
+
+from __future__ import annotations
+
+import sys
+import uuid
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import pytest  # noqa: E402
+
+from app.db import (  # noqa: E402
+    AuditLogRow,
+    FileRow,
+    OCRBlockRow,
+    PageRow,
+    RecordRow,
+    VoterRow,
+    _ocr_blocks_for,
+    record_audit,
+    save_page,
+    session_scope,
+)
+from app.schemas.core import BBox, FieldValue, Page, Record, normalize_box  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# The 0-1000 contract
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_box_scales_to_the_grid():
+    assert normalize_box(0, 0, 500, 400, 1000, 800) == [0, 0, 500, 500]
+
+
+def test_normalize_box_is_resolution_independent():
+    """The same region of the same page must normalise identically at any DPI."""
+    at_150 = normalize_box(100, 200, 300, 400, 1187, 1680)
+    at_300 = normalize_box(200, 400, 600, 800, 2374, 3360)
+    assert at_150 == at_300
+
+
+def test_normalize_box_clamps_out_of_bounds():
+    assert normalize_box(-50, -50, 5000, 5000, 1000, 1000) == [0, 0, 1000, 1000]
+
+
+def test_normalize_box_never_returns_a_flat_box():
+    """A region thinner than a thousandth of the page still needs area."""
+    x0, y0, x1, y1 = normalize_box(10, 10, 10, 10, 1000, 1000)
+    assert x0 < x1 and y0 < y1
+
+
+def test_normalize_box_survives_a_zero_sized_page():
+    assert normalize_box(0, 0, 10, 10, 0, 0) == [0, 0, 1000, 1000]
+
+
+def test_bbox_to_layoutlm_matches_normalize_box():
+    box = BBox(x=100, y=200, w=200, h=200)
+    assert box.to_layoutlm(1187, 1680) == normalize_box(100, 200, 300, 400, 1187, 1680)
+
+
+# ---------------------------------------------------------------------------
+# Block generation
+# ---------------------------------------------------------------------------
+
+
+def make_record(**fields: FieldValue) -> Record:
+    return Record(
+        id=uuid.uuid4().hex[:12],
+        page_id="page1",
+        index=0,
+        template_id="electoral_roll_ta",
+        fields=fields,
+    )
+
+
+def make_page(records: list[Record]) -> Page:
+    return Page(
+        id="page1",
+        file_id="file1",
+        page_number=4,
+        width=1187,
+        height=1680,
+        page_type="voter_list_page",
+        records=records,
+    )
+
+
+def test_blocks_are_emitted_per_located_field():
+    record = make_record(
+        epic=FieldValue(key="epic", original_value="ZHT0149526", confidence=0.99,
+                        bbox=BBox(x=306, y=61, w=90, h=16)),
+        name=FieldValue(key="name", original_value="பிரேமா", confidence=0.94,
+                        bbox=BBox(x=36, y=86, w=120, h=16)),
+    )
+    blocks = list(_ocr_blocks_for(record, make_page([record])))
+    assert {b.field_name for b in blocks} == {"epic", "name"}
+    assert all(0 <= b.bbox_x0 < b.bbox_x1 <= 1000 for b in blocks)
+    assert all(0 <= b.bbox_y0 < b.bbox_y1 <= 1000 for b in blocks)
+
+
+def test_a_field_the_template_never_found_gets_no_block():
+    """Otherwise every miss becomes a phantom highlight at the page origin."""
+    record = make_record(
+        epic=FieldValue(key="epic", original_value="ZHT0149526", confidence=0.99,
+                        bbox=BBox(x=306, y=61, w=90, h=16)),
+        age=FieldValue(key="age"),  # never located
+    )
+    blocks = list(_ocr_blocks_for(record, make_page([record])))
+    assert [b.field_name for b in blocks] == ["epic"]
+
+
+def test_a_corrected_value_is_kept_alongside_the_original():
+    field = FieldValue(
+        key="name", original_value="பிரேமோ", edited_value="பிரேமா",
+        confidence=0.94, bbox=BBox(x=36, y=86, w=120, h=16),
+    )
+    record = make_record(name=field)
+    block = next(iter(_ocr_blocks_for(record, make_page([record]))))
+    assert block.raw_text == "பிரேமோ"
+    assert block.corrected_text == "பிரேமா"
+
+
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def stored_file():
+    file_id = "t" + uuid.uuid4().hex[:11]
+    with session_scope() as session:
+        session.add(FileRow(id=file_id, name="test.pdf", page_count=1))
+    yield file_id
+    with session_scope() as session:
+        session.query(OCRBlockRow).filter(
+            OCRBlockRow.page_id.in_(
+                session.query(PageRow.id).filter(PageRow.file_id == file_id)
+            )
+        ).delete(synchronize_session=False)
+        session.query(RecordRow).filter(RecordRow.file_id == file_id).delete(
+            synchronize_session=False
+        )
+        session.query(PageRow).filter(PageRow.file_id == file_id).delete(
+            synchronize_session=False
+        )
+        session.query(FileRow).filter(FileRow.id == file_id).delete(
+            synchronize_session=False
+        )
+
+
+def test_saving_a_page_writes_its_blocks(stored_file):
+    record = make_record(
+        epic=FieldValue(key="epic", original_value="ZHT0149526", confidence=0.99,
+                        bbox=BBox(x=306, y=61, w=90, h=16)),
+        name=FieldValue(key="name", original_value="பிரேமா", confidence=0.94,
+                        bbox=BBox(x=36, y=86, w=120, h=16)),
+    )
+    page = make_page([record])
+    page.id = "pg" + uuid.uuid4().hex[:10]
+    record.page_id = page.id
+
+    with session_scope() as session:
+        save_page(session, page, stored_file)
+
+    with session_scope() as session:
+        blocks = session.query(OCRBlockRow).filter(
+            OCRBlockRow.page_id == page.id
+        ).all()
+        assert len(blocks) == 2
+
+
+def test_reprocessing_a_page_replaces_its_blocks(stored_file):
+    """Regression risk: blocks accumulating on every re-run, like records."""
+    page_id = "pg" + uuid.uuid4().hex[:10]
+
+    for _ in range(3):
+        record = make_record(
+            epic=FieldValue(key="epic", original_value="ZHT0149526",
+                            confidence=0.99, bbox=BBox(x=306, y=61, w=90, h=16)),
+        )
+        record.page_id = page_id
+        page = make_page([record])
+        page.id = page_id
+        with session_scope() as session:
+            save_page(session, page, stored_file)
+
+    with session_scope() as session:
+        blocks = session.query(OCRBlockRow).filter(
+            OCRBlockRow.page_id == page_id
+        ).all()
+        assert len(blocks) == 1, "blocks accumulated across re-processing"
+
+
+# ---------------------------------------------------------------------------
+# Audit trail
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def voter():
+    voter_id = "v" + uuid.uuid4().hex[:11]
+    with session_scope() as session:
+        session.add(
+            VoterRow(
+                id=voter_id,
+                epic=f"ZHT{uuid.uuid4().int % 10_000_000:07d}",
+                name="பிரேமா",
+                age=41,
+            )
+        )
+    yield voter_id
+    with session_scope() as session:
+        session.query(AuditLogRow).filter(
+            AuditLogRow.voter_id == voter_id
+        ).delete(synchronize_session=False)
+        session.query(VoterRow).filter(VoterRow.id == voter_id).delete(
+            synchronize_session=False
+        )
+
+
+def test_record_audit_writes_an_entry(voter):
+    with session_scope() as session:
+        record_audit(
+            session, voter, action="updated", user="reviewer",
+            field_name="age", old_value="41", new_value="45",
+        )
+
+    with session_scope() as session:
+        entry = session.query(AuditLogRow).filter(
+            AuditLogRow.voter_id == voter
+        ).one()
+        assert entry.action == "updated"
+        assert (entry.field_name, entry.old_value, entry.new_value) == ("age", "41", "45")
+        assert entry.user_id == "reviewer"
+        assert entry.timestamp is not None
+
+
+def test_audit_entries_outlive_the_voter_they_describe(voter):
+    """"Who deleted this elector" is the question the trail exists to answer."""
+    with session_scope() as session:
+        record_audit(session, voter, action="deleted", user="reviewer",
+                     old_value="ZHT0149526 பிரேமா")
+        session.query(VoterRow).filter(VoterRow.id == voter).delete(
+            synchronize_session=False
+        )
+
+    with session_scope() as session:
+        assert session.get(VoterRow, voter) is None
+        assert session.query(AuditLogRow).filter(
+            AuditLogRow.voter_id == voter
+        ).count() == 1
