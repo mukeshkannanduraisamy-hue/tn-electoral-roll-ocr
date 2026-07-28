@@ -14,7 +14,9 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Repo root = .../apps/api/app/config.py -> up 4 levels
-REPO_ROOT = Path(__file__).resolve().parents[3]
+_current_path = Path(__file__).resolve()
+# Fall back to parents[1] (/app) if the directory tree is flat inside Docker
+REPO_ROOT = _current_path.parents[3] if len(_current_path.parents) > 3 else _current_path.parents[1]
 
 
 class Settings(BaseSettings):
