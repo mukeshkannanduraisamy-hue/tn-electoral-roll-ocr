@@ -15,4 +15,6 @@ jobs:
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
+          timeout: 30m          # Connection timeout
+          command_timeout: 30m  # Gives the Docker build up to 30 minutes to finish
           script: /home/sridhar/web/tn-electoral-roll-ocr/deploy.sh
