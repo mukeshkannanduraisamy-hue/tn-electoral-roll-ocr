@@ -6,6 +6,7 @@ without touching code -- see `.env.example` for the documented set.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -94,7 +95,9 @@ class Settings(BaseSettings):
     """All three off by default: these pages are axis-aligned digital
     rasterisations, so the extra models cost time and add failure modes."""
 
-    ocr_workers: int = 1
+    ocr_workers: int = Field(
+        default_factory=lambda: max(1, min(os.cpu_count() or 2, 8))
+    )
     """Persistent worker processes, each holding a warm PaddleOCR instance.
 
     Model load is ~8s, so workers must not be recycled per page.

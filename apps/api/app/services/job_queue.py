@@ -29,7 +29,13 @@ import json
 import logging
 import threading
 import uuid
-from concurrent.futures import Executor, Future, ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import (
+    Executor,
+    Future,
+    ProcessPoolExecutor,
+    ThreadPoolExecutor,
+    as_completed,
+)
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -286,7 +292,13 @@ class JobManager:
             completed = failed = 0
             touched_files: set[str] = set()
 
-            for future, file_id, file_name, page_number in futures:
+            future_map = {
+                future: (file_id, file_name, page_number)
+                for future, file_id, file_name, page_number in futures
+            }
+
+            for future in as_completed(future_map):
+                file_id, file_name, page_number = future_map[future]
                 if self.is_cancelled(job_id):
                     future.cancel()
                     continue
