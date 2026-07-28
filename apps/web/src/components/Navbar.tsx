@@ -123,7 +123,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     setSearchOpen(false);
     setActiveTab("voters" as any);
     // store voter id for profile navigation — we broadcast via a custom event
-    window.dispatchEvent(new CustomEvent("vims:open-voter", { detail: { id: voterId } }));
+    window.dispatchEvent(new CustomEvent("vi-mc:open-voter", { detail: { id: voterId } }));
   };
 
   return (
@@ -133,7 +133,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
           <Zap className="w-4 h-4 text-white" fill="white" />
         </div>
-        <span className="text-sm font-bold tracking-tight">VIMS</span>
+        <span className="text-sm font-bold tracking-tight">VI-MC</span>
       </div>
 
       {/* Global Search */}
@@ -162,7 +162,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Search Dropdown */}
         {searchOpen && (
-          <div className="absolute top-full left-0 right-0 mt-1.5 card-vims rounded-xl overflow-hidden z-50 shadow-xl border border-border animate-scale-in">
+          <div className="absolute top-full left-0 right-0 mt-1.5 card-vimc rounded-xl overflow-hidden z-50 shadow-xl border border-border animate-scale-in">
             {searchResults.length === 0 ? (
               <div className="px-4 py-3 text-sm text-muted-foreground text-center">
                 No voters found for "{searchQuery}"
@@ -224,7 +224,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Import button */}
         <button
           onClick={onOpenUpload}
-          className="vims-btn-primary h-8 text-xs"
+          className="vimc-btn-primary h-8 text-xs"
         >
           <Upload className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Import PDF</span>
@@ -264,7 +264,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           {userMenuOpen && (
-            <div className="absolute right-0 top-full mt-2 w-44 card-vims rounded-xl shadow-xl border border-border z-50 py-1 animate-scale-in">
+            <div className="absolute right-0 top-full mt-2 w-44 card-vimc rounded-xl shadow-xl border border-border z-50 py-1 animate-scale-in">
               <div className="px-3 py-2 border-b border-border">
                 <div className="text-xs font-semibold text-foreground">
                   {authUser?.display_name || authUser?.username}

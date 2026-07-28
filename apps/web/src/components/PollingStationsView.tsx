@@ -70,7 +70,7 @@ export const PollingStationsView: React.FC = () => {
               {stations.length} Polling Stations & Map Assets Registered
             </p>
           </div>
-          <button onClick={() => void load()} className="vims-btn-ghost h-8 w-8 p-0 justify-center">
+          <button onClick={() => void load()} className="vimc-btn-ghost h-8 w-8 p-0 justify-center">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           </button>
         </div>
@@ -83,7 +83,7 @@ export const PollingStationsView: React.FC = () => {
             placeholder="Search part number, station name, building…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="vims-input pl-9 h-8 text-xs"
+            className="vimc-input pl-9 h-8 text-xs"
           />
         </div>
       </div>
@@ -103,7 +103,7 @@ export const PollingStationsView: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {stations.map((st) => (
-              <div key={st.id} className="card-vims p-5 space-y-4 hover:border-primary/40 transition-all">
+              <div key={st.id} className="card-vimc p-5 space-y-4 hover:border-primary/40 transition-all">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold text-sm">

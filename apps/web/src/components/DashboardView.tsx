@@ -196,7 +196,7 @@ export function DashboardView() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
           {/* Age Distribution */}
-          <div className="card-vims p-5">
+          <div className="card-vimc p-5">
             <div className="flex items-center justify-between mb-5">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Age Distribution</h3>
@@ -225,7 +225,7 @@ export function DashboardView() {
           </div>
 
           {/* Polling Stations / Parts */}
-          <div className="card-vims p-5">
+          <div className="card-vimc p-5">
             <div className="flex items-center justify-between mb-5">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">By Part Number</h3>
@@ -273,7 +273,7 @@ export function DashboardView() {
 
         {/* Gender Breakdown */}
         {!loading && totalVoters > 0 && (
-          <div className="card-vims p-5">
+          <div className="card-vimc p-5">
             <h3 className="text-sm font-semibold text-foreground mb-4">Gender Breakdown</h3>
             <div className="flex items-center gap-4">
               <div className="flex-1 h-3 rounded-full overflow-hidden flex bg-slate-100 dark:bg-slate-800">
@@ -316,7 +316,7 @@ export function DashboardView() {
         )}
 
         {/* Recent Documents */}
-        <div className="card-vims p-5">
+        <div className="card-vimc p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-foreground">Recent Documents</h3>
             <button

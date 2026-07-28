@@ -68,7 +68,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
 
   return (
     <aside
-      className="vims-sidebar h-full flex flex-col shrink-0 w-56 lg:w-60 z-40 fixed lg:relative inset-y-0"
+      className="vimc-sidebar h-full flex flex-col shrink-0 w-56 lg:w-60 z-40 fixed lg:relative inset-y-0"
       data-drawer={isOpen ? "open" : "closed"}
     >
       {/* Logo / Brand */}
@@ -77,7 +77,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
           <Zap className="w-4 h-4 text-white" fill="white" />
         </div>
         <div>
-          <div className="text-sm font-bold text-white tracking-tight leading-none">VIMS</div>
+          <div className="text-sm font-bold text-white tracking-tight leading-none">VI-MC</div>
           <div className="text-[10px] text-white/40 font-medium tracking-wider uppercase leading-none mt-0.5">
             Voter Intelligence
           </div>
@@ -102,7 +102,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
                   <button
                     key={item.id}
                     onClick={() => handleNav(item.id)}
-                    className={`vims-sidebar-item w-full text-left ${isActive ? "active" : ""}`}
+                    className={`vimc-sidebar-item w-full text-left ${isActive ? "active" : ""}`}
                   >
                     <Icon className="w-4 h-4 shrink-0" />
                     <span className="flex-1 truncate">{item.label}</span>

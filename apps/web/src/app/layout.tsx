@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "OCR Workspace - Tamil Nadu Electoral Roll OCR",
+  title: "VI-MC | Voter Intelligence Management Center",
   description:
-    "PaddleOCR-backed structured form extraction, verification queue, and export engine for Tamil Nadu Electoral Roll PDFs.",
+    "Enterprise AI-powered structured voter extraction, polling station intelligence, and electoral analysis platform.",
 };
 
 export default function RootLayout({

@@ -84,8 +84,8 @@ export const VotersView: React.FC = () => {
       const id = (e as CustomEvent).detail?.id;
       if (id) setOpenVoterId(id);
     };
-    window.addEventListener("vims:open-voter", handler);
-    return () => window.removeEventListener("vims:open-voter", handler);
+    window.addEventListener("vi-mc:open-voter", handler);
+    return () => window.removeEventListener("vi-mc:open-voter", handler);
   }, []);
 
   const loadData = useCallback(async () => {
@@ -231,11 +231,11 @@ export const VotersView: React.FC = () => {
             )}
             {/* Export */}
             <div className="relative group">
-              <button className="vims-btn-ghost h-8 text-xs" disabled={exportLoading}>
+              <button className="vimc-btn-ghost h-8 text-xs" disabled={exportLoading}>
                 {exportLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                 Export
               </button>
-              <div className="absolute right-0 top-full mt-1 w-36 card-vims rounded-xl shadow-xl border border-border z-50 py-1 hidden group-hover:block">
+              <div className="absolute right-0 top-full mt-1 w-36 card-vimc rounded-xl shadow-xl border border-border z-50 py-1 hidden group-hover:block">
                 <button onClick={() => handleExport("xlsx")} className="flex items-center gap-2 px-3 py-2 text-xs w-full hover:bg-muted transition-colors">
                   <FileSpreadsheet className="w-3.5 h-3.5 text-green-500" />XLSX
                 </button>
@@ -246,7 +246,7 @@ export const VotersView: React.FC = () => {
             </div>
             <button
               onClick={() => { setEditingVoter(null); setIsFormOpen(true); }}
-              className="vims-btn-primary h-8 text-xs"
+              className="vimc-btn-primary h-8 text-xs"
             >
               <Plus className="w-3.5 h-3.5" />
               Add Voter
@@ -263,7 +263,7 @@ export const VotersView: React.FC = () => {
               placeholder="Search name, EPIC, house…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="vims-input pl-9 h-8 text-xs"
+              className="vimc-input pl-9 h-8 text-xs"
             />
             {searchInput && (
               <button onClick={() => { setSearchInput(""); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
@@ -273,7 +273,7 @@ export const VotersView: React.FC = () => {
           </div>
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`vims-btn-ghost h-8 text-xs ${showFilters || hasFilters ? "bg-primary/10 text-primary border-primary/30" : ""}`}
+            className={`vimc-btn-ghost h-8 text-xs ${showFilters || hasFilters ? "bg-primary/10 text-primary border-primary/30" : ""}`}
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
             Filters
@@ -284,13 +284,13 @@ export const VotersView: React.FC = () => {
               <X className="w-3 h-3" /> Clear
             </button>
           )}
-          <button onClick={() => void loadData()} className="vims-btn-ghost h-8 w-8 p-0 justify-center" title="Refresh">
+          <button onClick={() => void loadData()} className="vimc-btn-ghost h-8 w-8 p-0 justify-center" title="Refresh">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           </button>
           <select
             value={limit}
             onChange={(e) => { setLimit(Number(e.target.value)); setOffset(0); }}
-            className="vims-input h-8 text-xs w-20 pr-2"
+            className="vimc-input h-8 text-xs w-20 pr-2"
           >
             {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} / pg</option>)}
           </select>
@@ -299,16 +299,16 @@ export const VotersView: React.FC = () => {
         {/* Advanced Filters */}
         {showFilters && (
           <div className="flex flex-wrap items-center gap-2 mt-3 p-3 rounded-xl bg-muted/40 border border-border animate-fade-slide">
-            <select value={gender} onChange={(e) => { setGender(e.target.value); setOffset(0); }} className="vims-input h-8 text-xs w-28">
+            <select value={gender} onChange={(e) => { setGender(e.target.value); setOffset(0); }} className="vimc-input h-8 text-xs w-28">
               <option value="">All Genders</option>
               <option value="Male">Male</option>
               <option value="Female">Female</option>
               <option value="Other">Other</option>
             </select>
-            <input type="text" placeholder="Part No." value={partNumber} onChange={(e) => { setPartNumber(e.target.value); setOffset(0); }} className="vims-input h-8 text-xs w-24" />
-            <input type="number" placeholder="Min Age" value={minAge} onChange={(e) => { setMinAge(e.target.value); setOffset(0); }} className="vims-input h-8 text-xs w-20" />
-            <input type="number" placeholder="Max Age" value={maxAge} onChange={(e) => { setMaxAge(e.target.value); setOffset(0); }} className="vims-input h-8 text-xs w-20" />
-            <select value={verified} onChange={(e) => { setVerified(e.target.value as any); setOffset(0); }} className="vims-input h-8 text-xs w-32">
+            <input type="text" placeholder="Part No." value={partNumber} onChange={(e) => { setPartNumber(e.target.value); setOffset(0); }} className="vimc-input h-8 text-xs w-24" />
+            <input type="number" placeholder="Min Age" value={minAge} onChange={(e) => { setMinAge(e.target.value); setOffset(0); }} className="vimc-input h-8 text-xs w-20" />
+            <input type="number" placeholder="Max Age" value={maxAge} onChange={(e) => { setMaxAge(e.target.value); setOffset(0); }} className="vimc-input h-8 text-xs w-20" />
+            <select value={verified} onChange={(e) => { setVerified(e.target.value as any); setOffset(0); }} className="vimc-input h-8 text-xs w-32">
               <option value="">Any Status</option>
               <option value="true">Verified</option>
               <option value="false">Unverified</option>
@@ -351,7 +351,7 @@ export const VotersView: React.FC = () => {
             )}
           </div>
         ) : (
-          <table className="vims-table">
+          <table className="vimc-table">
             <thead>
               <tr>
                 <th className="w-10 text-center">
@@ -454,7 +454,7 @@ export const VotersView: React.FC = () => {
           <button
             onClick={() => setOffset((o) => Math.max(0, o - limit))}
             disabled={currentPage === 1}
-            className="vims-btn-ghost h-7 w-7 p-0 justify-center disabled:opacity-40"
+            className="vimc-btn-ghost h-7 w-7 p-0 justify-center disabled:opacity-40"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
@@ -464,7 +464,7 @@ export const VotersView: React.FC = () => {
           <button
             onClick={() => setOffset((o) => Math.min((pages - 1) * limit, o + limit))}
             disabled={currentPage === pages}
-            className="vims-btn-ghost h-7 w-7 p-0 justify-center disabled:opacity-40"
+            className="vimc-btn-ghost h-7 w-7 p-0 justify-center disabled:opacity-40"
           >
             <ChevronRight className="w-3.5 h-3.5" />
           </button>

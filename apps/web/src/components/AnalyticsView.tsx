@@ -129,7 +129,7 @@ export function AnalyticsView() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
           {/* Age Distribution */}
-          <div className="lg:col-span-2 card-vims p-6">
+          <div className="lg:col-span-2 card-vimc p-6">
             <div className="flex items-center gap-2 mb-6">
               <BarChart3 className="w-4 h-4 text-muted-foreground" />
               <h2 className="text-sm font-semibold">Age Distribution</h2>
@@ -148,7 +148,7 @@ export function AnalyticsView() {
           </div>
 
           {/* Gender Breakdown */}
-          <div className="card-vims p-6">
+          <div className="card-vimc p-6">
             <div className="flex items-center gap-2 mb-6">
               <PieChart className="w-4 h-4 text-muted-foreground" />
               <h2 className="text-sm font-semibold">Gender</h2>
@@ -211,7 +211,7 @@ export function AnalyticsView() {
 
         {/* Part Distribution */}
         {by_part.length > 0 && (
-          <div className="card-vims p-6">
+          <div className="card-vimc p-6">
             <div className="flex items-center gap-2 mb-6">
               <BarChart3 className="w-4 h-4 text-muted-foreground" />
               <h2 className="text-sm font-semibold">By Part Number</h2>

@@ -587,7 +587,7 @@ function CoverPanel({ station }: { station: any | null }) {
   const d = station.details ?? {};
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-5xl">
-      <section className="card-vims p-4">
+      <section className="card-vimc p-4">
         <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
           <FileText className="w-3.5 h-3.5" /> Constituency
         </h3>
@@ -599,7 +599,7 @@ function CoverPanel({ station }: { station: any | null }) {
         <DetailRow label="Published" value={d.publication_date} />
       </section>
 
-      <section className="card-vims p-4">
+      <section className="card-vimc p-4">
         <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
           <MapPin className="w-3.5 h-3.5" /> Polling station
         </h3>
@@ -609,7 +609,7 @@ function CoverPanel({ station }: { station: any | null }) {
         <DetailRow label="Section" value={station.section_details} />
       </section>
 
-      <section className="card-vims p-4">
+      <section className="card-vimc p-4">
         <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
           Location
         </h3>
@@ -622,7 +622,7 @@ function CoverPanel({ station }: { station: any | null }) {
         <DetailRow label="PIN code" value={station.pincode} />
       </section>
 
-      <section className="card-vims p-4">
+      <section className="card-vimc p-4">
         <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
           Electors as printed
         </h3>
@@ -647,7 +647,7 @@ function SummaryPanel({ station }: { station: any | null }) {
   }
   return (
     <div className="max-w-2xl space-y-4">
-      <section className="card-vims p-4">
+      <section className="card-vimc p-4">
         <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
           How the roll reaches its total
         </h3>
@@ -659,7 +659,7 @@ function SummaryPanel({ station }: { station: any | null }) {
       </section>
 
       <section
-        className={`card-vims p-4 border ${
+        className={`card-vimc p-4 border ${
           r.reconciled ? "border-green-500/30" : "border-red-500/30"
         }`}
       >
@@ -726,7 +726,7 @@ function TextPanel({ page }: { page: Page }) {
     return <p className="text-sm text-muted-foreground">No text on this page.</p>;
   }
   return (
-    <div className="card-vims p-4 max-w-3xl">
+    <div className="card-vimc p-4 max-w-3xl">
       <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
         Recognised text
       </h3>

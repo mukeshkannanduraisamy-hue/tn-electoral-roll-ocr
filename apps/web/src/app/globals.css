@@ -6,14 +6,14 @@
 
 @layer base {
   :root {
-    /* Core colors — VIMS brand */
-    --vims-blue: 221 83% 53%;
-    --vims-indigo: 246 83% 60%;
-    --vims-violet: 263 70% 50%;
-    --vims-teal: 172 76% 40%;
-    --vims-emerald: 158 64% 42%;
-    --vims-amber: 38 92% 50%;
-    --vims-rose: 351 83% 58%;
+    /* Core colors — VIMC brand */
+    --vimc-blue: 221 83% 53%;
+    --vimc-indigo: 246 83% 60%;
+    --vimc-violet: 263 70% 50%;
+    --vimc-teal: 172 76% 40%;
+    --vimc-emerald: 158 64% 42%;
+    --vimc-amber: 38 92% 50%;
+    --vimc-rose: 351 83% 58%;
 
     /* Semantic */
     --background: 218 28% 97%;
@@ -37,7 +37,7 @@
     --ring: 246 83% 60%;
     --radius: 0.75rem;
 
-    /* VIMS Surfaces */
+    /* VIMC Surfaces */
     --surface-0: 0 0% 100%;
     --surface-1: 218 28% 97%;
     --surface-2: 218 22% 94%;
@@ -118,7 +118,7 @@
 ::-webkit-scrollbar-thumb:hover { background: hsl(var(--primary) / 0.5); }
 
 /* ============================================================
-   VIMS Glass Panel
+   VIMC Glass Panel
    ============================================================ */
 .glass {
   background: hsl(var(--card) / 0.8);
@@ -139,25 +139,25 @@
 /* ============================================================
    Premium Cards
    ============================================================ */
-.card-vims {
+.card-vimc {
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: 12px;
   box-shadow: 0 1px 3px hsl(0 0% 0% / 0.04), 0 1px 2px hsl(0 0% 0% / 0.06);
   transition: box-shadow 150ms ease, transform 150ms ease;
 }
-.card-vims:hover {
+.card-vimc:hover {
   box-shadow: 0 4px 16px hsl(0 0% 0% / 0.08), 0 2px 4px hsl(0 0% 0% / 0.04);
 }
-.dark .card-vims {
+.dark .card-vimc {
   box-shadow: 0 1px 3px hsl(0 0% 0% / 0.3);
 }
-.dark .card-vims:hover {
+.dark .card-vimc:hover {
   box-shadow: 0 4px 16px hsl(0 0% 0% / 0.4);
 }
 
 .card-kpi {
-  @apply card-vims;
+  @apply card-vimc;
   position: relative;
   overflow: hidden;
 }
@@ -191,12 +191,12 @@
 /* ============================================================
    Sidebar
    ============================================================ */
-.vims-sidebar {
+.vimc-sidebar {
   background: hsl(var(--sidebar-bg));
   border-right: 1px solid hsl(var(--sidebar-border));
   color: hsl(var(--sidebar-text));
 }
-.vims-sidebar-item {
+.vimc-sidebar-item {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -210,15 +210,15 @@
   text-decoration: none;
   user-select: none;
 }
-.vims-sidebar-item:hover {
+.vimc-sidebar-item:hover {
   background: hsl(var(--sidebar-item));
   color: hsl(215 20% 80%);
 }
-.vims-sidebar-item.active {
+.vimc-sidebar-item.active {
   background: hsl(var(--primary) / 0.15);
   color: hsl(var(--primary));
 }
-.dark .vims-sidebar-item.active {
+.dark .vimc-sidebar-item.active {
   background: hsl(var(--primary) / 0.2);
   color: hsl(246 83% 75%);
 }
@@ -226,12 +226,12 @@
 /* ============================================================
    Data Grid Table
    ============================================================ */
-.vims-table {
+.vimc-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
 }
-.vims-table thead th {
+.vimc-table thead th {
   background: hsl(var(--muted));
   padding: 10px 14px;
   font-size: 11px;
@@ -242,30 +242,30 @@
   border-bottom: 1px solid hsl(var(--border));
   white-space: nowrap;
 }
-.vims-table thead th:first-child { border-radius: 8px 0 0 0; }
-.vims-table thead th:last-child { border-radius: 0 8px 0 0; }
-.vims-table tbody tr {
+.vimc-table thead th:first-child { border-radius: 8px 0 0 0; }
+.vimc-table thead th:last-child { border-radius: 0 8px 0 0; }
+.vimc-table tbody tr {
   transition: background 80ms ease;
   cursor: pointer;
 }
-.vims-table tbody tr:hover {
+.vimc-table tbody tr:hover {
   background: hsl(var(--primary) / 0.04);
 }
-.dark .vims-table tbody tr:hover {
+.dark .vimc-table tbody tr:hover {
   background: hsl(var(--primary) / 0.08);
 }
-.vims-table tbody td {
+.vimc-table tbody td {
   padding: 11px 14px;
   font-size: 13.5px;
   border-bottom: 1px solid hsl(var(--border) / 0.6);
   vertical-align: middle;
 }
-.vims-table tbody tr:last-child td { border-bottom: none; }
+.vimc-table tbody tr:last-child td { border-bottom: none; }
 
 /* ============================================================
    Input & Controls
    ============================================================ */
-.vims-input {
+.vimc-input {
   width: 100%;
   padding: 8px 12px;
   border-radius: 8px;
@@ -276,12 +276,12 @@
   outline: none;
   transition: border-color 150ms, box-shadow 150ms;
 }
-.vims-input:focus {
+.vimc-input:focus {
   border-color: hsl(var(--primary) / 0.5);
   box-shadow: 0 0 0 3px hsl(var(--primary) / 0.12);
 }
 
-.vims-btn {
+.vimc-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -294,20 +294,20 @@
   white-space: nowrap;
   user-select: none;
 }
-.vims-btn-primary {
-  @apply vims-btn;
+.vimc-btn-primary {
+  @apply vimc-btn;
   background: hsl(var(--primary));
   color: white;
   border: 1px solid transparent;
 }
-.vims-btn-primary:hover { filter: brightness(1.1); box-shadow: 0 4px 12px hsl(var(--primary) / 0.35); }
-.vims-btn-ghost {
-  @apply vims-btn;
+.vimc-btn-primary:hover { filter: brightness(1.1); box-shadow: 0 4px 12px hsl(var(--primary) / 0.35); }
+.vimc-btn-ghost {
+  @apply vimc-btn;
   background: transparent;
   color: hsl(var(--muted-foreground));
   border: 1px solid hsl(var(--border));
 }
-.vims-btn-ghost:hover {
+.vimc-btn-ghost:hover {
   background: hsl(var(--muted));
   color: hsl(var(--foreground));
 }
@@ -439,14 +439,14 @@
 /* ============================================================
    Tab Navigation
    ============================================================ */
-.vims-tabs {
+.vimc-tabs {
   display: flex;
   gap: 2px;
   padding: 4px;
   background: hsl(var(--muted));
   border-radius: 10px;
 }
-.vims-tab {
+.vimc-tab {
   padding: 6px 14px;
   border-radius: 7px;
   font-size: 13px;
@@ -456,8 +456,8 @@
   transition: all 120ms ease;
   white-space: nowrap;
 }
-.vims-tab:hover { color: hsl(var(--foreground)); }
-.vims-tab.active {
+.vimc-tab:hover { color: hsl(var(--foreground)); }
+.vimc-tab.active {
   background: hsl(var(--card));
   color: hsl(var(--foreground));
   box-shadow: 0 1px 3px hsl(0 0% 0% / 0.1);

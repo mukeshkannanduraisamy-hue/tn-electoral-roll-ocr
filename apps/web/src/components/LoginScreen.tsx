@@ -54,10 +54,10 @@ export const LoginScreen: React.FC = () => {
             <ScanText className="h-7 w-7 text-white" />
           </div>
           <h1 className="mt-4 text-2xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
-            OCR Intelligence System
+            VI-MC Platform
           </h1>
           <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1">
-            Tamil Nadu Electoral Roll Processing Engine
+            Voter Intelligence Management Center
           </p>
         </div>
 

@@ -352,7 +352,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
         <div className="text-center">
           <User className="w-12 h-12 mx-auto mb-3 text-muted-foreground/30" />
           <p className="text-sm font-medium text-muted-foreground">Voter not found</p>
-          <button onClick={onBack} className="mt-4 vims-btn-primary">Go back</button>
+          <button onClick={onBack} className="mt-4 vimc-btn-primary">Go back</button>
         </div>
       </div>
     );
@@ -450,16 +450,16 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
             <div className="flex items-center gap-2 shrink-0">
               {editing ? (
                 <>
-                  <button onClick={() => setEditing(false)} className="vims-btn-ghost h-8 text-xs">
+                  <button onClick={() => setEditing(false)} className="vimc-btn-ghost h-8 text-xs">
                     <X className="w-3.5 h-3.5" /> Cancel
                   </button>
-                  <button onClick={handleSave} disabled={saving} className="vims-btn-primary h-8 text-xs">
+                  <button onClick={handleSave} disabled={saving} className="vimc-btn-primary h-8 text-xs">
                     {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                     Save Changes
                   </button>
                 </>
               ) : (
-                <button onClick={() => setEditing(true)} className="vims-btn-ghost h-8 text-xs">
+                <button onClick={() => setEditing(true)} className="vimc-btn-ghost h-8 text-xs">
                   <Edit3 className="w-3.5 h-3.5" /> Edit Profile
                 </button>
               )}
@@ -491,7 +491,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
           {activeTab === "overview" && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 space-y-5">
-                <div className="card-vims p-5">
+                <div className="card-vimc p-5">
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-4">Identity Overview</h3>
                   <Field icon={CreditCard} label="EPIC ID"       value={voter.epic}          mono onCopy={voter.epic} />
                   <Field icon={Hash}       label="Serial Number" value={voter.serial?.toString()} />
@@ -499,7 +499,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
                   <Field icon={Calendar}   label="Age"           value={voter.age ? `${voter.age} years` : null} />
                   <Field icon={Users}      label="Gender"        value={voter.gender} />
                 </div>
-                <div className="card-vims p-5">
+                <div className="card-vimc p-5">
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-4">Address & Constituency</h3>
                   <Field icon={Home}   label="House Number" value={voter.house_number} onCopy={voter.house_number} />
                   <Field icon={Users}  label="Relation"     value={`${voter.relation_type || "Relative"}: ${voter.relation_name || "—"}`} />
@@ -509,7 +509,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
               </div>
 
               <div className="space-y-5">
-                <div className="card-vims p-5">
+                <div className="card-vimc p-5">
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-4">Record Status</h3>
                   <div className="space-y-3 text-xs">
                     <div className="flex items-center justify-between">
@@ -529,10 +529,10 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
                   </div>
                 </div>
 
-                <div className="card-vims p-5">
+                <div className="card-vimc p-5">
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Quick Actions</h3>
                   <div className="space-y-2">
-                    <button onClick={() => copyToClipboard(voter.epic, "EPIC")} className="w-full vims-btn-ghost text-xs justify-start">
+                    <button onClick={() => copyToClipboard(voter.epic, "EPIC")} className="w-full vimc-btn-ghost text-xs justify-start">
                       <Copy className="w-3.5 h-3.5" /> Copy EPIC Number
                     </button>
                     {!voter.verified && (
@@ -542,7 +542,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
                           setVoter(updated);
                           toast.success("Verified!");
                         }}
-                        className="w-full vims-btn-primary text-xs"
+                        className="w-full vimc-btn-primary text-xs"
                       >
                         <BadgeCheck className="w-3.5 h-3.5" /> Mark as Verified
                       </button>
@@ -555,11 +555,11 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
 
           {/* TAB 2: PERSONAL DETAILS */}
           {activeTab === "personal" && (
-            <div className="max-w-3xl card-vims p-6">
+            <div className="max-w-3xl card-vimc p-6">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-sm font-bold">Personal Details & Validation</h3>
                 {!editing && (
-                  <button onClick={() => setEditing(true)} className="vims-btn-ghost h-7 text-xs">
+                  <button onClick={() => setEditing(true)} className="vimc-btn-ghost h-7 text-xs">
                     <Edit3 className="w-3 h-3" /> Edit
                   </button>
                 )}
@@ -584,7 +584,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
                         <select
                           value={String((editForm as any)[key] ?? "")}
                           onChange={(e) => setEditForm((f) => ({ ...f, [key]: e.target.value }))}
-                          className="vims-input"
+                          className="vimc-input"
                         >
                           <option value="">Select…</option>
                           {options?.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -597,7 +597,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
                             ...f,
                             [key]: type === "number" ? (e.target.value ? Number(e.target.value) : null) : e.target.value,
                           }))}
-                          className="vims-input"
+                          className="vimc-input"
                         />
                       )
                     ) : (
@@ -610,8 +610,8 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
               </div>
               {editing && (
                 <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-border">
-                  <button onClick={() => setEditing(false)} className="vims-btn-ghost">Cancel</button>
-                  <button onClick={handleSave} disabled={saving} className="vims-btn-primary">
+                  <button onClick={() => setEditing(false)} className="vimc-btn-ghost">Cancel</button>
+                  <button onClick={handleSave} disabled={saving} className="vimc-btn-primary">
                     {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save Changes
                   </button>
                 </div>
@@ -621,7 +621,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
 
           {/* TAB 3: POLLING INFORMATION */}
           {activeTab === "polling" && (
-            <div className="max-w-3xl card-vims p-6 space-y-4">
+            <div className="max-w-3xl card-vimc p-6 space-y-4">
               <h3 className="text-sm font-bold mb-4">Polling Information</h3>
               <Field icon={Hash}    label="Part Number"   value={voter.part_number} />
               <Field icon={MapPin}  label="Constituency"  value={voter.constituency} />
@@ -633,7 +633,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
           {/* TAB 4: FAMILY & RELATED VOTERS */}
           {activeTab === "family" && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="card-vims p-5">
+              <div className="card-vimc p-5">
                 <h3 className="text-sm font-bold mb-1">Same House Voters</h3>
                 <p className="text-xs text-muted-foreground mb-4">House No. {voter.house_number || "—"}</p>
                 {loadingFamily ? (
@@ -649,7 +649,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
                 )}
               </div>
 
-              <div className="card-vims p-5">
+              <div className="card-vimc p-5">
                 <h3 className="text-sm font-bold mb-1">Same Relative Voters</h3>
                 <p className="text-xs text-muted-foreground mb-4">Relative: {voter.relation_name || "—"}</p>
                 {loadingFamily ? (
@@ -669,7 +669,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
 
           {/* TAB 5: SOURCE DOCUMENT (Interactive Bounding Boxes) */}
           {activeTab === "source_document" && (
-            <div className="card-vims p-6">
+            <div className="card-vimc p-6">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-sm font-bold">Source Document & Interactive Bounding Boxes</h3>
@@ -716,7 +716,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
           {/* TAB 6: OCR DETAILS */}
           {activeTab === "ocr_details" && (
             <div className="space-y-4">
-              <div className="max-w-3xl card-vims p-6 space-y-4">
+              <div className="max-w-3xl card-vimc p-6 space-y-4">
                 <h3 className="text-sm font-bold mb-4">PaddleOCR Provenance & Confidence</h3>
                 <Field icon={Hash}    label="Source Record ID" value={voter.source_record_id} mono />
                 <Field icon={Hash}    label="Source Page ID"   value={voter.source_page_id}   mono />
@@ -725,17 +725,17 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
               </div>
 
               {loadingProvenance ? (
-                <div className="card-vims p-6 flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="card-vimc p-6 flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="w-4 h-4 animate-spin" /> Loading OCR blocks…
                 </div>
               ) : !ocr || ocr.blocks.length === 0 ? (
-                <div className="card-vims p-6 text-sm text-muted-foreground">
+                <div className="card-vimc p-6 text-sm text-muted-foreground">
                   No OCR blocks recorded for this voter. Blocks are written when a
                   page is extracted, so a record promoted before that will not
                   have them until its page is re-processed.
                 </div>
               ) : (
-                <div className="card-vims p-6">
+                <div className="card-vimc p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-bold">Field-level extraction</h3>
                     <span className="text-[11px] text-muted-foreground">
@@ -788,7 +788,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
           {/* TAB 7: PHOTOS */}
           {activeTab === "photos" && (
             <div className="space-y-4">
-              <div className="card-vims p-6">
+              <div className="card-vimc p-6">
                 <h3 className="text-sm font-bold mb-4">Voter Photograph</h3>
                 <div className="flex items-center gap-6">
                   {voterPhoto ? (
@@ -820,7 +820,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
                 </div>
               </div>
 
-              <div className="card-vims p-6">
+              <div className="card-vimc p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-bold">Polling Station Imagery</h3>
                   {stationPhotos.length > 0 && (
@@ -863,7 +863,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
 
           {/* TAB 8: HISTORY / AUDIT LOG */}
           {activeTab === "audit_log" && (
-            <div className="max-w-3xl card-vims p-6">
+            <div className="max-w-3xl card-vimc p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-bold">Audit Log & Edit Trail</h3>
                 {history && (
@@ -933,16 +933,16 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
           {activeTab === "analytics" && (
             <div className="max-w-3xl space-y-4">
               {loadingProvenance ? (
-                <div className="card-vims p-6 flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="card-vimc p-6 flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="w-4 h-4 animate-spin" /> Calculating…
                 </div>
               ) : !ocr || ocr.blocks.length === 0 ? (
-                <div className="card-vims p-6 text-sm text-muted-foreground">
+                <div className="card-vimc p-6 text-sm text-muted-foreground">
                   No extraction data for this voter, so there is nothing to score.
                 </div>
               ) : (
                 <>
-                  <div className="card-vims p-6">
+                  <div className="card-vimc p-6">
                     <h3 className="text-sm font-bold mb-4">Extraction Confidence</h3>
                     <div className="flex items-center gap-4">
                       <div className={`w-16 h-16 rounded-full border flex items-center justify-center font-bold text-lg shrink-0 ${confidenceTone(ocr.mean_confidence)}`}>
@@ -962,7 +962,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
                     </div>
                   </div>
 
-                  <div className="card-vims p-6">
+                  <div className="card-vimc p-6">
                     <h3 className="text-sm font-bold mb-4">Per-field confidence</h3>
                     <div className="space-y-2">
                       {[...ocr.blocks]
@@ -992,7 +992,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
                     </div>
                   </div>
 
-                  <div className="card-vims p-6">
+                  <div className="card-vimc p-6">
                     <h3 className="text-sm font-bold mb-4">Review activity</h3>
                     <div className="grid grid-cols-3 gap-4 text-center">
                       <Stat
