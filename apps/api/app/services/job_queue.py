@@ -130,38 +130,19 @@ class JobManager:
     # ------------------------------------------------------------- lifecycle
 
     def executor(self) -> Executor:
-        """The pool jobs run on.
+        """The execution pool jobs run on.
 
-        Two modes, chosen by `OCR_OCR_WORKERS`:
-
-        * ``>= 1`` -- a process pool. Real parallelism across pages, but each
-          worker loads its own ~0.9 GB copy of the models on top of the API
-          process's own set.
-        * ``0``    -- a single background thread inside the API process. It
-          reuses the model set already loaded there, roughly halving total
-          memory, and is what makes the app fit on a small cloud instance.
-          PaddleOCR spends most of its time in native code that releases the
-          GIL, so a lone thread is not much slower than a lone process.
+        Uses ThreadPoolExecutor to start page tasks immediately with zero
+        process-spawn deadlocks on Windows or memory bloat. Native C++ in
+        PaddleOCR releases the GIL during inference for real multi-threaded speed.
         """
         with self._lock:
             if self._executor is None:
-                if settings.ocr_workers >= 1:
-                    logger.info(
-                        "Starting OCR process pool with %d worker(s)",
-                        settings.ocr_workers,
-                    )
-                    self._executor = ProcessPoolExecutor(
-                        max_workers=settings.ocr_workers,
-                        initializer=_init_worker,
-                    )
-                else:
-                    logger.info(
-                        "OCR_WORKERS=0 -- running jobs in-process on one thread "
-                        "(lower memory, no page parallelism)"
-                    )
-                    self._executor = ThreadPoolExecutor(
-                        max_workers=1, thread_name_prefix="ocr"
-                    )
+                workers = max(1, min(settings.ocr_workers, 4)) if settings.ocr_workers >= 1 else 1
+                logger.info("Starting OCR ThreadPoolExecutor with %d worker(s)", workers)
+                self._executor = ThreadPoolExecutor(
+                    max_workers=workers, thread_name_prefix="ocr-worker"
+                )
             return self._executor
 
     def shutdown(self) -> None:
