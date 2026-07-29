@@ -8,7 +8,7 @@ import {
   TemplateInfo,
 } from "@ocr/shared-types";
 
-const API_BASE = "";
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
 
 export interface RecordPageResponse {
   items: Record_[];
@@ -57,8 +57,9 @@ export interface BulkUpdatePayload {
 }
 
 async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(path, {
-    credentials: "same-origin",
+  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+  return fetch(url, {
+    credentials: API_BASE ? "include" : "same-origin",
     ...init,
     headers: {
       ...(init.body && !(init.body instanceof FormData)

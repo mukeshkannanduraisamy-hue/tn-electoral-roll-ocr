@@ -61,10 +61,13 @@ function describe(status: number, body: unknown): string {
   return `Request failed (${status})`;
 }
 
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, {
+  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+  const res = await fetch(url, {
     // The session lives in an HttpOnly cookie, so it must be sent explicitly.
-    credentials: "same-origin",
+    credentials: API_BASE ? "include" : "same-origin",
     headers:
       init.body && !(init.body instanceof FormData)
         ? { "Content-Type": "application/json", ...(init.headers ?? {}) }
