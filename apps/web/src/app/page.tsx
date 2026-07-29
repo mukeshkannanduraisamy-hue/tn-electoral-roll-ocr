@@ -32,7 +32,7 @@ export default function Home() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const { user, authEnabled, checked, check, handleUnauthorized } = useAuthStore();
-  const signedIn = !authEnabled || user !== null;
+  const signedIn = checked && (!authEnabled || user !== null);
 
   useEffect(() => {
     setUnauthorizedHandler(handleUnauthorized);
