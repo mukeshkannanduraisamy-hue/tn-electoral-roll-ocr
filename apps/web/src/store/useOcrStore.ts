@@ -175,27 +175,45 @@ function attachJobSSE(
     } catch {}
   };
 
-  const handleJobDone = () => {
+  let isDone = false;
+
+  const handleJobDone = (e?: any) => {
+    if (isDone) return;
+    isDone = true;
     evtSource.close();
-    set({ activeJobId: null, activeJobStatus: "completed", activeJobProgress: 100, pagesPerSec: 0, etaSeconds: 0 });
+
+    let isFailed = false;
+    try {
+      if (e?.data) {
+        const data = JSON.parse(e.data);
+        if (data?.status === "failed") isFailed = true;
+      }
+    } catch {}
+
+    set({ activeJobId: null, activeJobStatus: isFailed ? "failed" : "completed", activeJobProgress: 100, pagesPerSec: 0, etaSeconds: 0 });
     get().loadFiles();
     get().refreshStats(get().activeFileId || undefined);
-    toast.success("Bulk OCR processing completed!");
+
+    if (isFailed) {
+      toast.error("OCR job processing failed");
+    } else {
+      toast.success("Bulk OCR processing completed!");
+    }
     setTimeout(() => set({ fileJobProgress: {} }), 3000);
   };
 
   const handleError = () => {
+    if (isDone) return;
+    isDone = true;
     evtSource.close();
     set({ activeJobId: null, activeJobStatus: null, pagesPerSec: 0, etaSeconds: 0 });
     get().loadFiles();
-    toast.error("OCR job processing encountered an error");
   };
 
   evtSource.addEventListener("progress", handleProgress);
   evtSource.addEventListener("file_done", handleFileDone);
   evtSource.addEventListener("job_done", handleJobDone);
   evtSource.addEventListener("error", handleError);
-  evtSource.onerror = handleError;
 
   return evtSource;
 }
