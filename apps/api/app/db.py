@@ -440,7 +440,7 @@ engine = create_engine(
     future=True,
     # SQLite + FastAPI: requests are served from a threadpool, so the
     # connection must not be pinned to its creating thread.
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 60},
 )
 
 
@@ -449,6 +449,7 @@ def _configure_sqlite(dbapi_connection, _record):
     """WAL keeps readers unblocked while a worker writes results."""
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=60000")
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
