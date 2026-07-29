@@ -198,7 +198,7 @@ export const PageView: React.FC = () => {
               {/* SVG Overlay */}
               <svg
                 className="absolute inset-0 w-full h-full pointer-events-auto"
-                viewBox={`0 0 ${page.width} ${page.height}`}
+                viewBox={`0 0 ${Number.isFinite(Number(page.width)) && Number(page.width) > 0 ? Number(page.width) : 1000} ${Number.isFinite(Number(page.height)) && Number(page.height) > 0 ? Number(page.height) : 1000}`}
               >
                 {/* Cell Rectangles */}
                 {showCells &&
@@ -207,13 +207,18 @@ export const PageView: React.FC = () => {
                     const isSelected = record?.id === selectedRecordId;
                     const isHovered = record?.id === hoveredRecordId;
 
+                    const cx = Number.isFinite(Number(cell?.x)) ? Number(cell.x) : 0;
+                    const cy = Number.isFinite(Number(cell?.y)) ? Number(cell.y) : 0;
+                    const cw = Number.isFinite(Number(cell?.w)) && Number(cell.w) >= 0 ? Number(cell.w) : 0;
+                    const ch = Number.isFinite(Number(cell?.h)) && Number(cell.h) >= 0 ? Number(cell.h) : 0;
+
                     return (
                       <g key={idx}>
                         <rect
-                          x={cell.x}
-                          y={cell.y}
-                          width={cell.w}
-                          height={cell.h}
+                          x={cx}
+                          y={cy}
+                          width={cw}
+                          height={ch}
                           fill={
                             isSelected
                               ? "rgba(99, 102, 241, 0.3)"
@@ -236,8 +241,8 @@ export const PageView: React.FC = () => {
                           }}
                         />
                         <text
-                          x={cell.x + 8}
-                          y={cell.y + 20}
+                          x={cx + 8}
+                          y={cy + 20}
                           fill={isSelected ? "#4f46e5" : isHovered ? "#6366f1" : "#f59e0b"}
                           fontSize="16"
                           fontWeight="bold"
@@ -251,19 +256,26 @@ export const PageView: React.FC = () => {
 
                 {/* OCR Lines Bounding Boxes */}
                 {showLines &&
-                  page.lines.map((ln: OcrLine) => (
-                    <rect
-                      key={ln.id}
-                      x={ln.bbox.x}
-                      y={ln.bbox.y}
-                      width={ln.bbox.w}
-                      height={ln.bbox.h}
-                      fill="none"
-                      stroke={ln.confidence >= 0.7 ? "#10b981" : "#f43f5e"}
-                      strokeWidth={1}
-                      className="pointer-events-none"
-                    />
-                  ))}
+                  page.lines.map((ln: OcrLine) => {
+                    const lx = Number.isFinite(Number(ln?.bbox?.x)) ? Number(ln.bbox.x) : 0;
+                    const ly = Number.isFinite(Number(ln?.bbox?.y)) ? Number(ln.bbox.y) : 0;
+                    const lw = Number.isFinite(Number(ln?.bbox?.w)) && Number(ln.bbox.w) >= 0 ? Number(ln.bbox.w) : 0;
+                    const lh = Number.isFinite(Number(ln?.bbox?.h)) && Number(ln.bbox.h) >= 0 ? Number(ln.bbox.h) : 0;
+
+                    return (
+                      <rect
+                        key={ln.id}
+                        x={lx}
+                        y={ly}
+                        width={lw}
+                        height={lh}
+                        fill="none"
+                        stroke={ln.confidence >= 0.7 ? "#10b981" : "#f43f5e"}
+                        strokeWidth={1}
+                        className="pointer-events-none"
+                      />
+                    );
+                  })}
               </svg>
             </div>
           ) : (

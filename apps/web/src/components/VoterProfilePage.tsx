@@ -686,15 +686,36 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
                   {/* Interactive SVG Bounding Box Overlays */}
                   <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 1000 1000" preserveAspectRatio="none">
                     {pageData.records?.map((rec: any, i: number) => {
-                      const bbox = rec.bbox || { x0: 50, y0: 100 + i * 80, x1: 950, y1: 170 + i * 80 };
+                      let x = 50, y = 100 + i * 80, w = 900, h = 70;
+                      if (Array.isArray(rec.bbox) && rec.bbox.length >= 4) {
+                        const [x0, y0, x1, y1] = rec.bbox.map((v: any) => Number(v));
+                        if (Number.isFinite(x0)) x = x0;
+                        if (Number.isFinite(y0)) y = y0;
+                        if (Number.isFinite(x1 - x0) && x1 >= x0) w = x1 - x0;
+                        if (Number.isFinite(y1 - y0) && y1 >= y0) h = y1 - y0;
+                      } else if (rec.bbox && typeof rec.bbox === "object") {
+                        if ("x" in rec.bbox && "w" in rec.bbox) {
+                          const rx = Number(rec.bbox.x), ry = Number(rec.bbox.y), rw = Number(rec.bbox.w), rh = Number(rec.bbox.h);
+                          if (Number.isFinite(rx)) x = rx;
+                          if (Number.isFinite(ry)) y = ry;
+                          if (Number.isFinite(rw) && rw >= 0) w = rw;
+                          if (Number.isFinite(rh) && rh >= 0) h = rh;
+                        } else if ("x0" in rec.bbox && "x1" in rec.bbox) {
+                          const x0 = Number(rec.bbox.x0), y0 = Number(rec.bbox.y0), x1 = Number(rec.bbox.x1), y1 = Number(rec.bbox.y1);
+                          if (Number.isFinite(x0)) x = x0;
+                          if (Number.isFinite(y0)) y = y0;
+                          if (Number.isFinite(x1 - x0) && x1 >= x0) w = x1 - x0;
+                          if (Number.isFinite(y1 - y0) && y1 >= y0) h = y1 - y0;
+                        }
+                      }
                       const isHighlighted = activeBBox === rec.id;
                       return (
                         <rect
                           key={rec.id || i}
-                          x={bbox.x0}
-                          y={bbox.y0}
-                          width={bbox.x1 - bbox.x0}
-                          height={bbox.y1 - bbox.y0}
+                          x={x}
+                          y={y}
+                          width={w}
+                          height={h}
                           fill={isHighlighted ? "rgba(99, 102, 241, 0.25)" : "rgba(99, 102, 241, 0.08)"}
                           stroke={isHighlighted ? "#6366f1" : "rgba(99, 102, 241, 0.4)"}
                           strokeWidth={isHighlighted ? "3" : "1.5"}
