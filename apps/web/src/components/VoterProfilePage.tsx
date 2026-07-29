@@ -268,7 +268,24 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
     if (!voter?.source_page_id || activeTab !== "source_document") return;
     setLoadingPage(true);
     fetchPage(voter.source_page_id)
-      .then(setPageData)
+      .then((data) => {
+        setPageData(data);
+        if (data?.records?.length && voter) {
+          const voterSerial = (voter as any).serial || (voter as any).serial_no;
+          const rawId = (voter as any).raw_record_id;
+          const match = data.records.find((r: any) =>
+            (voter.epic && r.epic === voter.epic) ||
+            (voterSerial && String(r.serial) === String(voterSerial)) ||
+            (rawId && r.id === rawId) ||
+            (voter.id && r.id === voter.id)
+          );
+          if (match) {
+            setActiveBBox(match.id);
+          } else if (data.records[0]) {
+            setActiveBBox(data.records[0].id);
+          }
+        }
+      })
       .catch(() => setPageData(null))
       .finally(() => setLoadingPage(false));
   }, [voter, activeTab]);
@@ -681,58 +698,140 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
                 </div>
               ) : (pageData?.id || voter?.source_page_id) ? (
-                <div className="relative border border-border rounded-xl overflow-hidden max-w-4xl mx-auto bg-slate-900">
-                  <img
-                    src={`/api/pages/${pageData?.id || voter.source_page_id}/image`}
-                    alt="Source page"
-                    className="w-full h-auto block"
-                  />
-                  {/* Interactive SVG Bounding Box Overlays */}
-                  <svg
-                    className="absolute inset-0 w-full h-full pointer-events-none"
-                    viewBox={`0 0 ${Number.isFinite(Number(pageData?.width)) && Number(pageData.width) > 0 ? Number(pageData.width) : 1000} ${Number.isFinite(Number(pageData?.height)) && Number(pageData.height) > 0 ? Number(pageData.height) : 1000}`}
-                    preserveAspectRatio="none"
-                  >
-                    {pageData?.records?.map((rec: any, i: number) => {
-                      let x = 50, y = 100 + i * 80, w = 900, h = 70;
-                      if (Array.isArray(rec.bbox) && rec.bbox.length >= 4) {
-                        const [x0, y0, x1, y1] = rec.bbox.map((v: any) => Number(v));
-                        if (Number.isFinite(x0)) x = x0;
-                        if (Number.isFinite(y0)) y = y0;
-                        if (Number.isFinite(x1 - x0) && x1 >= x0) w = x1 - x0;
-                        if (Number.isFinite(y1 - y0) && y1 >= y0) h = y1 - y0;
-                      } else if (rec.bbox && typeof rec.bbox === "object") {
-                        if ("x" in rec.bbox && "w" in rec.bbox) {
-                          const rx = Number(rec.bbox.x), ry = Number(rec.bbox.y), rw = Number(rec.bbox.w), rh = Number(rec.bbox.h);
-                          if (Number.isFinite(rx)) x = rx;
-                          if (Number.isFinite(ry)) y = ry;
-                          if (Number.isFinite(rw) && rw >= 0) w = rw;
-                          if (Number.isFinite(rh) && rh >= 0) h = rh;
-                        } else if ("x0" in rec.bbox && "x1" in rec.bbox) {
-                          const x0 = Number(rec.bbox.x0), y0 = Number(rec.bbox.y0), x1 = Number(rec.bbox.x1), y1 = Number(rec.bbox.y1);
+                <div className="space-y-4">
+                  <div className="relative border border-border rounded-xl overflow-hidden max-w-4xl mx-auto bg-slate-900 shadow-2xl">
+                    <img
+                      src={`/api/pages/${pageData?.id || voter.source_page_id}/image`}
+                      alt="Source page"
+                      className="w-full h-auto block"
+                    />
+                    {/* Interactive SVG Bounding Box Overlays */}
+                    <svg
+                      className="absolute inset-0 w-full h-full pointer-events-none"
+                      viewBox={`0 0 ${Number.isFinite(Number(pageData?.width)) && Number(pageData.width) > 0 ? Number(pageData.width) : 1000} ${Number.isFinite(Number(pageData?.height)) && Number(pageData.height) > 0 ? Number(pageData.height) : 1400}`}
+                      preserveAspectRatio="none"
+                    >
+                      {pageData?.records?.map((rec: any, i: number) => {
+                        // Standard 3-column x 10-row electoral roll layout grid fallback
+                        const col = i % 3;
+                        const row = Math.floor(i / 3);
+                        let x = 35 + col * 310;
+                        let y = 135 + row * 125;
+                        let w = 295;
+                        let h = 115;
+
+                        if (Array.isArray(rec.bbox) && rec.bbox.length >= 4) {
+                          const [x0, y0, x1, y1] = rec.bbox.map((v: any) => Number(v));
                           if (Number.isFinite(x0)) x = x0;
                           if (Number.isFinite(y0)) y = y0;
                           if (Number.isFinite(x1 - x0) && x1 >= x0) w = x1 - x0;
                           if (Number.isFinite(y1 - y0) && y1 >= y0) h = y1 - y0;
+                        } else if (rec.bbox && typeof rec.bbox === "object") {
+                          if ("x" in rec.bbox && "w" in rec.bbox) {
+                            const rx = Number(rec.bbox.x), ry = Number(rec.bbox.y), rw = Number(rec.bbox.w), rh = Number(rec.bbox.h);
+                            if (Number.isFinite(rx)) x = rx;
+                            if (Number.isFinite(ry)) y = ry;
+                            if (Number.isFinite(rw) && rw >= 0) w = rw;
+                            if (Number.isFinite(rh) && rh >= 0) h = rh;
+                          } else if ("x0" in rec.bbox && "x1" in rec.bbox) {
+                            const x0 = Number(rec.bbox.x0), y0 = Number(rec.bbox.y0), x1 = Number(rec.bbox.x1), y1 = Number(rec.bbox.y1);
+                            if (Number.isFinite(x0)) x = x0;
+                            if (Number.isFinite(y0)) y = y0;
+                            if (Number.isFinite(x1 - x0) && x1 >= x0) w = x1 - x0;
+                            if (Number.isFinite(y1 - y0) && y1 >= y0) h = y1 - y0;
+                          }
                         }
-                      }
-                      const isHighlighted = activeBBox === rec.id;
-                      return (
-                        <rect
-                          key={rec.id || i}
-                          x={x}
-                          y={y}
-                          width={w}
-                          height={h}
-                          fill={isHighlighted ? "rgba(99, 102, 241, 0.25)" : "rgba(99, 102, 241, 0.08)"}
-                          stroke={isHighlighted ? "#6366f1" : "rgba(99, 102, 241, 0.4)"}
-                          strokeWidth={isHighlighted ? "3" : "1.5"}
-                          className="pointer-events-auto cursor-pointer transition-all hover:fill-indigo-500/30"
-                          onClick={() => setActiveBBox(rec.id)}
-                        />
-                      );
-                    })}
-                  </svg>
+
+                        const voterSerial = (voter as any).serial || (voter as any).serial_no;
+                        const rawId = (voter as any).raw_record_id;
+                        const isExactMatch =
+                          (voter.epic && rec.epic === voter.epic) ||
+                          (voterSerial && String(rec.serial) === String(voterSerial)) ||
+                          (rawId && rec.id === rawId) ||
+                          (voter.id && rec.id === voter.id);
+
+                        const isSelected = activeBBox === rec.id;
+
+                        return (
+                          <g key={rec.id || i}>
+                            <rect
+                              x={x}
+                              y={y}
+                              width={w}
+                              height={h}
+                              fill={
+                                isExactMatch
+                                  ? "rgba(34, 197, 94, 0.25)"
+                                  : isSelected
+                                  ? "rgba(99, 102, 241, 0.3)"
+                                  : "rgba(99, 102, 241, 0.06)"
+                              }
+                              stroke={isExactMatch ? "#22c55e" : isSelected ? "#6366f1" : "rgba(99, 102, 241, 0.4)"}
+                              strokeWidth={isExactMatch ? "3.5" : isSelected ? "3" : "1.5"}
+                              className="pointer-events-auto cursor-pointer transition-all hover:fill-indigo-500/30"
+                              onClick={() => setActiveBBox(rec.id)}
+                            />
+                            {isExactMatch && (
+                              <text
+                                x={x + 6}
+                                y={y + 18}
+                                fill="#22c55e"
+                                fontSize="12"
+                                fontWeight="bold"
+                                className="pointer-events-none select-none drop-shadow"
+                              >
+                                ★ EXACT MATCH #{rec.serial || i + 1}
+                              </text>
+                            )}
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+
+                  {/* Inspected Record Drawer */}
+                  {pageData?.records && (
+                    <div className="max-w-4xl mx-auto border border-border/80 rounded-xl p-4 bg-slate-900/60 backdrop-blur space-y-3">
+                      <div className="flex items-center justify-between border-b border-border/50 pb-2">
+                        <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                          <Eye className="w-3.5 h-3.5" /> Inspected Card Details
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {pageData.records.length} total voter card(s) on this page
+                        </span>
+                      </div>
+                      {(() => {
+                        const currentRec = pageData.records.find((r: any) => r.id === activeBBox) || pageData.records[0];
+                        if (!currentRec) return null;
+                        const voterSerial = voter.serial || (voter as any).serial_no;
+                        const isMatch =
+                          (voter.epic && currentRec.epic === voter.epic) ||
+                          (voterSerial && String(currentRec.serial) === String(voterSerial));
+                        return (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                            <div className="p-2 rounded bg-slate-800/50 border border-slate-700/50">
+                              <span className="text-muted-foreground block">Serial No</span>
+                              <span className="font-semibold text-foreground">{currentRec.serial || "—"}</span>
+                            </div>
+                            <div className="p-2 rounded bg-slate-800/50 border border-slate-700/50">
+                              <span className="text-muted-foreground block">EPIC ID</span>
+                              <span className="font-semibold font-mono text-primary">{currentRec.epic || "—"}</span>
+                            </div>
+                            <div className="p-2 rounded bg-slate-800/50 border border-slate-700/50">
+                              <span className="text-muted-foreground block">Name</span>
+                              <span className="font-semibold text-foreground">{currentRec.name_ta || currentRec.name || "—"}</span>
+                            </div>
+                            <div className="p-2 rounded bg-slate-800/50 border border-slate-700/50">
+                              <span className="text-muted-foreground block">Match Status</span>
+                              <span className={`font-semibold ${isMatch ? "text-emerald-400" : "text-indigo-400"}`}>
+                                {isMatch ? "★ Active Profile Match" : "Adjacent Card"}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-16 text-muted-foreground text-sm">
