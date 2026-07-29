@@ -189,6 +189,72 @@
 .dark .badge-sky     { background: hsl(199 89% 48% / 0.2); color: hsl(199 89% 70%); }
 .dark .badge-slate   { background: hsl(215 16% 47% / 0.2); color: hsl(215 16% 65%); }
 
+/* EPIC Chip styling */
+.epic-chip {
+  display: inline-flex;
+  align-items: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: hsl(246 83% 60% / 0.15);
+  color: hsl(246 83% 75%);
+  border: 1px solid hsl(246 83% 60% / 0.3);
+}
+
+/* Photo Avatar */
+.photo-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, hsl(246 83% 60%), hsl(263 70% 55%));
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 18px;
+  box-shadow: 0 4px 12px hsl(246 83% 60% / 0.3);
+  flex-shrink: 0;
+}
+
+/* Profile Hero Container */
+.profile-hero {
+  background: linear-gradient(135deg, hsl(246 83% 60% / 0.15), hsl(263 70% 55% / 0.1));
+  border: 1px solid hsl(246 83% 60% / 0.25);
+  border-radius: var(--radius);
+}
+
+/* Custom Table Styling */
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+th {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: hsl(var(--muted-foreground));
+  border-bottom: 1px solid hsl(var(--border));
+  background: hsl(var(--card) / 0.6);
+}
+td {
+  padding: 12px 14px;
+  font-size: 13px;
+  border-bottom: 1px solid hsl(var(--border) / 0.5);
+  color: hsl(var(--foreground));
+  vertical-align: middle;
+}
+tr:hover td {
+  background: hsl(var(--muted) / 0.4);
+}
+
 /* Code / EPIC formatting */
 .font-mono-code {
   font-family: 'JetBrains Mono', monospace;
