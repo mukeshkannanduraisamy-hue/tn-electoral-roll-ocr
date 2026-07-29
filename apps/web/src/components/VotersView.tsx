@@ -229,9 +229,9 @@ export function VotersView() {
           </Card>
         </div>
 
-        {/* Right Panel: Voter CRM Profile Preview */}
+        {/* Right Panel: Voter CRM Profile Page */}
         {selectedVoter && (
-          <div className="w-96 border-l border-border/80 glass overflow-y-auto shrink-0 animate-slide-right">
+          <div className="w-full lg:w-[580px] xl:w-[640px] border-l border-border/80 glass overflow-y-auto shrink-0 animate-slide-right">
             <VoterProfilePage />
           </div>
         )}
