@@ -434,25 +434,27 @@ def database_url() -> str:
     return f"sqlite:///{(settings.data_dir / 'ocr.sqlite').as_posix()}"
 
 
+_is_sqlite = database_url().startswith("sqlite")
+_connect_args = {"check_same_thread": False, "timeout": 60} if _is_sqlite else {}
+
 engine = create_engine(
     database_url(),
     echo=False,
     future=True,
-    # SQLite + FastAPI: requests are served from a threadpool, so the
-    # connection must not be pinned to its creating thread.
-    connect_args={"check_same_thread": False, "timeout": 60},
+    connect_args=_connect_args,
 )
 
 
-@event.listens_for(engine, "connect")
-def _configure_sqlite(dbapi_connection, _record):
-    """WAL keeps readers unblocked while a worker writes results."""
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA busy_timeout=60000")
-    cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
+if _is_sqlite:
+    @event.listens_for(engine, "connect")
+    def _configure_sqlite(dbapi_connection, _record):
+        """WAL keeps readers unblocked while a worker writes results."""
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=60000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
