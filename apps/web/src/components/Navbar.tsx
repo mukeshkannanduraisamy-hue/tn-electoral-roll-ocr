@@ -10,7 +10,6 @@ import {
   Moon,
   Zap,
   ChevronRight,
-  User,
   LogOut,
   Sparkles,
 } from "lucide-react";
@@ -32,7 +31,7 @@ export function Navbar({
   onOpenBulkExtract,
   onOpenCommandPalette,
 }: NavbarProps) {
-  const { activeTab, jobs, voters, files } = useOcrStore();
+  const { activeTab, jobs } = useOcrStore();
   const { theme, setTheme } = useTheme();
   const { user, signOut, authEnabled } = useAuthStore();
 
@@ -53,12 +52,12 @@ export function Navbar({
     <header className="glass-header h-14 border-b border-border/80 px-4 flex items-center justify-between shrink-0 select-none">
       {/* Breadcrumb Path */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="font-semibold text-foreground flex items-center gap-1.5">
+        <span className="font-bold text-foreground flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5 text-primary" />
           <span>VI-MC Enterprise</span>
         </span>
-        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/60" />
-        <span className="font-medium text-foreground">{tabLabels[activeTab] || "Workspace"}</span>
+        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50" />
+        <span className="font-semibold text-foreground">{tabLabels[activeTab] || "Workspace"}</span>
       </div>
 
       {/* Global Command Palette Bar Trigger */}
@@ -69,7 +68,7 @@ export function Navbar({
         >
           <div className="flex items-center gap-2">
             <Search className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Search voters, EPIC IDs, files, or ask AI...</span>
+            <span>Search voters, EPIC IDs, files...</span>
           </div>
           <span className="font-mono-code text-[10px] px-1.5 py-0.5 rounded bg-background border border-border">
             Ctrl K
