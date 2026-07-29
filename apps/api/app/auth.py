@@ -102,24 +102,27 @@ def create_session(session: Session, user: UserRow, user_agent: str = "") -> Ses
 
 
 def set_session_cookie(response: Response, token: str) -> None:
-    # Cross-origin fetch between web and api subdomains requires SameSite=None + Secure
+    is_secure = settings.auth_cookie_secure
+    samesite_val = "none" if is_secure else "lax"
     response.set_cookie(
         SESSION_COOKIE,
         token,
         max_age=settings.auth_session_hours * 3600,
         httponly=True,  # unreadable from JavaScript, so XSS cannot steal it
-        samesite="none",
-        secure=True,  # HTTPS-only in production
+        samesite=samesite_val,
+        secure=is_secure,  # HTTPS-only in production, False on local HTTP
         path="/",
     )
 
 
 def clear_session_cookie(response: Response) -> None:
+    is_secure = settings.auth_cookie_secure
+    samesite_val = "none" if is_secure else "lax"
     response.delete_cookie(
         SESSION_COOKIE,
         path="/",
-        samesite="none",
-        secure=True,
+        samesite=samesite_val,
+        secure=is_secure,
     )
 
 
