@@ -680,12 +680,20 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
                 <div className="h-96 flex items-center justify-center">
                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
                 </div>
-              ) : pageData?.image_path ? (
+              ) : (pageData?.id || voter?.source_page_id) ? (
                 <div className="relative border border-border rounded-xl overflow-hidden max-w-4xl mx-auto bg-slate-900">
-                  <img src={pageData.image_path} alt="Source page" className="w-full h-auto block" />
+                  <img
+                    src={`/api/pages/${pageData?.id || voter.source_page_id}/image`}
+                    alt="Source page"
+                    className="w-full h-auto block"
+                  />
                   {/* Interactive SVG Bounding Box Overlays */}
-                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 1000 1000" preserveAspectRatio="none">
-                    {pageData.records?.map((rec: any, i: number) => {
+                  <svg
+                    className="absolute inset-0 w-full h-full pointer-events-none"
+                    viewBox={`0 0 ${Number.isFinite(Number(pageData?.width)) && Number(pageData.width) > 0 ? Number(pageData.width) : 1000} ${Number.isFinite(Number(pageData?.height)) && Number(pageData.height) > 0 ? Number(pageData.height) : 1000}`}
+                    preserveAspectRatio="none"
+                  >
+                    {pageData?.records?.map((rec: any, i: number) => {
                       let x = 50, y = 100 + i * 80, w = 900, h = 70;
                       if (Array.isArray(rec.bbox) && rec.bbox.length >= 4) {
                         const [x0, y0, x1, y1] = rec.bbox.map((v: any) => Number(v));
