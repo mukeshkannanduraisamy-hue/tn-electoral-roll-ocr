@@ -23,7 +23,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from fastapi import Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import Cookie, Depends, HTTPException, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 

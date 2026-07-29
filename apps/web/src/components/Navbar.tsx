@@ -1,149 +1,287 @@
-import React from "react";
-import { useOcrStore } from "@/store/useOcrStore";
-import { useTheme } from "next-themes";
+"use client";
+
+import React, { useState, useEffect, useRef } from "react";
 import {
-  Search,
   Upload,
-  Download,
-  FileSpreadsheet,
+  Play,
+  Pause,
+  XSquare,
   Sun,
   Moon,
-  Zap,
-  ChevronRight,
+  Keyboard,
   LogOut,
-  Sparkles,
+  Search,
+  Bell,
+  Zap,
+  User,
+  ChevronDown,
+  X,
+  Loader2,
 } from "lucide-react";
-import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
-import { NotificationCenter } from "@/components/NotificationCenter";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useOcrStore } from "@/store/useOcrStore";
+import { listVoters } from "@/lib/voterApi";
 
 interface NavbarProps {
   onOpenUpload: () => void;
   onOpenExport: () => void;
   onOpenBulkExtract: () => void;
-  onOpenCommandPalette?: () => void;
 }
 
-export function Navbar({
+interface SearchResult {
+  id: string;
+  epic: string;
+  name: string;
+  gender: string;
+  age: number | null;
+  house_number: string;
+  part_number: string;
+}
+
+export const Navbar: React.FC<NavbarProps> = ({
   onOpenUpload,
   onOpenExport,
   onOpenBulkExtract,
-  onOpenCommandPalette,
-}: NavbarProps) {
-  const { activeTab, jobs } = useOcrStore();
-  const { theme, setTheme } = useTheme();
-  const { user, signOut, authEnabled } = useAuthStore();
+}) => {
+  const authUser = useAuthStore((s) => s.user);
+  const signOut = useAuthStore((s) => s.signOut);
 
-  const isJobRunning = jobs.some((j) => j.status === "running");
+  const {
+    theme,
+    toggleTheme,
+    activeJobStatus,
+    activeJobProgress,
+    pagesPerSec,
+    etaSeconds,
+    pauseJob,
+    resumeJob,
+    cancelJob,
+    setIsShortcutsOpen,
+    setActiveTab,
+  } = useOcrStore();
 
-  const tabLabels: Record<string, string> = {
-    dashboard: "Dashboard Overview",
-    voters: "Voter Directory & CRM",
-    polling_stations: "Polling Station Analytics",
-    table: "Document Manager",
-    analytics: "Intelligence & Reports",
-    page: "OCR Page Inspector",
-    review: "Low-Confidence Verification Queue",
-    settings: "System Settings",
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Debounced search
+  useEffect(() => {
+    if (!searchQuery.trim() || searchQuery.length < 2) {
+      setSearchResults([]);
+      setSearchOpen(false);
+      return;
+    }
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const data = await listVoters({ search: searchQuery, limit: 8 });
+        setSearchResults((data.items || []) as unknown as SearchResult[]);
+        setSearchOpen(true);
+      } catch {
+        // silent
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 280);
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, [searchQuery]);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const isRunning = activeJobStatus === "running";
+  const isPaused = activeJobStatus === "paused";
+  const isActive = isRunning || isPaused;
+
+  const etaLabel = (() => {
+    if (!etaSeconds || etaSeconds <= 0) return null;
+    if (etaSeconds < 60) return `${Math.round(etaSeconds)}s`;
+    return `${Math.round(etaSeconds / 60)}m`;
+  })();
+
+  const handleSelectVoter = (voterId: string) => {
+    setSearchQuery("");
+    setSearchOpen(false);
+    setActiveTab("voters" as any);
+    // store voter id for profile navigation — we broadcast via a custom event
+    window.dispatchEvent(new CustomEvent("vi-mc:open-voter", { detail: { id: voterId } }));
   };
 
   return (
-    <header className="glass-header h-14 border-b border-border/80 px-4 flex items-center justify-between shrink-0 select-none">
-      {/* Breadcrumb Path */}
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="font-bold text-foreground flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-primary" />
-          <span>VI-MC Enterprise</span>
-        </span>
-        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50" />
-        <span className="font-semibold text-foreground">{tabLabels[activeTab] || "Workspace"}</span>
+    <header className="h-14 shrink-0 flex items-center gap-3 px-4 glass border-b border-white/10 dark:border-white/5 z-50 relative">
+      {/* Brand — visible on mobile where sidebar is hidden */}
+      <div className="flex items-center gap-2 lg:hidden mr-2">
+        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
+          <Zap className="w-4 h-4 text-white" fill="white" />
+        </div>
+        <span className="text-sm font-bold tracking-tight">VI-MC</span>
       </div>
 
-      {/* Global Command Palette Bar Trigger */}
-      <div className="hidden md:flex items-center flex-1 max-w-md mx-6">
-        <button
-          onClick={onOpenCommandPalette}
-          className="w-full h-8 px-3 rounded-lg bg-muted/60 hover:bg-muted border border-border/60 text-muted-foreground hover:text-foreground text-xs flex items-center justify-between transition-colors cursor-pointer"
-        >
-          <div className="flex items-center gap-2">
-            <Search className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Search voters, EPIC IDs, files...</span>
-          </div>
-          <span className="font-mono-code text-[10px] px-1.5 py-0.5 rounded bg-background border border-border">
-            Ctrl K
-          </span>
-        </button>
-      </div>
-
-      {/* Quick Actions & Controls */}
-      <div className="flex items-center gap-2">
-        {/* Live Processing Indicator */}
-        {isJobRunning && (
-          <Badge variant="indigo" className="hidden sm:inline-flex animate-pulse">
-            <Zap className="w-3 h-3 text-indigo-500" />
-            <span>OCR Active</span>
-          </Badge>
-        )}
-
-        {/* Action Buttons */}
-        <Button
-          variant="gradient"
-          size="sm"
-          onClick={onOpenUpload}
-          leftIcon={<Upload className="w-3.5 h-3.5" />}
-        >
-          <span>Upload PDF</span>
-        </Button>
-
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={onOpenBulkExtract}
-          className="hidden sm:inline-flex"
-          leftIcon={<FileSpreadsheet className="w-3.5 h-3.5 text-violet-500" />}
-        >
-          <span>Batch OCR</span>
-        </Button>
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onOpenExport}
-          className="hidden md:inline-flex"
-          leftIcon={<Download className="w-3.5 h-3.5 text-emerald-500" />}
-        >
-          <span>Export</span>
-        </Button>
-
-        {/* Notifications Tray */}
-        <NotificationCenter />
-
-        {/* Dark/Light Theme Switcher */}
-        <button
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-          title={`Switch to ${theme === "dark" ? "Light" : "Dark"} Mode`}
-        >
-          {theme === "dark" ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-slate-600" />}
-        </button>
-
-        {/* User Profile / Auth */}
-        {authEnabled && user && (
-          <div className="flex items-center gap-2 pl-2 border-l border-border/60">
-            <div className="w-7 h-7 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-xs">
-              {user.username.substring(0, 2).toUpperCase()}
-            </div>
+      {/* Global Search */}
+      <div ref={searchRef} className="relative flex-1 max-w-xl mx-auto lg:mx-0 lg:ml-2">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Search voters by name, EPIC, house…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-9 py-2 rounded-lg border border-border bg-muted/60 dark:bg-slate-900/80 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
+          />
+          {searchLoading && (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 animate-spin" />
+          )}
+          {searchQuery && !searchLoading && (
             <button
-              onClick={signOut}
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-              title="Sign Out"
+              onClick={() => { setSearchQuery(""); setSearchOpen(false); }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 hover:text-slate-600"
             >
-              <LogOut className="w-3.5 h-3.5" />
+              <X className="w-3.5 h-3.5" />
             </button>
+          )}
+        </div>
+
+        {/* Search Dropdown */}
+        {searchOpen && (
+          <div className="absolute top-full left-0 right-0 mt-1.5 card-vimc rounded-xl overflow-hidden z-50 shadow-xl border border-border animate-scale-in">
+            {searchResults.length === 0 ? (
+              <div className="px-4 py-3 text-sm text-muted-foreground text-center">
+                No voters found for "{searchQuery}"
+              </div>
+            ) : (
+              <div>
+                <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground border-b border-border bg-muted/40">
+                  Voters — {searchResults.length} result{searchResults.length !== 1 ? "s" : ""}
+                </div>
+                {searchResults.map((v) => (
+                  <button
+                    key={v.id}
+                    onClick={() => handleSelectVoter(v.id)}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-primary/5 transition-colors text-left"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
+                      {(v.name || "?")[0]}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate">{v.name || "—"}</div>
+                      <div className="text-xs text-muted-foreground font-mono truncate">{v.epic}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-xs text-muted-foreground">{v.gender} · {v.age ?? "?"}</div>
+                      <div className="text-[10px] text-muted-foreground">{v.house_number}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
+      </div>
+
+      <div className="flex items-center gap-1.5 ml-auto">
+        {/* Job Progress */}
+        {isActive && (
+          <div className="hidden md:flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 text-indigo-700 dark:text-indigo-300">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            <span className="font-medium">{Math.round(activeJobProgress ?? 0)}%</span>
+            {etaLabel && <span className="text-indigo-400">· {etaLabel}</span>}
+            <div className="flex items-center gap-1 ml-1 border-l border-indigo-200 dark:border-indigo-500/30 pl-2">
+              {isRunning ? (
+                <button onClick={() => void pauseJob()} title="Pause" className="hover:text-indigo-500">
+                  <Pause className="w-3 h-3" />
+                </button>
+              ) : (
+                <button onClick={() => void resumeJob()} title="Resume" className="hover:text-indigo-500">
+                  <Play className="w-3 h-3" />
+                </button>
+              )}
+              <button onClick={() => void cancelJob()} title="Cancel" className="hover:text-rose-500">
+                <XSquare className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Import button */}
+        <button
+          onClick={onOpenUpload}
+          className="vimc-btn-primary h-8 text-xs"
+        >
+          <Upload className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Import PDF</span>
+        </button>
+
+        {/* Theme toggle */}
+        <button
+          onClick={toggleTheme}
+          className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          title="Toggle theme"
+        >
+          {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        </button>
+
+        {/* Keyboard shortcuts */}
+        <button
+          onClick={() => setIsShortcutsOpen(true)}
+          className="hidden lg:flex h-8 w-8 items-center justify-center rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          title="Keyboard shortcuts (?)"
+        >
+          <Keyboard className="w-4 h-4" />
+        </button>
+
+        {/* User menu */}
+        <div ref={userMenuRef} className="relative">
+          <button
+            onClick={() => setUserMenuOpen((v) => !v)}
+            className="flex items-center gap-2 h-8 px-2.5 rounded-lg hover:bg-muted transition-colors"
+          >
+            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-[10px] font-bold">
+              {(authUser?.username || "A")[0].toUpperCase()}
+            </div>
+            <span className="hidden md:inline text-xs font-medium text-foreground">
+              {authUser?.display_name || authUser?.username || "Admin"}
+            </span>
+            <ChevronDown className="w-3 h-3 text-muted-foreground" />
+          </button>
+
+          {userMenuOpen && (
+            <div className="absolute right-0 top-full mt-2 w-44 card-vimc rounded-xl shadow-xl border border-border z-50 py-1 animate-scale-in">
+              <div className="px-3 py-2 border-b border-border">
+                <div className="text-xs font-semibold text-foreground">
+                  {authUser?.display_name || authUser?.username}
+                </div>
+                <div className="text-[11px] text-muted-foreground">Administrator</div>
+              </div>
+              <button
+                onClick={() => void signOut()}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Sign out
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );
-}
+};

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from ..schemas.core import BBox, ColumnDef, Issue, LayoutInfo, OcrLine, Record
+from ..schemas.core import ColumnDef, LayoutInfo, OcrLine, Record
 
 
 @runtime_checkable

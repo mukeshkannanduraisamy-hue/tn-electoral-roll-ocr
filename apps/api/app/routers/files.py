@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import shutil
 import uuid
 from pathlib import Path
 
@@ -195,12 +194,13 @@ def import_folder(
 
     result_files: list[SourceFile] = []
     for path in paths:
-        existing_row = session.execute(
-            select(FileRow).where(FileRow.stored_path == str(path))
-        ).scalar_one_or_none()
-        if existing_row is not None:
-            result_files.append(file_to_schema(existing_row))
-            continue
+        if str(path) in existing:
+            existing_row = session.execute(
+                select(FileRow).where(FileRow.stored_path == str(path))
+            ).scalar_one_or_none()
+            if existing_row is not None:
+                result_files.append(file_to_schema(existing_row))
+                continue
         file_id = uuid.uuid4().hex[:12]
         try:
             info = pdf_service.inspect(path)

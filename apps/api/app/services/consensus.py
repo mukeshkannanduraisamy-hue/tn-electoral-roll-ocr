@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import logging
 import re
-from collections import defaultdict
 from dataclasses import dataclass, field as dc_field
 
 from ..config import settings

@@ -11,7 +11,6 @@ import { ExportModal } from "@/components/ExportModal";
 import { UploadModal } from "@/components/UploadModal";
 import { BulkExtractModal } from "@/components/BulkExtractModal";
 import { ShortcutsModal } from "@/components/ShortcutsModal";
-import { CommandPalette } from "@/components/CommandPalette";
 import { Toaster } from "sonner";
 import { Loader2, X, PanelLeft } from "lucide-react";
 import { VotersView } from "@/components/VotersView";
@@ -30,9 +29,7 @@ export default function Home() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isBulkExtractOpen, setIsBulkExtractOpen] = useState(false);
-  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const { user, authEnabled, checked, check, handleUnauthorized } = useAuthStore();
   const signedIn = !authEnabled || user !== null;
@@ -50,29 +47,23 @@ export default function Home() {
     if (signedIn) loadFiles();
   }, [signedIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Global keydown listeners (?, 1-7, Ctrl+K, Esc)
+  // Global keydown: ?, 1-7, Esc
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setIsCommandPaletteOpen((prev) => !prev);
-      } else if (e.key === "?") {
+      if (e.key === "?") {
         e.preventDefault();
         setIsShortcutsOpen(!isShortcutsOpen);
       } else if (e.key === "1") setActiveTab("dashboard");
       else if (e.key === "2") setActiveTab("voters");
-      else if (e.key === "3") setActiveTab("polling_stations");
-      else if (e.key === "4") setActiveTab("table");
-      else if (e.key === "5") setActiveTab("analytics");
+      else if (e.key === "3") setActiveTab("table");
+      else if (e.key === "4") setActiveTab("analytics");
+      else if (e.key === "5") setActiveTab("page");
       else if (e.key === "6") setActiveTab("review");
       else if (e.key === "7") setActiveTab("settings");
-      else if (e.key === "Escape") {
-        setIsShortcutsOpen(false);
-        setIsCommandPaletteOpen(false);
-      }
+      else if (e.key === "Escape") setIsShortcutsOpen(false);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -80,10 +71,12 @@ export default function Home() {
 
   if (!checked) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--background))]">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/30 animate-pulse">
-            VI
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
+            <svg className="w-4 h-4 text-white animate-pulse" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
           </div>
           <Loader2 className="h-5 w-5 animate-spin text-primary" />
         </div>
@@ -101,30 +94,24 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-background text-foreground transition-colors duration-150">
+    <div className="flex flex-col h-screen overflow-hidden bg-[hsl(var(--background))] text-foreground transition-colors duration-200">
       <Toaster position="top-right" richColors />
 
-      {/* Sticky Glass Top Navbar */}
+      {/* Top Navbar */}
       <Navbar
         onOpenUpload={() => setIsUploadOpen(true)}
         onOpenExport={() => setIsExportOpen(true)}
         onOpenBulkExtract={() => setIsBulkExtractOpen(true)}
-        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
       />
 
-      {/* Main Multi-Panel Workspace */}
+      {/* Main Workspace */}
       <div className="flex-1 flex overflow-hidden relative">
-        <Sidebar
-          isOpen={isSidebarOpen}
-          onClose={() => setIsSidebarOpen(false)}
-          isCollapsed={isSidebarCollapsed}
-          onToggleCollapse={() => setIsSidebarCollapsed((v) => !v)}
-        />
+        <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
         {/* Mobile backdrop */}
         {isSidebarOpen && (
           <div
-            className="fixed inset-0 top-14 z-30 bg-slate-950/60 backdrop-blur-xs lg:hidden"
+            className="fixed inset-0 top-14 z-30 bg-slate-900/60 backdrop-blur-sm lg:hidden"
             onClick={() => setIsSidebarOpen(false)}
             aria-hidden="true"
           />
@@ -133,13 +120,13 @@ export default function Home() {
         {/* Mobile drawer toggle */}
         <button
           onClick={() => setIsSidebarOpen((v) => !v)}
-          className="lg:hidden fixed bottom-5 left-5 z-50 h-12 w-12 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/30 flex items-center justify-center transition-colors"
+          className="lg:hidden fixed bottom-5 left-5 z-50 h-12 w-12 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center transition-colors"
           aria-label={isSidebarOpen ? "Close navigation" : "Open navigation"}
         >
           {isSidebarOpen ? <X className="w-5 h-5" /> : <PanelLeft className="w-5 h-5" />}
         </button>
 
-        {/* Main View Router */}
+        {/* Main content area */}
         <main className="flex-1 flex overflow-hidden min-w-0">
           {activeTab === "dashboard"        && <DashboardView />}
           {activeTab === "voters"           && <VotersView />}
@@ -152,14 +139,7 @@ export default function Home() {
         </main>
       </div>
 
-      {/* Modals & Command Palette */}
-      <CommandPalette
-        isOpen={isCommandPaletteOpen}
-        onClose={() => setIsCommandPaletteOpen(false)}
-        onOpenUpload={() => setIsUploadOpen(true)}
-        onOpenExport={() => setIsExportOpen(true)}
-        onOpenBulkExtract={() => setIsBulkExtractOpen(true)}
-      />
+      {/* Modals */}
       <UploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} />
       <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />
       <BulkExtractModal isOpen={isBulkExtractOpen} onClose={() => setIsBulkExtractOpen(false)} />

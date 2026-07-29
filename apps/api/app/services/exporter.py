@@ -222,19 +222,19 @@ def export_to_markdown(records: list[dict[str, Any]], metadata: dict[str, Any], 
     out_file.parent.mkdir(parents=True, exist_ok=True)
 
     lines = [
-        f"# Electoral Roll Extraction Report",
-        f"",
+        "# Electoral Roll Extraction Report",
+        "",
         f"- **Source File**: `{metadata.get('filename', 'Electoral Roll')}`",
         f"- **Total Pages**: {metadata.get('total_pages', 1)}",
         f"- **Total Voters Extracted**: {len(records)}",
-        f"- **OCR Engine**: PaddleOCR PP-OCRv5 + PP-StructureV3",
+        "- **OCR Engine**: PaddleOCR PP-OCRv5 + PP-StructureV3",
         f"- **Average Confidence**: {metadata.get('avg_confidence', 0.98):.2%}",
         f"- **Extraction Time**: {metadata.get('total_time_sec', 0.0):.2f} seconds",
-        f"",
-        f"## Voter Records Table",
-        f"",
-        f"| Page | S.No | EPIC ID | Name | Relation | Relative Name | House No | Age | Gender |",
-        f"| :---: | :---: | :---: | :--- | :---: | :--- | :---: | :---: | :---: |",
+        "",
+        "## Voter Records Table",
+        "",
+        "| Page | S.No | EPIC ID | Name | Relation | Relative Name | House No | Age | Gender |",
+        "| :---: | :---: | :---: | :--- | :---: | :--- | :---: | :---: | :---: |",
     ]
 
     for r in records:

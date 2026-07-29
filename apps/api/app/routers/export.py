@@ -9,7 +9,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..db import FileRow, PageRow, _page_from_row, get_session
+from ..db import PageRow, _page_from_row, get_session
 from ..schemas.core import ExportRequest, Page
 from ..services import export_service
 

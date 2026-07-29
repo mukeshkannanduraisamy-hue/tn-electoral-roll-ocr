@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,101 +6,82 @@
 
 @layer base {
   :root {
-    /* Enterprise Brand Tokens */
+    /* Core colors — VIMC brand */
+    --vimc-blue: 221 83% 53%;
+    --vimc-indigo: 246 83% 60%;
+    --vimc-violet: 263 70% 50%;
+    --vimc-teal: 172 76% 40%;
+    --vimc-emerald: 158 64% 42%;
+    --vimc-amber: 38 92% 50%;
+    --vimc-rose: 351 83% 58%;
+
+    /* Semantic */
+    --background: 218 28% 97%;
+    --foreground: 222 47% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 10%;
     --primary: 246 83% 60%;
     --primary-foreground: 0 0% 100%;
-    --primary-hover: 246 83% 54%;
-    
-    --brand-indigo: 246 83% 60%;
-    --brand-violet: 263 70% 55%;
-    --brand-emerald: 158 64% 42%;
-    --brand-amber: 38 92% 50%;
-    --brand-rose: 351 83% 58%;
-    --brand-sky: 199 89% 48%;
-
-    /* Semantic Light Theme */
-    --background: 210 20% 98%;
-    --foreground: 224 35% 10%;
-    
-    --card: 0 0% 100%;
-    --card-foreground: 224 35% 10%;
-    
-    --popover: 0 0% 100%;
-    --popover-foreground: 224 35% 10%;
-    
-    --secondary: 214 20% 93%;
-    --secondary-foreground: 224 35% 12%;
-    
-    --muted: 214 18% 94%;
-    --muted-foreground: 215 16% 47%;
-    
-    --accent: 214 20% 93%;
-    --accent-foreground: 224 35% 12%;
-    
+    --secondary: 218 20% 94%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 218 20% 95%;
+    --muted-foreground: 215 14% 48%;
+    --accent: 218 20% 94%;
+    --accent-foreground: 222 47% 11%;
     --destructive: 0 84% 58%;
     --destructive-foreground: 0 0% 100%;
-    
-    --border: 214 18% 88%;
-    --input: 214 18% 88%;
+    --border: 218 20% 90%;
+    --input: 218 20% 90%;
     --ring: 246 83% 60%;
-    --radius: 0.625rem;
+    --radius: 0.75rem;
 
-    /* Multi-Panel Surfaces */
-    --surface-base: 210 20% 98%;
-    --surface-panel: 0 0% 100%;
-    --surface-subtle: 214 18% 95%;
-    --surface-hover: 214 20% 91%;
+    /* VIMC Surfaces */
+    --surface-0: 0 0% 100%;
+    --surface-1: 218 28% 97%;
+    --surface-2: 218 22% 94%;
+    --surface-3: 218 16% 88%;
 
-    /* Sidebar Navigation */
-    --sidebar-bg: 224 40% 7%;
-    --sidebar-border: 224 30% 13%;
-    --sidebar-item: 224 35% 12%;
-    --sidebar-text: 215 16% 65%;
+    /* Sidebar */
+    --sidebar-bg: 226 45% 8%;
+    --sidebar-border: 226 30% 14%;
+    --sidebar-item: 226 35% 13%;
+    --sidebar-item-active: 246 83% 60%;
+    --sidebar-text: 220 14% 65%;
     --sidebar-text-active: 0 0% 100%;
   }
 
   .dark {
-    /* Semantic Dark Theme (Deep Obsidian) */
-    --background: 224 40% 6%;
-    --foreground: 210 30% 96%;
-    
-    --card: 224 35% 9%;
-    --card-foreground: 210 30% 96%;
-    
-    --popover: 224 35% 8%;
-    --popover-foreground: 210 30% 96%;
-    
-    --primary: 246 83% 65%;
+    --background: 222 47% 5%;
+    --foreground: 213 31% 93%;
+    --card: 224 40% 8%;
+    --card-foreground: 213 31% 93%;
+    --popover: 224 40% 7%;
+    --popover-foreground: 213 31% 93%;
+    --primary: 246 83% 67%;
     --primary-foreground: 0 0% 100%;
-    --primary-hover: 246 83% 70%;
-    
-    --secondary: 224 30% 13%;
-    --secondary-foreground: 210 30% 96%;
-    
-    --muted: 224 28% 12%;
-    --muted-foreground: 215 18% 58%;
-    
-    --accent: 224 30% 15%;
-    --accent-foreground: 210 30% 96%;
-    
+    --secondary: 223 35% 12%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 223 35% 10%;
+    --muted-foreground: 215 18% 52%;
+    --accent: 223 35% 14%;
+    --accent-foreground: 210 40% 96%;
     --destructive: 0 72% 56%;
     --destructive-foreground: 0 0% 100%;
-    
-    --border: 224 25% 15%;
-    --input: 224 25% 15%;
-    --ring: 246 83% 65%;
+    --border: 223 30% 14%;
+    --input: 223 30% 14%;
+    --ring: 246 83% 67%;
 
-    /* Multi-Panel Surfaces */
-    --surface-base: 224 40% 6%;
-    --surface-panel: 224 35% 9%;
-    --surface-subtle: 224 30% 12%;
-    --surface-hover: 224 28% 16%;
+    --surface-0: 224 40% 8%;
+    --surface-1: 222 47% 5%;
+    --surface-2: 222 40% 10%;
+    --surface-3: 222 35% 14%;
 
-    /* Sidebar Navigation */
-    --sidebar-bg: 224 45% 4%;
-    --sidebar-border: 224 30% 10%;
-    --sidebar-item: 224 35% 8%;
-    --sidebar-text: 215 18% 55%;
+    --sidebar-bg: 226 50% 4%;
+    --sidebar-border: 226 35% 9%;
+    --sidebar-item: 226 40% 7%;
+    --sidebar-text: 220 16% 55%;
     --sidebar-text-active: 0 0% 100%;
   }
 }
@@ -113,15 +94,22 @@
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
   body {
-    @apply antialiased text-foreground transition-colors duration-150 selection:bg-primary/20 selection:text-primary;
+    @apply antialiased transition-colors duration-200;
     background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'rlig', 'calt';
     -webkit-font-smoothing: antialiased;
   }
+  ::selection {
+    background-color: hsl(var(--primary) / 0.25);
+    color: hsl(var(--primary));
+  }
 }
 
-/* Custom Scrollbars */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* ============================================================
+   Scrollbars
+   ============================================================ */
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: hsl(var(--border));
@@ -129,166 +117,383 @@
 }
 ::-webkit-scrollbar-thumb:hover { background: hsl(var(--primary) / 0.5); }
 
-/* Glassmorphism Panels */
+/* ============================================================
+   VIMC Glass Panel
+   ============================================================ */
 .glass {
-  background: hsl(var(--card) / 0.85);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  background: hsl(var(--card) / 0.8);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid hsl(var(--border) / 0.8);
 }
 .dark .glass {
-  background: hsl(var(--card) / 0.7);
-  border-color: hsl(var(--border) / 0.6);
+  background: hsl(var(--card) / 0.6);
+  border-color: hsl(var(--border) / 0.5);
 }
 
-.glass-header {
-  @apply glass sticky top-0 z-30;
+/* Legacy alias */
+.glass-panel {
+  @apply glass;
 }
 
-/* Enterprise Card Container */
-.card-enterprise {
+/* ============================================================
+   Premium Cards
+   ============================================================ */
+.card-vimc {
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  box-shadow: 0 1px 3px hsl(0 0% 0% / 0.05), 0 1px 2px hsl(0 0% 0% / 0.03);
-  transition: box-shadow 150ms ease, border-color 150ms ease, transform 150ms ease;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px hsl(0 0% 0% / 0.04), 0 1px 2px hsl(0 0% 0% / 0.06);
+  transition: box-shadow 150ms ease, transform 150ms ease;
 }
-.card-enterprise:hover {
-  border-color: hsl(var(--primary) / 0.3);
+.card-vimc:hover {
   box-shadow: 0 4px 16px hsl(0 0% 0% / 0.08), 0 2px 4px hsl(0 0% 0% / 0.04);
 }
-.dark .card-enterprise {
+.dark .card-vimc {
   box-shadow: 0 1px 3px hsl(0 0% 0% / 0.3);
 }
-.dark .card-enterprise:hover {
-  box-shadow: 0 6px 20px hsl(0 0% 0% / 0.5);
+.dark .card-vimc:hover {
+  box-shadow: 0 4px 16px hsl(0 0% 0% / 0.4);
 }
 
-/* Badge Utilities */
-.badge-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
+.card-kpi {
+  @apply card-vimc;
+  position: relative;
+  overflow: hidden;
 }
-.badge-emerald { background: hsl(158 64% 42% / 0.12); color: hsl(158 64% 34%); border: 1px solid hsl(158 64% 42% / 0.2); }
-.badge-amber   { background: hsl(38 92% 50% / 0.12);  color: hsl(38 92% 36%);  border: 1px solid hsl(38 92% 50% / 0.2); }
-.badge-rose    { background: hsl(351 83% 58% / 0.12); color: hsl(351 83% 48%); border: 1px solid hsl(351 83% 58% / 0.2); }
-.badge-indigo  { background: hsl(246 83% 60% / 0.12); color: hsl(246 83% 48%); border: 1px solid hsl(246 83% 60% / 0.2); }
-.badge-sky     { background: hsl(199 89% 48% / 0.12); color: hsl(199 89% 38%); border: 1px solid hsl(199 89% 48% / 0.2); }
-.badge-slate   { background: hsl(215 16% 47% / 0.1);  color: hsl(215 16% 40%); border: 1px solid hsl(215 16% 47% / 0.15); }
-
-.dark .badge-emerald { background: hsl(158 64% 42% / 0.2); color: hsl(158 64% 65%); }
-.dark .badge-amber   { background: hsl(38 92% 50% / 0.2);  color: hsl(38 92% 70%); }
-.dark .badge-rose    { background: hsl(351 83% 58% / 0.2); color: hsl(351 83% 75%); }
-.dark .badge-indigo  { background: hsl(246 83% 60% / 0.2); color: hsl(246 83% 75%); }
-.dark .badge-sky     { background: hsl(199 89% 48% / 0.2); color: hsl(199 89% 70%); }
-.dark .badge-slate   { background: hsl(215 16% 47% / 0.2); color: hsl(215 16% 65%); }
-
-/* EPIC Chip styling */
-.epic-chip {
-  display: inline-flex;
-  align-items: center;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: hsl(246 83% 60% / 0.15);
-  color: hsl(246 83% 75%);
-  border: 1px solid hsl(246 83% 60% / 0.3);
+.card-kpi::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, hsl(var(--primary) / 0.03) 0%, transparent 60%);
+  pointer-events: none;
 }
 
-/* Photo Avatar */
-.photo-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, hsl(246 83% 60%), hsl(263 70% 55%));
-  color: white;
+/* ============================================================
+   KPI Metric Badges
+   ============================================================ */
+.badge-blue  { background: hsl(221 83% 53% / 0.12); color: hsl(221 83% 45%); }
+.badge-violet{ background: hsl(263 70% 50% / 0.12); color: hsl(263 70% 45%); }
+.badge-teal  { background: hsl(172 76% 40% / 0.12); color: hsl(172 76% 32%); }
+.badge-rose  { background: hsl(351 83% 58% / 0.12); color: hsl(351 83% 50%); }
+.badge-amber { background: hsl(38 92% 50% / 0.12);  color: hsl(38 92% 38%); }
+.badge-green { background: hsl(158 64% 42% / 0.12); color: hsl(158 64% 34%); }
+.badge-slate { background: hsl(215 16% 47% / 0.1);  color: hsl(215 16% 40%); }
+
+.dark .badge-blue   { background: hsl(221 83% 53% / 0.18); color: hsl(221 83% 72%); }
+.dark .badge-violet { background: hsl(263 70% 50% / 0.18); color: hsl(263 70% 75%); }
+.dark .badge-teal   { background: hsl(172 76% 40% / 0.18); color: hsl(172 76% 65%); }
+.dark .badge-rose   { background: hsl(351 83% 58% / 0.18); color: hsl(351 83% 75%); }
+.dark .badge-amber  { background: hsl(38 92% 50% / 0.18);  color: hsl(38 92% 70%); }
+.dark .badge-green  { background: hsl(158 64% 42% / 0.18); color: hsl(158 64% 65%); }
+.dark .badge-slate  { background: hsl(215 16% 47% / 0.15); color: hsl(215 16% 65%); }
+
+/* ============================================================
+   Sidebar
+   ============================================================ */
+.vimc-sidebar {
+  background: hsl(var(--sidebar-bg));
+  border-right: 1px solid hsl(var(--sidebar-border));
+  color: hsl(var(--sidebar-text));
+}
+.vimc-sidebar-item {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 18px;
-  box-shadow: 0 4px 12px hsl(246 83% 60% / 0.3);
-  flex-shrink: 0;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: hsl(var(--sidebar-text));
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+  text-decoration: none;
+  user-select: none;
+}
+.vimc-sidebar-item:hover {
+  background: hsl(var(--sidebar-item));
+  color: hsl(215 20% 80%);
+}
+.vimc-sidebar-item.active {
+  background: hsl(var(--primary) / 0.15);
+  color: hsl(var(--primary));
+}
+.dark .vimc-sidebar-item.active {
+  background: hsl(var(--primary) / 0.2);
+  color: hsl(246 83% 75%);
 }
 
-/* Profile Hero Container */
-.profile-hero {
-  background: linear-gradient(135deg, hsl(246 83% 60% / 0.15), hsl(263 70% 55% / 0.1));
-  border: 1px solid hsl(246 83% 60% / 0.25);
-  border-radius: var(--radius);
-}
-
-/* Custom Table Styling */
-table {
+/* ============================================================
+   Data Grid Table
+   ============================================================ */
+.vimc-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
 }
-th {
-  text-align: left;
+.vimc-table thead th {
+  background: hsl(var(--muted));
   padding: 10px 14px;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   color: hsl(var(--muted-foreground));
   border-bottom: 1px solid hsl(var(--border));
-  background: hsl(var(--card) / 0.6);
+  white-space: nowrap;
 }
-td {
-  padding: 12px 14px;
-  font-size: 13px;
-  border-bottom: 1px solid hsl(var(--border) / 0.5);
-  color: hsl(var(--foreground));
+.vimc-table thead th:first-child { border-radius: 8px 0 0 0; }
+.vimc-table thead th:last-child { border-radius: 0 8px 0 0; }
+.vimc-table tbody tr {
+  transition: background 80ms ease;
+  cursor: pointer;
+}
+.vimc-table tbody tr:hover {
+  background: hsl(var(--primary) / 0.04);
+}
+.dark .vimc-table tbody tr:hover {
+  background: hsl(var(--primary) / 0.08);
+}
+.vimc-table tbody td {
+  padding: 11px 14px;
+  font-size: 13.5px;
+  border-bottom: 1px solid hsl(var(--border) / 0.6);
   vertical-align: middle;
 }
-tr:hover td {
-  background: hsl(var(--muted) / 0.4);
+.vimc-table tbody tr:last-child td { border-bottom: none; }
+
+/* ============================================================
+   Input & Controls
+   ============================================================ */
+.vimc-input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  font-size: 14px;
+  outline: none;
+  transition: border-color 150ms, box-shadow 150ms;
+}
+.vimc-input:focus {
+  border-color: hsl(var(--primary) / 0.5);
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.12);
 }
 
-/* Code / EPIC formatting */
-.font-mono-code {
-  font-family: 'JetBrains Mono', monospace;
-  letter-spacing: 0.03em;
+.vimc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: all 150ms ease;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.vimc-btn-primary {
+  @apply vimc-btn;
+  background: hsl(var(--primary));
+  color: white;
+  border: 1px solid transparent;
+}
+.vimc-btn-primary:hover { filter: brightness(1.1); box-shadow: 0 4px 12px hsl(var(--primary) / 0.35); }
+.vimc-btn-ghost {
+  @apply vimc-btn;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border));
+}
+.vimc-btn-ghost:hover {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
 }
 
-/* Keyframes */
+/* ============================================================
+   Confidence Bar
+   ============================================================ */
+.confidence-bar {
+  height: 4px;
+  border-radius: 99px;
+  background: hsl(var(--border));
+  overflow: hidden;
+}
+.confidence-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 600ms ease;
+}
+.confidence-high  { background: hsl(158 64% 42%); }
+.confidence-med   { background: hsl(38 92% 50%); }
+.confidence-low   { background: hsl(0 84% 58%); }
+
+/* ============================================================
+   Animations
+   ============================================================ */
 @keyframes fadeSlideIn {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.96); }
+  from { opacity: 0; transform: scale(0.97); }
   to   { opacity: 1; transform: scale(1); }
-}
-@keyframes slideInRight {
-  from { opacity: 0; transform: translateX(16px); }
-  to   { opacity: 1; transform: translateX(0); }
 }
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position:  200% 0; }
 }
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4); }
+  50%       { box-shadow: 0 0 0 6px hsl(var(--primary) / 0); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
 
-.animate-fade-slide { animation: fadeSlideIn 150ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-.animate-scale-in   { animation: scaleIn 140ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-.animate-slide-right { animation: slideInRight 180ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-fade-slide { animation: fadeSlideIn 200ms ease both; }
+.animate-scale-in   { animation: scaleIn 160ms ease both; }
+.animate-slide-right { animation: slideInRight 220ms ease both; }
 
 .animate-shimmer {
   background: linear-gradient(90deg,
-    hsl(var(--muted) / 0.5) 25%,
-    hsl(var(--muted) / 0.9) 50%,
-    hsl(var(--muted) / 0.5) 75%
+    hsl(var(--muted) / 0.6) 25%,
+    hsl(var(--muted) / 1.0) 50%,
+    hsl(var(--muted) / 0.6) 75%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.5s infinite linear;
+  animation: shimmer 1.6s infinite ease-in-out;
+}
+
+/* ============================================================
+   Profile Page
+   ============================================================ */
+.profile-hero {
+  background: linear-gradient(135deg,
+    hsl(246 83% 60% / 0.08) 0%,
+    hsl(263 70% 50% / 0.05) 50%,
+    transparent 100%
+  );
+  border-bottom: 1px solid hsl(var(--border));
+}
+.dark .profile-hero {
+  background: linear-gradient(135deg,
+    hsl(246 83% 60% / 0.12) 0%,
+    hsl(263 70% 50% / 0.08) 50%,
+    transparent 100%
+  );
+}
+
+.photo-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, hsl(246 83% 60%), hsl(263 70% 55%));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 700;
+  color: white;
+  box-shadow: 0 4px 16px hsl(246 83% 60% / 0.3);
+  flex-shrink: 0;
+}
+
+.epic-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  background: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary));
+  border: 1px solid hsl(var(--primary) / 0.2);
+  letter-spacing: 0.04em;
+}
+
+.gender-badge-M {
+  background: hsl(221 83% 53% / 0.12);
+  color: hsl(221 83% 45%);
+  border: 1px solid hsl(221 83% 53% / 0.2);
+}
+.gender-badge-F {
+  background: hsl(351 83% 58% / 0.12);
+  color: hsl(351 83% 50%);
+  border: 1px solid hsl(351 83% 58% / 0.2);
+}
+.dark .gender-badge-M {
+  background: hsl(221 83% 53% / 0.2);
+  color: hsl(221 83% 75%);
+}
+.dark .gender-badge-F {
+  background: hsl(351 83% 58% / 0.2);
+  color: hsl(351 83% 78%);
+}
+
+/* ============================================================
+   Tab Navigation
+   ============================================================ */
+.vimc-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  background: hsl(var(--muted));
+  border-radius: 10px;
+}
+.vimc-tab {
+  padding: 6px 14px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  transition: all 120ms ease;
+  white-space: nowrap;
+}
+.vimc-tab:hover { color: hsl(var(--foreground)); }
+.vimc-tab.active {
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  box-shadow: 0 1px 3px hsl(0 0% 0% / 0.1);
+}
+
+/* ============================================================
+   Mobile drawer
+   ============================================================ */
+@media (max-width: 1023.98px) {
+  [data-drawer] { transition: transform 200ms ease; }
+  [data-drawer="closed"] { transform: translateX(-100%); }
+  [data-drawer="open"] {
+    transform: translateX(0);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.45);
+  }
+}
+@media (min-width: 1024px) {
+  [data-drawer] { transform: none; box-shadow: none; transition: none; }
+}
+
+/* ============================================================
+   Stat / chart bars
+   ============================================================ */
+.stat-bar {
+  height: 6px;
+  border-radius: 99px;
+  background: hsl(var(--primary));
+  transition: width 800ms cubic-bezier(.4,0,.2,1);
+}
+
+/* ============================================================
+   Search highlight
+   ============================================================ */
+.search-highlight {
+  background: hsl(var(--primary) / 0.2);
+  color: hsl(var(--primary));
+  border-radius: 3px;
+  padding: 0 2px;
 }

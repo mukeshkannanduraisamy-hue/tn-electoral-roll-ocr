@@ -25,7 +25,6 @@ rather than waiting for the next event.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import threading
 import time
@@ -33,12 +32,10 @@ import uuid
 from concurrent.futures import (
     Executor,
     Future,
-    ProcessPoolExecutor,
     ThreadPoolExecutor,
     as_completed,
 )
 from datetime import datetime, timezone
-from pathlib import Path
 
 from sqlalchemy import select, update
 

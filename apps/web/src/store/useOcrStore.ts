@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { Page, Record_, SourceFile, Job, Voter } from "@ocr/shared-types";
+import { Page, Record_, SourceFile, Job } from "@ocr/shared-types";
 import {
   fetchFiles,
   fetchRecordStats,
@@ -9,20 +9,13 @@ import {
   reocrPage as apiReocrPage,
   bulkUpdateRecords,
 } from "@/lib/api";
-import { listVoters, listPollingStations } from "@/lib/voterApi";
 import { toast } from "sonner";
+
 import { pauseJobApi, resumeJobApi, cancelJobApi } from "@/lib/api";
 
-export type ViewTab =
-  | "dashboard"
-  | "table"
-  | "page"
-  | "review"
-  | "voters"
-  | "settings"
-  | "analytics"
-  | "polling_stations";
+export type ViewTab = "dashboard" | "table" | "page" | "review" | "voters" | "settings" | "analytics" | "polling_stations";
 
+// Per-file extraction progress tracked from SSE
 export interface FileJobProgress {
   fileId: string;
   fileName: string;
@@ -49,20 +42,10 @@ interface OcrState {
 
   // Workspace selections & navigation
   files: SourceFile[];
-  voters: Voter[];
-  pollingStations: any[];
-  jobs: Job[];
-  pages: Record<string, Page[]>;
-  
-  selectedFile: SourceFile | null;
-  selectedVoter: Voter | null;
-  activePage: Page | null;
-  
   activeFileId: string | null;
   activePageId: string | null;
   activeTab: ViewTab;
   recordStats: RecordStats | null;
-  recordsStats: RecordStats | null;
 
   // Record selection & hover sync between table and canvas
   hoveredRecordId: string | null;
@@ -76,7 +59,7 @@ interface OcrState {
   etaSeconds: number;
   fileJobProgress: Record<string, FileJobProgress>;
 
-  // Per-page refresh tracking
+  // Per-page refresh tracking (pageId -> isLoading boolean)
   pageRefreshing: Record<string, boolean>;
 
   // Filters & Search
@@ -92,15 +75,8 @@ interface OcrState {
   confirmModal: ConfirmModalState | null;
   setConfirmModal: (modal: ConfirmModalState | null) => void;
 
-  // Setters
-  setSelectedFile: (file: SourceFile | null) => void;
-  setSelectedVoter: (voter: Voter | null) => void;
-  setActivePage: (page: Page | null) => void;
-
   // Actions
   loadFiles: () => Promise<void>;
-  loadVoters: () => Promise<void>;
-  loadPollingStations: () => Promise<void>;
   setActiveFileId: (id: string | null) => void;
   setActivePageId: (id: string | null) => void;
   setActiveTab: (tab: ViewTab) => void;
@@ -127,12 +103,13 @@ interface OcrState {
   // Page-by-Page Refresh Action
   reocrSinglePage: (pageId: string, templateId?: string, upscale?: number) => Promise<Page | null>;
 
-  // Bulk Quick Action
+  // Bulk Quick Action: Approve all high-confidence clean records
   acceptHighConfidenceRecords: () => Promise<number>;
 
-  // Starts an OCR job
+  // Starts an OCR job for given fileIds
   startBulkJob: (fileIds: string[], templateId?: string, allPending?: boolean) => Promise<Job | null>;
 }
+
 
 // Subscribe to a job's SSE stream and update store state progressively
 function attachJobSSE(
@@ -202,7 +179,6 @@ function attachJobSSE(
     evtSource.close();
     set({ activeJobId: null, activeJobStatus: "completed", activeJobProgress: 100, pagesPerSec: 0, etaSeconds: 0 });
     get().loadFiles();
-    get().loadVoters();
     get().refreshStats(get().activeFileId || undefined);
     toast.success("Bulk OCR processing completed!");
     setTimeout(() => set({ fileJobProgress: {} }), 3000);
@@ -249,20 +225,10 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   },
 
   files: [],
-  voters: [],
-  pollingStations: [],
-  jobs: [],
-  pages: {},
-
-  selectedFile: null,
-  selectedVoter: null,
-  activePage: null,
-
   activeFileId: null,
   activePageId: null,
   activeTab: "dashboard",
   recordStats: null,
-  recordsStats: null,
 
   hoveredRecordId: null,
   selectedRecordId: null,
@@ -286,46 +252,21 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   confirmModal: null,
   setConfirmModal: (modal) => set({ confirmModal: modal }),
 
-  setSelectedFile: (selectedFile) => set({ selectedFile }),
-  setSelectedVoter: (selectedVoter) => set({ selectedVoter }),
-  setActivePage: (activePage) => set({ activePage }),
-
   loadFiles: async () => {
     try {
       const files = await fetchFiles();
-      set({ files, selectedFile: files[0] || null });
+      set({ files });
       if (files.length > 0 && !get().activeFileId) {
         set({ activeFileId: files[0].id });
       }
       get().refreshStats(get().activeFileId || undefined);
-      get().loadVoters();
-      get().loadPollingStations();
     } catch (e) {
       console.error("Failed to load files", e);
     }
   },
 
-  loadVoters: async () => {
-    try {
-      const res = await listVoters({ limit: 100 });
-      set({ voters: res.items || [] });
-    } catch (e) {
-      console.error("Failed to load voters", e);
-    }
-  },
-
-  loadPollingStations: async () => {
-    try {
-      const res = await listPollingStations({ limit: 50 });
-      set({ pollingStations: res.items || [] });
-    } catch (e) {
-      console.error("Failed to load polling stations", e);
-    }
-  },
-
   setActiveFileId: (id) => {
-    const file = get().files.find((f) => f.id === id) || null;
-    set({ activeFileId: id, selectedFile: file, activePageId: null, selectedRecordId: null, hoveredRecordId: null });
+    set({ activeFileId: id, activePageId: null, selectedRecordId: null, hoveredRecordId: null });
     get().refreshStats(id || undefined);
   },
 
@@ -345,7 +286,7 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   refreshStats: async (fileId) => {
     try {
       const stats = await fetchRecordStats(fileId);
-      set({ recordStats: stats, recordsStats: stats });
+      set({ recordStats: stats });
     } catch (e) {
       console.error("Failed to refresh record stats", e);
     }
@@ -355,9 +296,9 @@ export const useOcrStore = create<OcrState>((set, get) => ({
     try {
       await apiDeleteFile(fileId);
       const files = get().files.filter((f) => f.id !== fileId);
-      const nextActive = get().activeFileId === fileId ? files[0]?.id || null : get().activeFileId;
-      const nextFile = files.find((f) => f.id === nextActive) || null;
-      set({ files, selectedFile: nextFile, activeFileId: nextActive, activePageId: null, selectedRecordId: null });
+      const nextActive =
+        get().activeFileId === fileId ? files[0]?.id || null : get().activeFileId;
+      set({ files, activeFileId: nextActive, activePageId: null, selectedRecordId: null });
       get().refreshStats(nextActive || undefined);
       toast.success("Document deleted successfully");
     } catch (e) {
@@ -408,10 +349,12 @@ export const useOcrStore = create<OcrState>((set, get) => ({
       await cancelJobApi(jobId);
       set({ activeJobId: null, activeJobStatus: "cancelled", activeJobProgress: 0, pagesPerSec: 0, etaSeconds: 0 });
       toast.warning("OCR job cancelled");
+
     } catch (e) {
       toast.error("Failed to cancel job");
     }
   },
+
 
   reocrSinglePage: async (pageId, templateId = "auto", upscale = 2.0) => {
     set((state) => ({
@@ -438,6 +381,7 @@ export const useOcrStore = create<OcrState>((set, get) => ({
 
   acceptHighConfidenceRecords: async () => {
     try {
+      // Find clean records and bulk approve
       const result = await bulkUpdateRecords({
         record_ids: [],
         reviewed: true,
