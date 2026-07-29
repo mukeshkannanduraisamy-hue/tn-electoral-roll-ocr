@@ -99,7 +99,7 @@ def login(
 
     register_success(user)
     row = create_session(session, user, request.headers.get("user-agent", ""))
-    set_session_cookie(response, row.token)
+    set_session_cookie(response, row.token, request)
     logger.info("User %r signed in", user.username)
     return _user_out(user)
 
@@ -115,7 +115,7 @@ def logout(
     if token:
         session.execute(delete(SessionRow).where(SessionRow.token == token))
     out = Response(status_code=204)
-    clear_session_cookie(out)
+    clear_session_cookie(out, request)
     return out
 
 

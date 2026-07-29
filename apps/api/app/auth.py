@@ -101,8 +101,15 @@ def create_session(session: Session, user: UserRow, user_agent: str = "") -> Ses
     return row
 
 
-def set_session_cookie(response: Response, token: str) -> None:
-    is_secure = settings.auth_cookie_secure
+def set_session_cookie(response: Response, token: str, request: Request | None = None) -> None:
+    if settings.auth_cookie_secure:
+        is_secure = True
+    elif request is not None:
+        proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+        is_secure = (proto.lower() == "https")
+    else:
+        is_secure = False
+
     samesite_val = "none" if is_secure else "lax"
     response.set_cookie(
         SESSION_COOKIE,
@@ -110,13 +117,20 @@ def set_session_cookie(response: Response, token: str) -> None:
         max_age=settings.auth_session_hours * 3600,
         httponly=True,  # unreadable from JavaScript, so XSS cannot steal it
         samesite=samesite_val,
-        secure=is_secure,  # HTTPS-only in production, False on local HTTP
+        secure=is_secure,  # True on HTTPS, False on unencrypted HTTP (e.g. sslip.io/localhost)
         path="/",
     )
 
 
-def clear_session_cookie(response: Response) -> None:
-    is_secure = settings.auth_cookie_secure
+def clear_session_cookie(response: Response, request: Request | None = None) -> None:
+    if settings.auth_cookie_secure:
+        is_secure = True
+    elif request is not None:
+        proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+        is_secure = (proto.lower() == "https")
+    else:
+        is_secure = False
+
     samesite_val = "none" if is_secure else "lax"
     response.delete_cookie(
         SESSION_COOKIE,
