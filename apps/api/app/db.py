@@ -1105,3 +1105,8 @@ def job_to_schema(row: JobRow) -> Job:
         finished_at=row.finished_at,
         error=row.error,
     )
+
+
+@event.listens_for(engine, "begin")
+def _code_begin_immediate(conn):
+    conn.exec_driver_sql("BEGIN IMMEDIATE")

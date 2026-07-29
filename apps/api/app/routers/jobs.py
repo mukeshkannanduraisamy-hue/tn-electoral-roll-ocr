@@ -54,6 +54,7 @@ def create_job(payload: JobRequest, session: Session = Depends(get_session)) -> 
     if missing:
         raise HTTPException(404, f"Unknown file ids: {', '.join(missing)}")
 
+    session.rollback()
     return manager.submit(file_ids, template_id=payload.template_id, lang=payload.lang)
 
 
