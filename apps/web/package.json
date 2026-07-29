@@ -13,7 +13,6 @@
     "next": "15.1.6",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "@ocr/shared-types": "file:../../packages/shared-types",
     "zustand": "5.0.3",
     "@tanstack/react-table": "8.20.6",
     "@tanstack/react-virtual": "3.11.2",
