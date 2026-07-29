@@ -12,14 +12,45 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..db import FileRow, PageRow, RecordRow, file_to_schema, get_session
-from ..schemas.core import FileStatus, SourceFile
+from ..db import FileRow, JobRow, PageRow, RecordRow, file_to_schema, get_session
+from ..schemas.core import FileStatus, JobStatus, SourceFile
 from ..services import pdf_service
+from ..services.job_queue import manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+
+
+def _cancel_jobs_for_file(session: Session, file_id: str) -> None:
+    """Stop any in-flight extraction of a file that is being deleted.
+
+    Without this the job runs to completion against a file that no longer
+    exists: every page still renders and goes through OCR, then `save_page`
+    drops the result because the parent row is gone. A 12-page roll spends
+    several more minutes of full-core OCR producing nothing, and the pool
+    stays busy so the *next* upload queues behind work that is already void.
+
+    Cancellation is cooperative -- pages already inside `predict()` finish --
+    so this bounds the waste rather than eliminating it.
+    """
+    live = (
+        session.execute(
+            select(JobRow).where(
+                JobRow.status.in_([JobStatus.RUNNING.value, JobStatus.QUEUED.value])
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for job in live:
+        # `file_ids` is a JSON column; a job may batch several files and only
+        # dies with the last one still standing.
+        ids = job.file_ids if isinstance(job.file_ids, list) else []
+        if file_id in ids:
+            logger.info("Cancelling job %s: file %s deleted mid-run", job.id, file_id)
+            manager.cancel(job.id)
 
 
 def _is_managed_upload(stored_path: str) -> bool:
@@ -262,6 +293,10 @@ def delete_file(file_id: str, session: Session = Depends(get_session)) -> Respon
     row = session.get(FileRow, file_id)
     if row is None:
         return Response(status_code=204)
+
+    # Before anything is unlinked: a job still holding this file will keep
+    # rendering and OCR-ing pages it can no longer save.
+    _cancel_jobs_for_file(session, file_id)
 
     # Remove rendered page images before the rows that point at them.
     page_rows = (

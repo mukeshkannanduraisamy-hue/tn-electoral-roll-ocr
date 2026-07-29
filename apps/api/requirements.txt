@@ -49,3 +49,7 @@ fonttools>=4.55.0
 httpx>=0.28.0
 pytest>=8.3.0
 pypdf>=5.1.0  # verifies exported PDFs really contain Tamil text
+# Catches undefined names (a missing `import` reads fine and imports fine, then
+# raises NameError mid-job once the line finally runs). See
+# tests/test_no_undefined_names.py.
+pyflakes>=3.2.0

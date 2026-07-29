@@ -84,6 +84,9 @@ class OcrError(Exception):
 # ---------------------------------------------------------------------------
 
 
+_INIT_LOCK = threading.Lock()
+
+
 def get_engine(
     lang: str | None = None,
     version: str | None = None,
@@ -131,17 +134,21 @@ def get_engine(
         # memory-constrained hosts. See config.ocr_det_model.
         kwargs["text_detection_model_name"] = settings.ocr_det_model
 
-    try:
-        engine = PaddleOCR(**kwargs)
-    except (TypeError, ValueError) as exc:
-        # A kwarg this build doesn't accept, or a lang/version pair with no
-        # published model. Retry with the minimal signature so the caller
-        # still gets working OCR rather than a hard failure.
-        logger.warning("PaddleOCR rejected full kwargs (%s); retrying minimal.", exc)
+    with _INIT_LOCK:
+        # Re-check key inside lock in case another thread initialized it while waiting
+        if key in cache:
+            return cache[key]
         try:
-            engine = PaddleOCR(lang=lang, device=device)
-        except Exception as exc2:  # noqa: BLE001
-            raise OcrError(f"Could not initialise PaddleOCR: {exc2}") from exc2
+            engine = PaddleOCR(**kwargs)
+        except (TypeError, ValueError) as exc:
+            # A kwarg this build doesn't accept, or a lang/version pair with no
+            # published model. Retry with the minimal signature so the caller
+            # still gets working OCR rather than a hard failure.
+            logger.warning("PaddleOCR rejected full kwargs (%s); retrying minimal.", exc)
+            try:
+                engine = PaddleOCR(lang=lang, device=device)
+            except Exception as exc2:  # noqa: BLE001
+                raise OcrError(f"Could not initialise PaddleOCR: {exc2}") from exc2
 
     elapsed = time.perf_counter() - started
     logger.info(
@@ -305,7 +312,8 @@ def run_ocr(
     try:
         results = engine.predict(feed)
     except Exception as exc:  # noqa: BLE001
-        raise OcrError(f"OCR inference failed: {exc}") from exc
+        msg = str(exc).strip() or repr(exc)
+        raise OcrError(f"OCR inference failed: {msg}") from exc
     elapsed_ms = int((time.perf_counter() - started) * 1000)
 
     if not results:
