@@ -131,7 +131,7 @@ services:
     rootDir: apps/web
     # `npm ci` at the repo root: this is an npm workspace, and installing from
     # apps/web alone will not link the local @ocr/shared-types package.
-    buildCommand: cd ../.. && npm ci && npm run build --workspace @ocr-workspace/web
+    buildCommand: cd .. && npm ci && npm run build --workspace @ocr-workspace/web
     startCommand: npm run start
     healthCheckPath: /
     autoDeploy: true
