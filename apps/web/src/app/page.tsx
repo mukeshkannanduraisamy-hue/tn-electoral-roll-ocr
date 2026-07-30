@@ -22,6 +22,7 @@ import { SettingsView } from "@/components/SettingsView";
 import { AnalyticsView } from "@/components/AnalyticsView";
 import { PollingStationsView } from "@/components/PollingStationsView";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
+import { FloatingAiChatbot } from "@/components/FloatingAiChatbot";
 
 export default function Home() {
   const { loadFiles, activeTab, setActiveTab, setIsShortcutsOpen, isShortcutsOpen } = useOcrStore();
@@ -139,12 +140,13 @@ export default function Home() {
         </main>
       </div>
 
-      {/* Modals */}
+      {/* Modals & Persistent Floating AI Chatbot */}
       <UploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} />
       <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />
       <BulkExtractModal isOpen={isBulkExtractOpen} onClose={() => setIsBulkExtractOpen(false)} />
       <ShortcutsModal />
       <ConfirmationModal />
+      <FloatingAiChatbot />
     </div>
   );
 }
