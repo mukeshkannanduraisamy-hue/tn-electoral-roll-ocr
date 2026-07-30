@@ -1121,8 +1121,8 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
 }
 
 /* ---------------------------------------------------------------------------
- * INTERACTIVE HOUSEHOLD FAMILY TREE COMPONENT
- * Groups voters sharing the exact same House Number into a hierarchy tree
+ * INTERACTIVE LOGICAL HOUSEHOLD FAMILY TREE COMPONENT
+ * Logical parent-spouse-child graph solver for voters sharing the same house number
  * --------------------------------------------------------------------------- */
 
 function HouseholdFamilyTree({
@@ -1146,43 +1146,64 @@ function HouseholdFamilyTree({
     return Array.from(map.values()).sort((a, b) => (b.age || 0) - (a.age || 0));
   }, [currentVoter, housemates]);
 
-  // Organize into Generations (Head of House / Parents vs Children / Dependents)
+  // LOGICAL FAMILY RELATIONSHIP SOLVER
   const { heads, children, others } = useMemo(() => {
     if (allFamilyMembers.length === 0) return { heads: [], children: [], others: [] };
 
-    // Head candidate is the oldest member or person referenced as Father/Husband by others
-    const namesReferenced = new Set(
-      allFamilyMembers.map((m) => m.relation_name?.trim().toLowerCase()).filter(Boolean)
-    );
+    // Clean name helper
+    const cleanName = (s?: string) =>
+      (s || "")
+        .toLowerCase()
+        .replace(/^[\d\.\:\-\s]+/, "")
+        .replace(/[\s\.\-]+/g, "")
+        .trim();
 
-    const headsList: Voter[] = [];
-    const childrenList: Voter[] = [];
-    const othersList: Voter[] = [];
+    const nameToVoterMap = new Map<string, Voter>();
+    for (const m of allFamilyMembers) {
+      const cName = cleanName(m.name);
+      if (cName) nameToVoterMap.set(cName, m);
+    }
+
+    // Step 1: Identify Heads / Parents
+    const headCandidates: Voter[] = [];
+    const childCandidates: Voter[] = [];
+    const otherCandidates: Voter[] = [];
+
+    // Find any member whose name is referenced as relation_name by others
+    const referencedNames = new Set(
+      allFamilyMembers.map((m) => cleanName(m.relation_name)).filter(Boolean)
+    );
 
     const oldestAge = allFamilyMembers[0]?.age || 0;
 
     for (const member of allFamilyMembers) {
-      const name = member.name?.trim().toLowerCase() || "";
-      const isReferencedHead = namesReferenced.has(name);
-      const isElder = (member.age || 0) >= Math.max(40, oldestAge - 15);
+      const cName = cleanName(member.name);
+      const isReferencedAsParent = referencedNames.has(cName);
+      const isElder = (member.age || 0) >= Math.max(38, oldestAge - 15);
 
-      if (isReferencedHead || isElder || headsList.length === 0) {
-        headsList.push(member);
-      } else if (member.relation_type === "Father" || member.relation_type === "Mother") {
-        childrenList.push(member);
+      if (isReferencedAsParent || isElder || headCandidates.length === 0) {
+        headCandidates.push(member);
       } else {
-        othersList.push(member);
+        // Check if member is a child of one of the heads
+        const relClean = cleanName(member.relation_name);
+        const parentMatch = headCandidates.find((h) => cleanName(h.name) === relClean);
+
+        if (parentMatch || member.relation_type === "Father" || member.relation_type === "Mother") {
+          childCandidates.push(member);
+        } else {
+          otherCandidates.push(member);
+        }
       }
     }
 
-    return { heads: headsList, children: childrenList, others: othersList };
+    return { heads: headCandidates, children: childCandidates, others: otherCandidates };
   }, [allFamilyMembers]);
 
   if (loading) {
     return (
       <div className="card-vimc p-8 flex flex-col items-center justify-center space-y-3">
         <Loader2 className="w-7 h-7 animate-spin text-indigo-600" />
-        <p className="text-xs font-semibold text-muted-foreground">Building Household Family Tree...</p>
+        <p className="text-xs font-semibold text-muted-foreground">Building Logical Family Tree...</p>
       </div>
     );
   }
@@ -1225,15 +1246,15 @@ function HouseholdFamilyTree({
         </div>
       </div>
 
-      {/* Interactive Family Tree Diagram */}
+      {/* Interactive Logical Family Tree Diagram */}
       <div className="card-vimc p-8 space-y-8 overflow-x-auto">
         <div className="flex items-center justify-between border-b border-border pb-4">
           <div className="flex items-center space-x-2">
             <Users className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            <h4 className="text-sm font-bold text-foreground">Household Hierarchy Tree</h4>
+            <h4 className="text-sm font-bold text-foreground">Logical Family Graph & Relationships</h4>
           </div>
           <span className="text-[11px] text-muted-foreground font-medium">
-            Click any member node to inspect profile
+            Click any node to inspect profile
           </span>
         </div>
 
@@ -1247,17 +1268,18 @@ function HouseholdFamilyTree({
           </div>
         ) : (
           <div className="flex flex-col items-center space-y-8 py-4 min-w-[500px]">
-            {/* LEVEL 1: HEAD OF HOUSEHOLD & ELDERS */}
+            {/* GENERATION 1: HEAD OF HOUSEHOLD & SPOUSE / PARENTS */}
             <div className="flex flex-col items-center space-y-2 w-full">
               <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 px-3 py-1 rounded-full border border-indigo-200 dark:border-indigo-800">
-                Generation 1 (Head / Elders)
+                Generation 1 (Head & Spouse / Parents)
               </span>
 
-              <div className="flex flex-wrap justify-center gap-4 pt-2">
+              <div className="flex flex-wrap justify-center gap-6 pt-2">
                 {heads.map((member) => (
-                  <FamilyTreeNodeCard
+                  <LogicalFamilyNodeCard
                     key={member.id}
                     member={member}
+                    allMembers={allFamilyMembers}
                     isCurrent={member.id === currentVoter.id}
                     isHead={true}
                     onClick={() => onSelectVoter(member)}
@@ -1275,18 +1297,19 @@ function HouseholdFamilyTree({
               </div>
             )}
 
-            {/* LEVEL 2: CHILDREN & DEPENDENTS */}
+            {/* GENERATION 2: SONS & DAUGHTERS / DEPENDENTS */}
             {children.length > 0 && (
               <div className="flex flex-col items-center space-y-2 w-full">
                 <span className="text-[10px] font-black uppercase tracking-widest text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950 px-3 py-1 rounded-full border border-purple-200 dark:border-purple-800">
-                  Generation 2 (Children & Dependents)
+                  Generation 2 (Sons, Daughters & Children)
                 </span>
 
                 <div className="flex flex-wrap justify-center gap-4 pt-2">
                   {children.map((member) => (
-                    <FamilyTreeNodeCard
+                    <LogicalFamilyNodeCard
                       key={member.id}
                       member={member}
+                      allMembers={allFamilyMembers}
                       isCurrent={member.id === currentVoter.id}
                       isHead={false}
                       onClick={() => onSelectVoter(member)}
@@ -1296,7 +1319,7 @@ function HouseholdFamilyTree({
               </div>
             )}
 
-            {/* LEVEL 3: OTHER HOUSEHOLD RESIDENTS */}
+            {/* OTHER HOUSEHOLD RESIDENTS */}
             {others.length > 0 && (
               <div className="flex flex-col items-center space-y-2 w-full pt-4">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700">
@@ -1305,9 +1328,10 @@ function HouseholdFamilyTree({
 
                 <div className="flex flex-wrap justify-center gap-4 pt-2">
                   {others.map((member) => (
-                    <FamilyTreeNodeCard
+                    <LogicalFamilyNodeCard
                       key={member.id}
                       member={member}
+                      allMembers={allFamilyMembers}
                       isCurrent={member.id === currentVoter.id}
                       isHead={false}
                       onClick={() => onSelectVoter(member)}
@@ -1324,35 +1348,48 @@ function HouseholdFamilyTree({
 }
 
 /* ---------------------------------------------------------------------------
- * FAMILY TREE NODE CARD
- * Rendered for each individual family member node in the tree diagram
+ * LOGICAL FAMILY NODE CARD
+ * Displays derived logical relationships (Head, Wife, Husband, Son, Daughter)
  * --------------------------------------------------------------------------- */
 
-function FamilyTreeNodeCard({
+function LogicalFamilyNodeCard({
   member,
+  allMembers,
   isCurrent,
   isHead,
   onClick,
 }: {
   member: Voter;
+  allMembers: Voter[];
   isCurrent: boolean;
   isHead: boolean;
   onClick: () => void;
 }) {
   const initials = (member.name || "?")[0].toUpperCase();
 
-  const getRelationBadgeStyle = (relType: string) => {
-    switch (relType?.toLowerCase()) {
-      case "husband":
-        return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20";
-      case "father":
-        return "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20";
-      case "mother":
-        return "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20";
-      default:
-        return "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20";
+  // DERIVE LOGICAL RELATIONSHIP ROLE
+  const derivedRole = useMemo(() => {
+    const relType = member.relation_type?.toLowerCase() || "";
+    const gender = member.gender?.toLowerCase() || "";
+
+    if (relType === "husband") {
+      return { badge: "💍 Wife", style: "bg-rose-500/10 text-rose-600 border-rose-500/20", label: `Wife of ${member.relation_name || "Husband"}` };
     }
-  };
+    if (relType === "father") {
+      return gender === "female"
+        ? { badge: "👧 Daughter", style: "bg-purple-500/10 text-purple-600 border-purple-500/20", label: `Daughter of ${member.relation_name || "Father"}` }
+        : { badge: "👦 Son", style: "bg-blue-500/10 text-blue-600 border-blue-500/20", label: `Son of ${member.relation_name || "Father"}` };
+    }
+    if (relType === "mother") {
+      return gender === "female"
+        ? { badge: "👧 Daughter", style: "bg-purple-500/10 text-purple-600 border-purple-500/20", label: `Daughter of Mother ${member.relation_name || ""}` }
+        : { badge: "👦 Son", style: "bg-blue-500/10 text-blue-600 border-blue-500/20", label: `Son of Mother ${member.relation_name || ""}` };
+    }
+    if (isHead) {
+      return { badge: "👑 Head of House", style: "bg-amber-500/10 text-amber-600 border-amber-500/20", label: "Head of Household" };
+    }
+    return { badge: "👤 Resident", style: "bg-slate-500/10 text-slate-600 border-slate-500/20", label: member.relation_name ? `Relative of ${member.relation_name}` : "Resident" };
+  }, [member, isHead]);
 
   return (
     <div
@@ -1363,7 +1400,7 @@ function FamilyTreeNodeCard({
           : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 hover:shadow-md"
       }`}
     >
-      {/* Active Indicator Crown / Star */}
+      {/* Active Indicator Badge */}
       {isCurrent && (
         <span className="absolute -top-2.5 right-4 bg-indigo-600 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-sm">
           Active Profile
@@ -1391,21 +1428,17 @@ function FamilyTreeNodeCard({
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5 mt-2">
-            {member.relation_type && (
-              <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase border ${getRelationBadgeStyle(member.relation_type)}`}>
-                {member.relation_type}
-              </span>
-            )}
+            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase border ${derivedRole.style}`}>
+              {derivedRole.badge}
+            </span>
             <span className="text-[10px] font-bold text-muted-foreground">
               {member.age ?? "—"} yrs · {member.gender || "—"}
             </span>
           </div>
 
-          {member.relation_name && (
-            <p className="text-[10px] text-muted-foreground truncate mt-1">
-              Relative: <strong className="text-foreground">{member.relation_name}</strong>
-            </p>
-          )}
+          <p className="text-[10px] text-muted-foreground truncate mt-1">
+            {derivedRole.label}
+          </p>
         </div>
       </div>
     </div>
