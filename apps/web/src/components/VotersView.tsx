@@ -29,6 +29,11 @@ import {
   Code2,
   Building2,
   BookOpen,
+  Calendar,
+  FileCode,
+  User,
+  ShieldCheck,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Voter, VoterQuery, VoterStats } from "@ocr/shared-types";
@@ -47,25 +52,65 @@ const PAGE_SIZES = [25, 50, 100, 200];
 
 type SortKey = "serial" | "epic" | "name" | "age" | "gender" | "house_number" | "part_number" | "created_at";
 
-export interface ColumnOption {
-  key: string;
-  label: string;
+export interface ColumnCategory {
+  category: string;
+  columns: { key: string; label: string }[];
 }
 
-const ALL_COLUMNS: ColumnOption[] = [
-  { key: "serial", label: "S.No" },
-  { key: "epic", label: "EPIC ID" },
-  { key: "name", label: "Voter Name" },
-  { key: "relation", label: "Relation / Relative" },
-  { key: "house_number", label: "House No" },
-  { key: "age", label: "Age" },
-  { key: "gender", label: "Gender" },
-  { key: "part_number", label: "Part No." },
-  { key: "polling_station_id", label: "Polling Station ID" },
-  { key: "is_supplement", label: "Roll Type" },
-  { key: "verified", label: "Verification" },
-  { key: "actions", label: "Actions" },
+const CATEGORIZED_COLUMNS: ColumnCategory[] = [
+  {
+    category: "Voter Identity",
+    columns: [
+      { key: "serial", label: "S.No" },
+      { key: "epic", label: "EPIC ID" },
+      { key: "name", label: "Voter Name" },
+      { key: "relation_type", label: "Relation Type" },
+      { key: "relation_name", label: "Relative Name" },
+      { key: "house_number", label: "House No" },
+      { key: "age", label: "Age" },
+      { key: "gender", label: "Gender" },
+    ],
+  },
+  {
+    category: "Polling & Location",
+    columns: [
+      { key: "part_number", label: "Part No." },
+      { key: "constituency", label: "Constituency" },
+      { key: "polling_station_id", label: "Polling Station ID" },
+      { key: "is_supplement", label: "Roll Type (Supplement)" },
+    ],
+  },
+  {
+    category: "PDF Source & Provenance",
+    columns: [
+      { key: "source_file_name", label: "Source PDF Name" },
+      { key: "page_number", label: "Page No." },
+      { key: "source_file_id", label: "Source File ID" },
+      { key: "source_page_id", label: "Source Page ID" },
+      { key: "source_record_id", label: "Source Record ID" },
+    ],
+  },
+  {
+    category: "Audit & Metadata",
+    columns: [
+      { key: "verified", label: "Verification Status" },
+      { key: "notes", label: "Reviewer Notes" },
+      { key: "created_at", label: "Date Added" },
+      { key: "updated_at", label: "Date Modified" },
+      { key: "created_by", label: "Created By" },
+      { key: "updated_by", label: "Updated By" },
+      { key: "actions", label: "Actions" },
+    ],
+  },
 ];
+
+const DEFAULT_VISIBLE_COLUMNS = [
+  "serial", "epic", "name", "relation_type", "relation_name",
+  "house_number", "age", "gender", "part_number", "is_supplement",
+  "verified", "actions",
+];
+
+const ALL_COLUMN_KEYS = CATEGORIZED_COLUMNS.flatMap((cat) => cat.columns.map((c) => c.key));
 
 function GenderBadge({ gender, onClick }: { gender: string; onClick?: (e: React.MouseEvent) => void }) {
   if (!gender) return <span className="text-xs text-muted-foreground">—</span>;
@@ -158,16 +203,18 @@ export const VotersView: React.FC = () => {
   const [maxSerial, setMaxSerial] = useState("");
   const [minPage, setMinPage] = useState("");
   const [maxPage, setMaxPage] = useState("");
+  const [constituency, setConstituency] = useState("");
+  const [sourceFileName, setSourceFileName] = useState("");
 
-  // Column Visibility Chooser
+  // All 23 Database Columns Visibility Chooser
   const [visibleCols, setVisibleCols] = useState<Set<string>>(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("voter_columns_v2");
+      const saved = localStorage.getItem("voter_db_columns_v3");
       if (saved) {
         try { return new Set(JSON.parse(saved)); } catch {}
       }
     }
-    return new Set(ALL_COLUMNS.map((c) => c.key));
+    return new Set(DEFAULT_VISIBLE_COLUMNS);
   });
   const [showColChooser, setShowColChooser] = useState(false);
 
@@ -196,10 +243,26 @@ export const VotersView: React.FC = () => {
         next.add(colKey);
       }
       if (typeof window !== "undefined") {
-        localStorage.setItem("voter_columns_v2", JSON.stringify([...next]));
+        localStorage.setItem("voter_db_columns_v3", JSON.stringify([...next]));
       }
       return next;
     });
+  };
+
+  const selectAllColumns = () => {
+    const all = new Set(ALL_COLUMN_KEYS);
+    setVisibleCols(all);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("voter_db_columns_v3", JSON.stringify([...all]));
+    }
+  };
+
+  const resetDefaultColumns = () => {
+    const def = new Set(DEFAULT_VISIBLE_COLUMNS);
+    setVisibleCols(def);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("voter_db_columns_v3", JSON.stringify([...def]));
+    }
   };
 
   // Cell Click-to-Filter Helper
@@ -219,6 +282,10 @@ export const VotersView: React.FC = () => {
         setPartNumber(String(val));
         toast.info(`Filtered by Part No.: ${val}`);
         break;
+      case "constituency":
+        setConstituency(String(val));
+        toast.info(`Filtered by Constituency: ${val}`);
+        break;
       case "polling_station_id":
         setPollingStationId(String(val));
         toast.info(`Filtered by Polling Station: ${val}`);
@@ -230,6 +297,10 @@ export const VotersView: React.FC = () => {
       case "house_number":
         setHouseNumber(String(val));
         toast.info(`Filtered by House No.: ${val}`);
+        break;
+      case "source_file_name":
+        setSourceFileName(String(val));
+        toast.info(`Filtered by Source File: ${val}`);
         break;
       case "age":
         setMinAge(String(val));
@@ -265,6 +336,7 @@ export const VotersView: React.FC = () => {
         gender: gender || undefined,
         relation_type: relationType || undefined,
         part_number: partNumber || undefined,
+        constituency: constituency || undefined,
         house_number: houseNumber || undefined,
         has_photo: hasPhoto === "" ? undefined : hasPhoto === "true",
         polling_station_id: pollingStationId || undefined,
@@ -273,6 +345,7 @@ export const VotersView: React.FC = () => {
         max_serial: maxSerial ? Number(maxSerial) : undefined,
         min_page: minPage ? Number(minPage) : undefined,
         max_page: maxPage ? Number(maxPage) : undefined,
+        source_file_name: sourceFileName || undefined,
         verified: verified === "" ? undefined : verified === "true",
         min_age: minAge ? Number(minAge) : undefined,
         max_age: maxAge ? Number(maxAge) : undefined,
@@ -289,7 +362,7 @@ export const VotersView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [search, gender, relationType, partNumber, houseNumber, hasPhoto, pollingStationId, isSupplement, minSerial, maxSerial, minPage, maxPage, verified, minAge, maxAge, sort, order, offset, limit]);
+  }, [search, gender, relationType, partNumber, constituency, houseNumber, hasPhoto, pollingStationId, isSupplement, minSerial, maxSerial, minPage, maxPage, sourceFileName, verified, minAge, maxAge, sort, order, offset, limit]);
 
   useEffect(() => { void loadData(); }, [loadData]);
 
@@ -425,13 +498,13 @@ export const VotersView: React.FC = () => {
 
   const pages = Math.max(1, Math.ceil(total / limit));
   const currentPage = Math.floor(offset / limit) + 1;
-  const hasFilters = !!(search || gender || relationType || partNumber || houseNumber || hasPhoto || pollingStationId || isSupplement || minSerial || maxSerial || minPage || maxPage || minAge || maxAge || verified || agePreset);
+  const hasFilters = !!(search || gender || relationType || partNumber || constituency || houseNumber || hasPhoto || pollingStationId || isSupplement || minSerial || maxSerial || minPage || maxPage || sourceFileName || minAge || maxAge || verified || agePreset);
 
   const clearFilters = () => {
     setSearchInput(""); setSearch(""); setGender(""); setRelationType("");
-    setPartNumber(""); setHouseNumber(""); setHasPhoto(""); setPollingStationId("");
+    setPartNumber(""); setConstituency(""); setHouseNumber(""); setHasPhoto(""); setPollingStationId("");
     setIsSupplement(""); setMinSerial(""); setMaxSerial(""); setMinPage(""); setMaxPage("");
-    setMinAge(""); setMaxAge(""); setVerified(""); setAgePreset("");
+    setSourceFileName(""); setMinAge(""); setMaxAge(""); setVerified(""); setAgePreset("");
     setOffset(0);
   };
 
@@ -473,7 +546,7 @@ export const VotersView: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Polling station details, supplement roll filtering, serial ranges, and customizable columns.
+              Complete access to all 23 database columns, polling metadata, and PDF provenance.
             </p>
           </div>
 
@@ -556,35 +629,61 @@ export const VotersView: React.FC = () => {
             ))}
           </div>
 
-          {/* Column Visibility Chooser Button */}
+          {/* Categorized All 23 DB Columns Chooser Button */}
           <div className="relative">
             <button
               onClick={() => setShowColChooser(!showColChooser)}
-              className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-all flex items-center space-x-1.5"
+              className="px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-all flex items-center space-x-2"
             >
               <Columns3 className="w-4 h-4 text-indigo-500" />
-              <span>Columns ({visibleCols.size})</span>
+              <span>DB Columns ({visibleCols.size}/23)</span>
             </button>
 
             {showColChooser && (
-              <div className="absolute right-0 mt-2 w-52 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl z-50 space-y-2 animate-in fade-in zoom-in-95">
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 block px-1">
-                  Show / Hide Columns
-                </span>
-                <div className="space-y-1 max-h-60 overflow-y-auto">
-                  {ALL_COLUMNS.map((col) => (
-                    <label
-                      key={col.key}
-                      className="flex items-center space-x-2.5 px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-300"
+              <div className="absolute right-0 mt-2 w-72 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl z-50 space-y-3 animate-in fade-in zoom-in-95">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                  <span className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-slate-100">
+                    23 Database Columns
+                  </span>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={selectAllColumns}
+                      className="text-[10px] font-bold text-indigo-600 hover:underline"
                     >
-                      <input
-                        type="checkbox"
-                        checked={visibleCols.has(col.key)}
-                        onChange={() => toggleColumnVisibility(col.key)}
-                        className="rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span>{col.label}</span>
-                    </label>
+                      All
+                    </button>
+                    <button
+                      onClick={resetDefaultColumns}
+                      className="text-[10px] font-bold text-slate-400 hover:underline"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                  {CATEGORIZED_COLUMNS.map((cat) => (
+                    <div key={cat.category} className="space-y-1">
+                      <span className="text-[10px] font-extrabold uppercase text-indigo-600 dark:text-indigo-400 block px-1">
+                        {cat.category}
+                      </span>
+                      <div className="grid grid-cols-1 gap-1">
+                        {cat.columns.map((col) => (
+                          <label
+                            key={col.key}
+                            className="flex items-center space-x-2.5 px-2 py-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-300"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={visibleCols.has(col.key)}
+                              onChange={() => toggleColumnVisibility(col.key)}
+                              className="rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <span>{col.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -651,6 +750,17 @@ export const VotersView: React.FC = () => {
             </div>
 
             <div>
+              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Constituency</label>
+              <input
+                type="text"
+                placeholder="Constituency"
+                value={constituency}
+                onChange={(e) => { setConstituency(e.target.value); setOffset(0); }}
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+              />
+            </div>
+
+            <div>
               <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Polling Station ID</label>
               <input
                 type="text"
@@ -686,6 +796,17 @@ export const VotersView: React.FC = () => {
             </div>
 
             <div>
+              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Source PDF Name</label>
+              <input
+                type="text"
+                placeholder="Filename.pdf"
+                value={sourceFileName}
+                onChange={(e) => { setSourceFileName(e.target.value); setOffset(0); }}
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+              />
+            </div>
+
+            <div>
               <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Serial Range</label>
               <div className="flex items-center space-x-1">
                 <input
@@ -701,27 +822,6 @@ export const VotersView: React.FC = () => {
                   placeholder="Max"
                   value={maxSerial}
                   onChange={(e) => { setMaxSerial(e.target.value); setOffset(0); }}
-                  className="w-1/2 px-2 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Page Range</label>
-              <div className="flex items-center space-x-1">
-                <input
-                  type="number"
-                  placeholder="Min"
-                  value={minPage}
-                  onChange={(e) => { setMinPage(e.target.value); setOffset(0); }}
-                  className="w-1/2 px-2 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
-                />
-                <span className="text-xs text-slate-400">-</span>
-                <input
-                  type="number"
-                  placeholder="Max"
-                  value={maxPage}
-                  onChange={(e) => { setMaxPage(e.target.value); setOffset(0); }}
                   className="w-1/2 px-2 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
                 />
               </div>
@@ -766,6 +866,11 @@ export const VotersView: React.FC = () => {
                 Part: {partNumber} <X className="w-3 h-3 cursor-pointer hover:text-slate-900" onClick={() => setPartNumber("")} />
               </span>
             )}
+            {constituency && (
+              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5">
+                Constituency: {constituency} <X className="w-3 h-3 cursor-pointer hover:text-slate-900" onClick={() => setConstituency("")} />
+              </span>
+            )}
             {pollingStationId && (
               <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5">
                 Polling St. ID: {pollingStationId} <X className="w-3 h-3 cursor-pointer hover:text-indigo-800" onClick={() => setPollingStationId("")} />
@@ -781,14 +886,14 @@ export const VotersView: React.FC = () => {
                 House No: {houseNumber} <X className="w-3 h-3 cursor-pointer hover:text-slate-900" onClick={() => setHouseNumber("")} />
               </span>
             )}
+            {sourceFileName && (
+              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5">
+                File: {sourceFileName} <X className="w-3 h-3 cursor-pointer hover:text-slate-900" onClick={() => setSourceFileName("")} />
+              </span>
+            )}
             {minSerial && maxSerial && (
               <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 flex items-center gap-1.5">
                 Serial: {minSerial}–{maxSerial} <X className="w-3 h-3 cursor-pointer hover:text-amber-800" onClick={() => { setMinSerial(""); setMaxSerial(""); }} />
-              </span>
-            )}
-            {minPage && maxPage && (
-              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5">
-                Pages: {minPage}–{maxPage} <X className="w-3 h-3 cursor-pointer hover:text-slate-900" onClick={() => { setMinPage(""); setMaxPage(""); }} />
               </span>
             )}
             {verified && (
@@ -826,7 +931,7 @@ export const VotersView: React.FC = () => {
         ) : (
           <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse whitespace-nowrap">
                 <thead>
                   <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-sm">
                     <th className="w-12 px-4 py-3.5 text-center">
@@ -840,14 +945,26 @@ export const VotersView: React.FC = () => {
                     {visibleCols.has("serial") && <SortTh col="serial" label="S.No" className="w-16" />}
                     {visibleCols.has("epic") && <SortTh col="epic" label="EPIC ID" className="w-40" />}
                     {visibleCols.has("name") && <SortTh col="name" label="Voter Name" />}
-                    {visibleCols.has("relation") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Relation / Relative</th>}
+                    {visibleCols.has("relation_type") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Rel. Type</th>}
+                    {visibleCols.has("relation_name") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Relative Name</th>}
                     {visibleCols.has("house_number") && <SortTh col="house_number" label="House No" className="w-28" />}
                     {visibleCols.has("age") && <SortTh col="age" label="Age" className="w-16 text-center" />}
                     {visibleCols.has("gender") && <SortTh col="gender" label="Gender" className="w-24" />}
                     {visibleCols.has("part_number") && <SortTh col="part_number" label="Part" className="w-20 text-center" />}
-                    {visibleCols.has("polling_station_id") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Polling St.</th>}
+                    {visibleCols.has("constituency") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Constituency</th>}
+                    {visibleCols.has("polling_station_id") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Polling St. ID</th>}
                     {visibleCols.has("is_supplement") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 text-center">Roll Type</th>}
+                    {visibleCols.has("source_file_name") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Source File</th>}
+                    {visibleCols.has("page_number") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 text-center">Page No</th>}
+                    {visibleCols.has("source_file_id") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 font-mono">File ID</th>}
+                    {visibleCols.has("source_page_id") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 font-mono">Page ID</th>}
+                    {visibleCols.has("source_record_id") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 font-mono">Record ID</th>}
                     {visibleCols.has("verified") && <th className="w-24 px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 text-center">Verification</th>}
+                    {visibleCols.has("notes") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Notes</th>}
+                    {visibleCols.has("created_at") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Date Added</th>}
+                    {visibleCols.has("updated_at") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Date Updated</th>}
+                    {visibleCols.has("created_by") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Created By</th>}
+                    {visibleCols.has("updated_by") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Updated By</th>}
                     {visibleCols.has("actions") && <th className="w-24 px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 text-center">Actions</th>}
                   </tr>
                 </thead>
@@ -916,14 +1033,25 @@ export const VotersView: React.FC = () => {
                           </td>
                         )}
 
-                        {visibleCols.has("relation") && (
+                        {visibleCols.has("relation_type") && (
                           <td className="px-4 py-3">
-                            <RelationBadge
-                              type={voter.relation_type || ""}
-                              name={voter.relation_name || ""}
-                              onTypeClick={(e) => { e.stopPropagation(); filterByCellValue("relation_type", voter.relation_type); }}
-                              onNameClick={(e) => { e.stopPropagation(); filterByCellValue("relation_name", voter.relation_name); }}
-                            />
+                            <span
+                              onClick={(e) => { e.stopPropagation(); filterByCellValue("relation_type", voter.relation_type); }}
+                              className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 cursor-pointer"
+                            >
+                              {voter.relation_type || "—"}
+                            </span>
+                          </td>
+                        )}
+
+                        {visibleCols.has("relation_name") && (
+                          <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">
+                            <span
+                              onClick={(e) => { e.stopPropagation(); filterByCellValue("relation_name", voter.relation_name); }}
+                              className="hover:underline cursor-pointer"
+                            >
+                              {voter.relation_name || "—"}
+                            </span>
                           </td>
                         )}
 
@@ -972,12 +1100,22 @@ export const VotersView: React.FC = () => {
                           </td>
                         )}
 
+                        {visibleCols.has("constituency") && (
+                          <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">
+                            <span
+                              onClick={(e) => { e.stopPropagation(); filterByCellValue("constituency", voter.constituency); }}
+                              className="hover:underline cursor-pointer"
+                            >
+                              {voter.constituency || "—"}
+                            </span>
+                          </td>
+                        )}
+
                         {visibleCols.has("polling_station_id") && (
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-400">
                             <span
                               onClick={(e) => { e.stopPropagation(); filterByCellValue("polling_station_id", voter.polling_station_id); }}
-                              title={voter.polling_station_id ? `Click to filter by Polling St: ${voter.polling_station_id}` : undefined}
-                              className="font-mono text-[11px] text-slate-600 dark:text-slate-400 hover:text-indigo-600 cursor-pointer"
+                              className="hover:underline cursor-pointer"
                             >
                               {voter.polling_station_id || "—"}
                             </span>
@@ -999,6 +1137,42 @@ export const VotersView: React.FC = () => {
                           </td>
                         )}
 
+                        {visibleCols.has("source_file_name") && (
+                          <td className="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-400 max-w-[160px] truncate">
+                            <span
+                              onClick={(e) => { e.stopPropagation(); filterByCellValue("source_file_name", voter.source_file_name); }}
+                              title={voter.source_file_name}
+                              className="hover:underline cursor-pointer"
+                            >
+                              {voter.source_file_name || "—"}
+                            </span>
+                          </td>
+                        )}
+
+                        {visibleCols.has("page_number") && (
+                          <td className="px-4 py-3 font-mono text-center text-slate-600 dark:text-slate-400">
+                            {voter.page_number ?? "—"}
+                          </td>
+                        )}
+
+                        {visibleCols.has("source_file_id") && (
+                          <td className="px-4 py-3 font-mono text-[10px] text-slate-400">
+                            {voter.source_file_id || "—"}
+                          </td>
+                        )}
+
+                        {visibleCols.has("source_page_id") && (
+                          <td className="px-4 py-3 font-mono text-[10px] text-slate-400">
+                            {voter.source_page_id || "—"}
+                          </td>
+                        )}
+
+                        {visibleCols.has("source_record_id") && (
+                          <td className="px-4 py-3 font-mono text-[10px] text-slate-400">
+                            {voter.source_record_id || "—"}
+                          </td>
+                        )}
+
                         {visibleCols.has("verified") && (
                           <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                             <button
@@ -1012,6 +1186,36 @@ export const VotersView: React.FC = () => {
                               <BadgeCheck className={`w-3.5 h-3.5 ${voter.verified ? "text-emerald-500" : "opacity-40"}`} />
                               <span>{voter.verified ? "Verified" : "Pending"}</span>
                             </button>
+                          </td>
+                        )}
+
+                        {visibleCols.has("notes") && (
+                          <td className="px-4 py-3 text-slate-600 dark:text-slate-400 max-w-[160px] truncate">
+                            {voter.notes || "—"}
+                          </td>
+                        )}
+
+                        {visibleCols.has("created_at") && (
+                          <td className="px-4 py-3 font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                            {voter.created_at ? new Date(voter.created_at).toLocaleDateString() : "—"}
+                          </td>
+                        )}
+
+                        {visibleCols.has("updated_at") && (
+                          <td className="px-4 py-3 font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                            {voter.updated_at ? new Date(voter.updated_at).toLocaleDateString() : "—"}
+                          </td>
+                        )}
+
+                        {visibleCols.has("created_by") && (
+                          <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
+                            {voter.created_by || "—"}
+                          </td>
+                        )}
+
+                        {visibleCols.has("updated_by") && (
+                          <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
+                            {voter.updated_by || "—"}
                           </td>
                         )}
 
