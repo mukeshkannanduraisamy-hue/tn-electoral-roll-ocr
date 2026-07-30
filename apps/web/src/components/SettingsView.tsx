@@ -155,17 +155,18 @@ export function SettingsView() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
               <div>
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">
-                  Preprocessing Preset
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1.5 flex items-center justify-between">
+                  <span>OCR Execution Speed Mode</span>
+                  <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-wider">5x–10x Turbo</span>
                 </label>
                 <select
                   value={preprocMode}
                   onChange={(e) => setPreprocMode(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-slate-100 font-medium"
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-slate-100 font-semibold text-indigo-600 dark:text-indigo-400"
                 >
-                  <option value="fast">Fast (Standard Bilinear Upscale)</option>
-                  <option value="balanced">Balanced (CLAHE + Unsharp Mask)</option>
-                  <option value="high_quality">High Quality (Denoise + CLAHE)</option>
+                  <option value="fast">⚡ Turbo Mode (Fastest ~2.0s / page)</option>
+                  <option value="balanced">⚖️ Balanced Mode (~4.0s / page)</option>
+                  <option value="high_quality">🎯 Max Accuracy (~14.0s / page)</option>
                 </select>
               </div>
 

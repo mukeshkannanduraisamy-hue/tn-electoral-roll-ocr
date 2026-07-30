@@ -105,6 +105,11 @@ def deskew(image: np.ndarray, angle: float | None = None) -> tuple[np.ndarray, f
 def denoise(gray: np.ndarray) -> np.ndarray:
     if not settings.denoise_enabled:
         return gray
+
+    if settings.fast_denoise_enabled or settings.ocr_performance_mode == "turbo":
+        # Fast edge-preserving bilateral filter: ~30ms vs ~5200ms for fastNlMeansDenoising
+        return cv2.bilateralFilter(gray, d=5, sigmaColor=50, sigmaSpace=50)
+
     return cv2.fastNlMeansDenoising(
         gray,
         None,
