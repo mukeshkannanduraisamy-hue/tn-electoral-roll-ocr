@@ -95,7 +95,7 @@ export const FloatingAiChatbot: React.FC = () => {
     const userMsg: Message = {
       id: str(Date.now()),
       sender: "user",
-      text: queryText.strip(),
+      text: queryText.trim(),
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     };
 
