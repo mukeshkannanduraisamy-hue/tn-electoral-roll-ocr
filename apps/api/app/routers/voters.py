@@ -261,13 +261,25 @@ def voter_stats(
     }
 
 
+#: A household is a handful of people; anything past this is a data-quality
+#: problem (a placeholder house number shared by a whole part) and would make
+#: the solver's pairwise name matching quadratically slow.
+MAX_HOUSEHOLD_ROWS = 200
+
+
 @router.get("/{voter_id}/family-tree")
 def get_voter_family_tree(
     voter_id: str,
     session: Session = Depends(get_session),
     _user: UserRow = Depends(require_user),
 ) -> dict:
-    """Generate deterministic family tree for the voter's household."""
+    """Resolve the voter's household into deterministic family trees.
+
+    Returns the whole household rather than only the component containing the
+    voter: when a relationship cannot be resolved the household fragments into
+    several one-person families, and returning just one of them would hide real
+    people living at the address.
+    """
     target_row = session.execute(
         select(VoterRow).where(VoterRow.id == voter_id)
     ).scalar_one_or_none()
@@ -277,17 +289,32 @@ def get_voter_family_tree(
 
     target_dict = Voter.model_validate(target_row).model_dump()
 
-    # Find housemates sharing the same house number or nearby serial numbers
-    housemates: list[dict] = []
-    house = target_row.house_number.strip() if target_row.house_number else ""
+    from ..services.family_tree_solver import (
+        building_key,
+        is_missing_house,
+        resolve_family_trees,
+    )
 
-    if house and house not in ("-", "—", "0"):
-        stmt = select(VoterRow).where(VoterRow.house_number == target_row.house_number)
+    # Find housemates sharing the same building, or nearby serial numbers when
+    # the record carries no house number at all.
+    grouping = "serial_window" if is_missing_house(target_row.house_number) else "house"
+
+    if grouping == "house":
+        target_building = building_key(target_row.house_number)
+        stmt = select(VoterRow)
+        # A house number only identifies an address within its own part of the
+        # roll; the same number recurs in every other part.
         if target_row.part_number:
             stmt = stmt.where(VoterRow.part_number == target_row.part_number)
-        rows = session.execute(stmt).scalars().all()
-        housemates = [Voter.model_validate(r).model_dump() for r in rows]
+        # Narrow in SQL on the leading segment, then confirm in Python with
+        # building_key. Matching the raw prefix rather than a SQL-normalised
+        # expression keeps one source of truth for the key: SQL only has to be
+        # generous, and Python decides membership exactly.
+        lead = target_building.split("-")[0]
+        if lead:
+            stmt = stmt.where(func.upper(func.trim(VoterRow.house_number)).like(f"{lead}%"))
     else:
+        target_building = ""
         # Fallback by Part + Serial window (+/- 15)
         stmt = select(VoterRow).where(VoterRow.part_number == target_row.part_number)
         if target_row.serial is not None:
@@ -295,35 +322,77 @@ def get_voter_family_tree(
                 VoterRow.serial >= max(1, target_row.serial - 15),
                 VoterRow.serial <= target_row.serial + 15,
             )
-        rows = session.execute(stmt).scalars().all()
-        housemates = [Voter.model_validate(r).model_dump() for r in rows]
 
-    from app.services.family_tree_solver import resolve_family_trees
+    candidates = session.execute(stmt.order_by(asc(VoterRow.serial))).scalars().all()
 
-    family_trees = resolve_family_trees(housemates or [target_dict])
+    if grouping == "house":
+        candidates = [
+            r for r in candidates if building_key(r.house_number) == target_building
+        ]
 
-    # Find family tree containing target voter
-    selected_tree = None
-    for tree in family_trees:
-        member_ids = [m.get("id") for m in tree.get("members", [])]
-        if voter_id in member_ids:
-            selected_tree = tree
-            break
+    truncated = len(candidates) > MAX_HOUSEHOLD_ROWS
+    rows = candidates[:MAX_HOUSEHOLD_ROWS]
+    housemates = [Voter.model_validate(r).model_dump() for r in rows]
 
-    if not selected_tree and family_trees:
-        selected_tree = family_trees[0]
+    # The target must be present even if the filters above excluded it (a blank
+    # part number, or a serial outside its own window).
+    if not any(m["id"] == voter_id for m in housemates):
+        housemates.append(target_dict)
 
-    return selected_tree or {
-        "family_id": f"FAM-{voter_id}",
-        "family_head": target_row.name,
-        "house_number": target_row.house_number,
-        "members": [target_dict],
-        "relationships": [],
-        "family_tree": {"name": target_row.name, "epic": target_row.epic},
-        "ascii_tree": f"{target_row.name} ({target_row.age or ''}) [{target_row.gender or ''}]",
-        "confidence": 100,
-        "confidence_level": "Confirmed",
+    families = resolve_family_trees(housemates)
+
+    # The spellings this address actually appears under. Worth showing: a
+    # reviewer looking at "2-332" needs to know why an elector recorded at
+    # "2/332-1" is in the same tree.
+    house_variants = sorted(
+        {
+            (m.get("house_number") or "").strip()
+            for m in housemates
+            if (m.get("house_number") or "").strip()
+        }
+    )
+
+    # The family containing the target is the one the UI renders as its canvas;
+    # the rest are other people at the same address.
+    primary_family_id = next(
+        (
+            f["family_id"]
+            for f in families
+            if any(m.get("id") == voter_id for m in f.get("members", []))
+        ),
+        families[0]["family_id"] if families else None,
+    )
+
+    return {
+        "target_voter_id": voter_id,
+        "household": {
+            "house_number": target_row.house_number,
+            "building_key": target_building,
+            "house_variants": house_variants,
+            "part_number": target_row.part_number,
+            "constituency": target_row.constituency,
+            "size": len(housemates),
+            "grouping": grouping,
+            "truncated": truncated,
+        },
+        "primary_family_id": primary_family_id,
+        "families": families,
     }
+
+
+@router.post("/ai-copilot")
+def ai_copilot_endpoint(
+    payload: dict,
+    session: Session = Depends(get_session),
+    _user: UserRow = Depends(require_user),
+) -> dict:
+    """Query NVIDIA z-ai/glm-5.2 LLM endpoint for AI application copilot guidance & UI customization."""
+    user_message = str(payload.get("message") or "").strip()
+    context = payload.get("context") if isinstance(payload.get("context"), dict) else None
+
+    from app.services.nvidia_ai_service import query_nvidia_copilot
+
+    return query_nvidia_copilot(user_message, context)
 
 
 @router.get("/export")

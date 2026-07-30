@@ -15,7 +15,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { toast } from "sonner";
-import { customiseUiWithAi } from "@/lib/voterApi";
+import { queryAiCopilot } from "@/lib/voterApi";
 
 export interface AiCustomizerProps {
   isOpen: boolean;
@@ -44,8 +44,8 @@ export const AiCustomizerModal: React.FC<AiCustomizerProps> = ({
   onResetAll,
 }) => {
   const [prompt, setPrompt] = useState("");
-  const [logs, setLogs] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [logs, setLogs] = useState<{ text: string; isAi?: boolean }[]>([]);
   const [savedPresetName, setSavedPresetName] = useState<string | null>(null);
 
   useEffect(() => {
@@ -65,87 +65,83 @@ export const AiCustomizerModal: React.FC<AiCustomizerProps> = ({
   const processAiPrompt = async (userPrompt: string) => {
     if (!userPrompt.trim()) return;
 
+    const inputMsg = userPrompt.trim();
+    setPrompt("");
     setLoading(true);
+
+    const actions: string[] = [];
+
     try {
-      const res = await customiseUiWithAi(userPrompt);
-      const cfg = res.config || {};
-      const actions: string[] = [];
+      // 1. Call Backend NVIDIA AI Copilot API (z-ai/glm-5.2)
+      const res = await queryAiCopilot(inputMsg);
 
-      if (res.explanation) {
-        actions.push(`🤖 NVIDIA AI (glm-5.2): ${res.explanation}`);
+      if (res.reply) {
+        setLogs((prev) => [{ text: res.reply, isAi: true }, ...prev]);
       }
 
-      if (cfg.theme) {
-        onApplyTheme(cfg.theme);
-        actions.push(`Theme applied: ${cfg.theme}`);
-      }
+      const ui = res.ui_changes || {};
 
-      if (cfg.filters) {
-        onApplyFilter({
-          gender: cfg.filters.gender,
-          minAge: cfg.filters.min_age ? String(cfg.filters.min_age) : undefined,
-          maxAge: cfg.filters.max_age ? String(cfg.filters.max_age) : undefined,
-          verified: cfg.filters.verified !== undefined ? (cfg.filters.verified ? "true" : "false") : undefined,
-          houseNumber: cfg.filters.house_number,
-        });
-        actions.push("Filters updated by AI configuration");
+      if (ui.theme) {
+        onApplyTheme(String(ui.theme));
+        actions.push(`Theme: Switched to ${ui.theme}`);
       }
-
-      if (cfg.columns) {
-        onApplyColumns(cfg.columns);
-        actions.push(`Columns configured: ${cfg.columns}`);
+      if (ui.filters && typeof ui.filters === "object") {
+        onApplyFilter(ui.filters as any);
+        actions.push("Filters: Applied custom criteria");
       }
-
-      if (cfg.export) {
-        onTriggerExport(cfg.export);
-        actions.push(`Report export triggered: ${cfg.export}`);
+      if (ui.columns) {
+        onApplyColumns(ui.columns as any);
+        actions.push(`Columns: Switched to ${ui.columns}`);
       }
-
-      setLogs((prev) => [...actions, ...prev]);
-      toast.success("NVIDIA AI Customization Applied!");
+      if (ui.export) {
+        onTriggerExport(ui.export as any);
+        actions.push(`Export: Triggered ${ui.export}`);
+      }
+      if (ui.reset) {
+        onResetAll();
+        actions.push("Reset: Restored default settings");
+      }
     } catch {
-      // Local fallback parsing
-      const p = userPrompt.toLowerCase().trim();
-      const actions: string[] = [];
-
+      // Local Client-side Rule Engine Fallback
+      const p = inputMsg.toLowerCase();
       if (p.includes("emerald") || p.includes("green")) {
         onApplyTheme("emerald");
         actions.push("Theme set to Emerald Green");
       } else if (p.includes("purple") || p.includes("cyber")) {
         onApplyTheme("purple");
         actions.push("Theme set to Cyberpunk Purple");
-      } else if (p.includes("amber") || p.includes("sunset") || p.includes("gold")) {
+      } else if (p.includes("amber") || p.includes("sunset")) {
         onApplyTheme("amber");
         actions.push("Theme set to Sunset Amber");
-      } else if (p.includes("blue") || p.includes("ocean")) {
-        onApplyTheme("ocean");
-        actions.push("Theme set to Ocean Blue");
-      } else if (p.includes("dark") || p.includes("night")) {
+      } else if (p.includes("dark")) {
         onApplyTheme("dark");
         actions.push("Theme set to Dark Mode");
-      } else if (p.includes("light") || p.includes("day")) {
+      } else if (p.includes("light")) {
         onApplyTheme("light");
         actions.push("Theme set to Light Mode");
       }
 
-      const filters: any = {};
-      if (p.includes("female") || p.includes("women")) filters.gender = "Female";
-      else if (p.includes("male") || p.includes("men")) filters.gender = "Male";
+      if (p.includes("excel") || p.includes("xlsx")) {
+        onTriggerExport("excel");
+        actions.push("Action: Triggered Excel export download");
+      } else if (p.includes("csv")) {
+        onTriggerExport("csv");
+        actions.push("Action: Triggered CSV export download");
+      }
 
-      if (p.includes("18-25") || p.includes("young")) { filters.minAge = "18"; filters.maxAge = "25"; }
-      if (p.includes("unverified") || p.includes("pending")) filters.verified = "false";
-      if (Object.keys(filters).length > 0) onApplyFilter(filters);
+      if (p.includes("reset") || p.includes("default")) {
+        onResetAll();
+        actions.push("Reset: Reverted all UI settings to default");
+      }
 
-      if (p.includes("excel")) onTriggerExport("excel");
-      else if (p.includes("csv")) onTriggerExport("csv");
-
-      if (p.includes("reset")) onResetAll();
-
-      setLogs((prev) => [...actions, ...prev]);
-      toast.info("Applied UI Customization");
+      setLogs((prev) => [{ text: `AI Assistant: Processed "${inputMsg}"`, isAi: true }, ...prev]);
     } finally {
       setLoading(false);
-      setPrompt("");
+    }
+
+    if (actions.length > 0) {
+      toast.success(`AI applied ${actions.length} UI customization(s)`);
+      setLogs((prev) => [...actions.map((a) => ({ text: a, isAi: false })), ...prev]);
     }
   };
 
@@ -301,13 +297,17 @@ export const AiCustomizerModal: React.FC<AiCustomizerProps> = ({
         {logs.length > 0 && (
           <div className="space-y-1.5">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              AI Action History
+              AI Conversation & Action Log
             </span>
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 font-mono text-[11px] space-y-1 max-h-32 overflow-y-auto">
+            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 text-xs space-y-2 max-h-48 overflow-y-auto">
               {logs.map((log, i) => (
-                <div key={i} className="flex items-center space-x-2 text-emerald-400">
-                  <CheckCircle2 className="w-3 h-3 shrink-0" />
-                  <span className="truncate">{log}</span>
+                <div key={i} className={`flex items-start space-x-2 ${log.isAi ? "text-indigo-300" : "text-emerald-400 font-mono text-[11px]"}`}>
+                  {log.isAi ? (
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0 mt-0.5" />
+                  ) : (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                  )}
+                  <span className="whitespace-pre-wrap leading-relaxed">{log.text}</span>
                 </div>
               ))}
             </div>

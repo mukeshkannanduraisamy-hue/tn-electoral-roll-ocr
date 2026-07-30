@@ -150,10 +150,10 @@ export function getVoterFamilyTree(id: string): Promise<FamilyTreeResponse> {
   return request<FamilyTreeResponse>(`/api/voters/${id}/family-tree`);
 }
 
-export function customiseUiWithAi(prompt: string, currentConfig?: any): Promise<{ explanation: string; config: any; raw_ai_response?: string }> {
-  return request<{ explanation: string; config: any; raw_ai_response?: string }>("/api/ai/customize", {
+export function queryAiCopilot(message: string, context?: Record<string, unknown>): Promise<{ reply: string; ui_changes?: Record<string, unknown> }> {
+  return request<{ reply: string; ui_changes?: Record<string, unknown> }>("/api/voters/ai-copilot", {
     method: "POST",
-    body: JSON.stringify({ prompt, current_config: currentConfig }),
+    body: JSON.stringify({ message, context }),
   });
 }
 
