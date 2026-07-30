@@ -40,7 +40,7 @@ from rapidfuzz import fuzz
 # Characters OCR substitutes for the ':' separator.
 _SEP_CHARS = ":;：﹕∶|"
 _SEP_SPLIT_RE = re.compile(f"[{re.escape(_SEP_CHARS)}]")
-_LEADING_JUNK_RE = re.compile(r"^[\s\-–—.,;:]+")
+_LEADING_JUNK_RE = re.compile(r"^(\s*\d+[\.\:\)\s]+\s*|[\s\-–—.,;:])+")
 # NOTE: the `$` anchor is load-bearing. Without it, `.sub()` strips these
 # characters from *anywhere* in the value, silently turning house number
 # "5/179-3" into "5/1793". Only trailing punctuation may be removed.
