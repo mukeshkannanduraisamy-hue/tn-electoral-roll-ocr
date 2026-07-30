@@ -1,12 +1,10 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   ArrowLeft,
   BadgeCheck,
   Copy,
-  CheckCircle2,
-  ExternalLink,
   Home,
   User,
   MapPin,
@@ -23,19 +21,14 @@ import {
   FileText,
   History,
   Heart,
-  ChevronRight,
   Camera,
   BarChart3,
   Eye,
-  Sparkles,
-  AlertTriangle,
-  Info,
-  Code2,
 } from "lucide-react";
 import {
   getVoter,
   updateVoter,
-  listVoters,
+  getVoterFamilyTree,
   voterOcrBlocks,
   voterHistory,
   listPhotos,
@@ -43,16 +36,24 @@ import {
 import { fetchPage } from "@/lib/api";
 import {
   AuditEntry,
+  FamilyTreeResponse,
   Photo,
   Voter,
   VoterHistory,
   VoterOcrBlocks,
 } from "@ocr/shared-types";
 import { toast } from "sonner";
+import { FamilyTreeTab } from "./FamilyTreeTab";
 
 interface VoterProfilePageProps {
   voterId: string;
   onBack: () => void;
+  /**
+   * Open a different voter's profile. The family canvas needs this to re-key
+   * the whole page: swapping only the loaded voter would leave the OCR blocks,
+   * audit trail and photos belonging to the person navigated away from.
+   */
+  onNavigateVoter?: (voterId: string) => void;
 }
 
 function copyToClipboard(text: string, label: string) {
@@ -138,29 +139,6 @@ function Tab({ id, label, icon: Icon, active, onClick }: {
   );
 }
 
-function RelatedVoterCard({ voter, onClick }: { voter: Voter; onClick: () => void }) {
-  const initials = (voter.name || "?")[0].toUpperCase();
-  return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-3 w-full p-3 rounded-xl border border-border hover:bg-primary/5 hover:border-primary/30 transition-all text-left"
-    >
-      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
-        {initials}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium truncate">{voter.name || "—"}</div>
-        <div className="text-xs text-muted-foreground font-mono truncate">{voter.epic}</div>
-      </div>
-      <div className="text-right shrink-0">
-        <div className="text-xs text-muted-foreground">{voter.gender} · {voter.age ?? "?"}</div>
-        <div className="text-[10px] text-muted-foreground">{voter.house_number}</div>
-      </div>
-      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-    </button>
-  );
-}
-
 // 9 Exact Tabs as requested in specification
 type TabId =
   | "overview"
@@ -200,16 +178,16 @@ function confidenceTone(value: number): string {
   return "text-red-500 bg-red-500/10 border-red-500/20";
 }
 
-export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
+export function VoterProfilePage({ voterId, onBack, onNavigateVoter }: VoterProfilePageProps) {
   const [voter, setVoter] = useState<Voter | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [editForm, setEditForm] = useState<Partial<Voter>>({});
-  const [housemates, setHousemates] = useState<Voter[]>([]);
-  const [relatedVoters, setRelatedVoters] = useState<Voter[]>([]);
+  const [family, setFamily] = useState<FamilyTreeResponse | null>(null);
   const [loadingFamily, setLoadingFamily] = useState(false);
+  const [familyError, setFamilyError] = useState<string | null>(null);
   const [pageData, setPageData] = useState<any | null>(null);
   const [loadingPage, setLoadingPage] = useState(false);
   const [activeBBox, setActiveBBox] = useState<string | null>(null);
@@ -221,6 +199,23 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
 
   const voterPhoto = photos?.find((p) => p.photo_type === "voter_crop") ?? null;
   const stationPhotos = photos?.filter((p) => p.photo_type !== "voter_crop") ?? [];
+
+  // Navigating to a relative re-points this page at a different voter without
+  // unmounting it, so every per-voter cache has to be dropped or the tabs would
+  // keep showing the previous person's OCR blocks, audit trail and imagery.
+  // Declared before the loaders so they see the cleared state in the same pass.
+  // The active tab deliberately survives, so clicking through a household keeps
+  // you on the family canvas.
+  useEffect(() => {
+    setFamily(null);
+    setFamilyError(null);
+    setOcr(null);
+    setHistory(null);
+    setPhotos(null);
+    setPageData(null);
+    setActiveBBox(null);
+    setEditing(false);
+  }, [voterId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -239,30 +234,26 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
     void load();
   }, [load]);
 
-  // Load family/related voters
-  useEffect(() => {
-    if (!voter) return;
+  // The household graph, resolved server-side. Fetched when the tab is first
+  // opened rather than on every profile load, because most visits never look at
+  // it and the solver query touches every elector at the address.
+  const loadFamily = useCallback(async () => {
     setLoadingFamily(true);
+    setFamilyError(null);
+    try {
+      setFamily(await getVoterFamilyTree(voterId));
+    } catch (e: any) {
+      setFamily(null);
+      setFamilyError(e?.message || "The household could not be loaded.");
+    } finally {
+      setLoadingFamily(false);
+    }
+  }, [voterId]);
 
-    const fetchRelated = async () => {
-      try {
-        if (voter.house_number) {
-          const house = await listVoters({ search: voter.house_number, limit: 10 });
-          setHousemates((house.items || []).filter((v: Voter) => v.id !== voter.id));
-        }
-        if (voter.relation_name) {
-          const rel = await listVoters({ search: voter.relation_name, limit: 8 });
-          setRelatedVoters((rel.items || []).filter((v: Voter) => v.id !== voter.id));
-        }
-      } catch {
-        // silent
-      } finally {
-        setLoadingFamily(false);
-      }
-    };
-
-    void fetchRelated();
-  }, [voter]);
+  useEffect(() => {
+    if (activeTab !== "family" || family || loadingFamily || familyError) return;
+    void loadFamily();
+  }, [activeTab, family, loadingFamily, familyError, loadFamily]);
 
   // Load page data for Source Document tab
   useEffect(() => {
@@ -333,6 +324,26 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
       .catch(() => setPhotos([]))
       .finally(() => setLoadingPhotos(false));
   }, [activeTab, photos, loadingPhotos, voter]);
+
+  /** Electors in the household, once known — the tab label stays bare until then. */
+  const familyCount = family?.household.size ?? null;
+
+  /**
+   * Hand the new id up so the page re-mounts around it. Editing blocks the jump
+   * rather than discarding the form silently.
+   */
+  const navigateToVoter = useCallback(
+    (nextId: string) => {
+      if (nextId === voterId) return;
+      if (!onNavigateVoter) return;
+      if (editing) {
+        toast.error("Save or cancel your changes before opening another elector");
+        return;
+      }
+      onNavigateVoter(nextId);
+    },
+    [voterId, onNavigateVoter, editing],
+  );
 
   const handleSave = async () => {
     if (!voter) return;
@@ -492,7 +503,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
           <Tab id="overview"        label="1. Overview"         icon={User}          active={activeTab === "overview"}        onClick={() => setActiveTab("overview")} />
           <Tab id="personal"        label="2. Personal Details" icon={ClipboardList} active={activeTab === "personal"}        onClick={() => setActiveTab("personal")} />
           <Tab id="polling"         label="3. Polling Info"     icon={MapPin}        active={activeTab === "polling"}         onClick={() => setActiveTab("polling")} />
-          <Tab id="family"          label={`4. Family (${housemates.length + relatedVoters.length})`} icon={Heart} active={activeTab === "family"} onClick={() => setActiveTab("family")} />
+          <Tab id="family"          label={familyCount === null ? "4. Family" : `4. Family (${familyCount})`} icon={Heart} active={activeTab === "family"} onClick={() => setActiveTab("family")} />
           <Tab id="source_document" label="5. Source Document" icon={Eye}           active={activeTab === "source_document"} onClick={() => setActiveTab("source_document")} />
           <Tab id="ocr_details"     label="6. OCR Details"      icon={Shield}        active={activeTab === "ocr_details"}     onClick={() => setActiveTab("ocr_details")} />
           <Tab id="photos"          label="7. Photos"           icon={Camera}        active={activeTab === "photos"}          onClick={() => setActiveTab("photos")} />
@@ -648,13 +659,17 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
             </div>
           )}
 
-          {/* TAB 4: INTERACTIVE HOUSEHOLD FAMILY TREE (SAME HOUSE NO.) */}
+          {/* TAB 4: HOUSEHOLD GRAPH (resolved server-side) */}
           {activeTab === "family" && (
-            <HouseholdFamilyTree
-              currentVoter={voter}
-              housemates={housemates}
+            <FamilyTreeTab
+              data={family}
               loading={loadingFamily}
-              onSelectVoter={(v) => setVoter(v)}
+              error={familyError}
+              onRetry={() => {
+                setFamilyError(null);
+                void loadFamily();
+              }}
+              onNavigate={navigateToVoter}
             />
           )}
 
@@ -1120,440 +1135,3 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
     </div>
   );
 }
-
-/* ---------------------------------------------------------------------------
- * INTERACTIVE LOGICAL HOUSEHOLD FAMILY TREE COMPONENT
- * Logical parent-spouse-child graph solver for voters sharing the same house number
- * --------------------------------------------------------------------------- */
-
-function HouseholdFamilyTree({
-  currentVoter,
-  housemates,
-  loading,
-  onSelectVoter,
-}: {
-  currentVoter: Voter;
-  housemates: Voter[];
-  loading: boolean;
-  onSelectVoter: (v: Voter) => void;
-}) {
-  // Combine current voter and housemates, deduplicating by ID
-  const allFamilyMembers = useMemo(() => {
-    const map = new Map<string, Voter>();
-    map.set(currentVoter.id, currentVoter);
-    for (const h of housemates) {
-      if (!map.has(h.id)) map.set(h.id, h);
-    }
-    return Array.from(map.values()).sort((a, b) => (b.age || 0) - (a.age || 0));
-  }, [currentVoter, housemates]);
-
-  // LOGICAL FAMILY RELATIONSHIP SOLVER
-  const { heads, children, others } = useMemo(() => {
-    if (allFamilyMembers.length === 0) return { heads: [], children: [], others: [] };
-
-    // Clean name helper
-    const cleanName = (s?: string) =>
-      (s || "")
-        .toLowerCase()
-        .replace(/^[\d\.\:\-\s]+/, "")
-        .replace(/[\s\.\-]+/g, "")
-        .trim();
-
-    const nameToVoterMap = new Map<string, Voter>();
-    for (const m of allFamilyMembers) {
-      const cName = cleanName(m.name);
-      if (cName) nameToVoterMap.set(cName, m);
-    }
-
-    // Step 1: Identify Heads / Parents
-    const headCandidates: Voter[] = [];
-    const childCandidates: Voter[] = [];
-    const otherCandidates: Voter[] = [];
-
-    // Find any member whose name is referenced as relation_name by others
-    const referencedNames = new Set(
-      allFamilyMembers.map((m) => cleanName(m.relation_name)).filter(Boolean)
-    );
-
-    const oldestAge = allFamilyMembers[0]?.age || 0;
-
-    for (const member of allFamilyMembers) {
-      const cName = cleanName(member.name);
-      const isReferencedAsParent = referencedNames.has(cName);
-      const isElder = (member.age || 0) >= Math.max(38, oldestAge - 15);
-
-      if (isReferencedAsParent || isElder || headCandidates.length === 0) {
-        headCandidates.push(member);
-      } else {
-        // Check if member is a child of one of the heads
-        const relClean = cleanName(member.relation_name);
-        const parentMatch = headCandidates.find((h) => cleanName(h.name) === relClean);
-
-        if (parentMatch || member.relation_type === "Father" || member.relation_type === "Mother") {
-          childCandidates.push(member);
-        } else {
-          otherCandidates.push(member);
-        }
-      }
-    }
-
-    return { heads: headCandidates, children: childCandidates, others: otherCandidates };
-  }, [allFamilyMembers]);
-
-  // Calculate Confidence Score according to exact point matrix
-  const confidenceScore = useMemo(() => {
-    if (allFamilyMembers.length <= 1) return 100;
-    let total = 0;
-    let count = 0;
-
-    for (const member of allFamilyMembers) {
-      if (member.relation_name) {
-        let score = 30; // +30 House Number match
-        score += 35; // +35 Relative Name match
-        score += 20; // +20 Relation Type match
-        if (member.age) score += 10; // +10 Age validation
-        if (member.gender) score += 5; // +5 Gender validation
-        total += score;
-        count++;
-      }
-    }
-
-    return count > 0 ? Math.min(100, Math.round(total / count)) : 95;
-  }, [allFamilyMembers]);
-
-  const confidenceLevel = useMemo(() => {
-    if (confidenceScore >= 95) return "Confirmed";
-    if (confidenceScore >= 80) return "Strong";
-    if (confidenceScore >= 60) return "Possible";
-    return "Unverified";
-  }, [confidenceScore]);
-
-  // Generate ASCII Tree Output matching prompt example
-  const asciiTreeOutput = useMemo(() => {
-    const head = heads[0] || allFamilyMembers[0];
-    if (!head) return "";
-
-    const lines: string[] = [];
-    const headAge = head.age ? ` (${head.age})` : "";
-    lines.push(`${head.name || "Family Head"}${headAge}`);
-
-    const subMembers = [...children, ...others].filter((m) => m.id !== head.id);
-    subMembers.forEach((m, idx) => {
-      const isLast = idx === subMembers.length - 1;
-      const connector = isLast ? "└── " : "├── ";
-      const ageStr = m.age ? ` (${m.age})` : "";
-      lines.push(`${connector}${m.name || "Member"}${ageStr}`);
-    });
-
-    return lines.join("\n");
-  }, [heads, children, others, allFamilyMembers]);
-
-  // Generate Structured JSON Output matching prompt schema
-  const jsonSchemaOutput = useMemo(() => {
-    const head = heads[0] || allFamilyMembers[0];
-    return {
-      family_id: `FAM-${currentVoter.part_number || "PART"}-${currentVoter.house_number || "HOUSE"}-1`,
-      family_head: head?.name || "Unassigned",
-      house_number: currentVoter.house_number || "—",
-      members: allFamilyMembers.map((m) => ({
-        id: m.id,
-        epic: m.epic,
-        name: m.name,
-        relation_type: m.relation_type,
-        relation_name: m.relation_name,
-        gender: m.gender,
-        age: m.age,
-        house_number: m.house_number,
-        serial: m.serial,
-        part_number: m.part_number,
-      })),
-      relationships: allFamilyMembers
-        .filter((m) => m.relation_name)
-        .map((m) => ({
-          member: m.name,
-          relation: m.relation_type,
-          relative: m.relation_name,
-        })),
-      family_tree: {
-        name: head?.name,
-        age: head?.age,
-        gender: head?.gender,
-        children: children.map((c) => ({
-          name: c.name,
-          age: c.age,
-          gender: c.gender,
-          relation: c.relation_type,
-        })),
-      },
-      confidence: confidenceScore,
-      confidence_level: confidenceLevel,
-    };
-  }, [currentVoter, heads, children, allFamilyMembers, confidenceScore, confidenceLevel]);
-
-  const verifiedCount = useMemo(
-    () => allFamilyMembers.filter((m) => m.verified).length,
-    [allFamilyMembers]
-  );
-
-  return (
-    <div className="space-y-6">
-      {/* Household Header Summary Card */}
-      <div className="card-vimc p-6 bg-gradient-to-r from-indigo-50/80 via-purple-50/40 to-white dark:from-indigo-950/40 dark:via-purple-950/20 dark:to-slate-900 border-indigo-200/60 dark:border-indigo-800/60 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-black shadow-md shadow-indigo-600/20">
-              <Home className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h3 className="text-lg font-black text-foreground">
-                  House No: {currentVoter.house_number || "Unassigned"}
-                </h3>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-600 text-white shadow-sm">
-                  {allFamilyMembers.length} Family Member{allFamilyMembers.length !== 1 ? "s" : ""}
-                </span>
-                <span className={`px-2.5 py-0.5 rounded-full text-xs font-black uppercase tracking-wider ${
-                  confidenceScore >= 95
-                    ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/30"
-                    : "bg-blue-500/10 text-blue-600 border border-blue-500/30"
-                }`}>
-                  {confidenceScore}% {confidenceLevel}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Constituency: {currentVoter.constituency || "—"} · Part No: {currentVoter.part_number || "—"}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-4 border-l border-indigo-200 dark:border-indigo-800/60 pl-4 shrink-0">
-            <div>
-              <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Verification</div>
-              <div className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 flex items-center space-x-1">
-                <BadgeCheck className="w-4 h-4 text-emerald-500" />
-                <span>{verifiedCount} / {allFamilyMembers.length} Verified</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Interactive Logical Family Tree Diagram */}
-      <div className="card-vimc p-8 space-y-8 overflow-x-auto">
-        <div className="flex items-center justify-between border-b border-border pb-4">
-          <div className="flex items-center space-x-2">
-            <Users className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            <h4 className="text-sm font-bold text-foreground">Logical Family Graph & Hierarchy</h4>
-          </div>
-          <span className="text-[11px] text-muted-foreground font-medium">
-            Click any node to inspect profile
-          </span>
-        </div>
-
-        {allFamilyMembers.length === 1 ? (
-          <div className="text-center py-10 space-y-2">
-            <User className="w-10 h-10 text-muted-foreground mx-auto opacity-40" />
-            <p className="text-sm font-bold text-muted-foreground">Single Voter Household</p>
-            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-              No other voters are currently registered at House No. {currentVoter.house_number || "this address"}.
-            </p>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center space-y-8 py-4 min-w-[500px]">
-            {/* GENERATION 1: HEAD OF HOUSEHOLD & SPOUSE / PARENTS */}
-            <div className="flex flex-col items-center space-y-2 w-full">
-              <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 px-3 py-1 rounded-full border border-indigo-200 dark:border-indigo-800">
-                Generation 1 (Head & Spouse / Parents)
-              </span>
-
-              <div className="flex flex-wrap justify-center gap-6 pt-2">
-                {heads.map((member) => (
-                  <LogicalFamilyNodeCard
-                    key={member.id}
-                    member={member}
-                    allMembers={allFamilyMembers}
-                    isCurrent={member.id === currentVoter.id}
-                    isHead={true}
-                    onClick={() => onSelectVoter(member)}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* CONNECTING TREE BRANCH LINES */}
-            {(children.length > 0 || others.length > 0) && (
-              <div className="w-full flex flex-col items-center">
-                <div className="w-0.5 h-8 bg-indigo-500/40" />
-                <div className="w-2/3 h-0.5 bg-indigo-500/40" />
-                <div className="w-0.5 h-6 bg-indigo-500/40" />
-              </div>
-            )}
-
-            {/* GENERATION 2: SONS & DAUGHTERS / DEPENDENTS */}
-            {children.length > 0 && (
-              <div className="flex flex-col items-center space-y-2 w-full">
-                <span className="text-[10px] font-black uppercase tracking-widest text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950 px-3 py-1 rounded-full border border-purple-200 dark:border-purple-800">
-                  Generation 2 (Sons, Daughters & Children)
-                </span>
-
-                <div className="flex flex-wrap justify-center gap-4 pt-2">
-                  {children.map((member) => (
-                    <LogicalFamilyNodeCard
-                      key={member.id}
-                      member={member}
-                      allMembers={allFamilyMembers}
-                      isCurrent={member.id === currentVoter.id}
-                      isHead={false}
-                      onClick={() => onSelectVoter(member)}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* OTHER HOUSEHOLD RESIDENTS */}
-            {others.length > 0 && (
-              <div className="flex flex-col items-center space-y-2 w-full pt-4">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700">
-                  Other Household Residents
-                </span>
-
-                <div className="flex flex-wrap justify-center gap-4 pt-2">
-                  {others.map((member) => (
-                    <LogicalFamilyNodeCard
-                      key={member.id}
-                      member={member}
-                      allMembers={allFamilyMembers}
-                      isCurrent={member.id === currentVoter.id}
-                      isHead={false}
-                      onClick={() => onSelectVoter(member)}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ASCII FAMILY TREE CARD */}
-      <div className="card-vimc p-6 space-y-3">
-        <div className="flex items-center justify-between border-b border-border pb-3">
-          <div className="flex items-center space-x-2">
-            <FileText className="w-4 h-4 text-emerald-600" />
-            <h4 className="text-xs font-bold text-foreground">ASCII Family Tree Representation</h4>
-          </div>
-          <button
-            onClick={() => copyToClipboard(asciiTreeOutput, "ASCII Family Tree")}
-            className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center space-x-1"
-          >
-            <Copy className="w-3 h-3" />
-            <span>Copy ASCII Tree</span>
-          </button>
-        </div>
-        <pre className="p-4 rounded-xl bg-slate-900 text-slate-100 font-mono text-xs overflow-x-auto leading-relaxed">
-          {asciiTreeOutput || "No family tree lines generated"}
-        </pre>
-      </div>
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------------------
- * LOGICAL FAMILY NODE CARD
- * Displays derived logical relationships (Head, Wife, Husband, Son, Daughter)
- * --------------------------------------------------------------------------- */
-
-function LogicalFamilyNodeCard({
-  member,
-  allMembers,
-  isCurrent,
-  isHead,
-  onClick,
-}: {
-  member: Voter;
-  allMembers: Voter[];
-  isCurrent: boolean;
-  isHead: boolean;
-  onClick: () => void;
-}) {
-  const initials = (member.name || "?")[0].toUpperCase();
-
-  // DERIVE LOGICAL RELATIONSHIP ROLE
-  const derivedRole = useMemo(() => {
-    const relType = member.relation_type?.toLowerCase() || "";
-    const gender = member.gender?.toLowerCase() || "";
-
-    if (relType === "husband") {
-      return { badge: "💍 Wife", style: "bg-rose-500/10 text-rose-600 border-rose-500/20", label: `Wife of ${member.relation_name || "Husband"}` };
-    }
-    if (relType === "father") {
-      return gender === "female"
-        ? { badge: "👧 Daughter", style: "bg-purple-500/10 text-purple-600 border-purple-500/20", label: `Daughter of ${member.relation_name || "Father"}` }
-        : { badge: "👦 Son", style: "bg-blue-500/10 text-blue-600 border-blue-500/20", label: `Son of ${member.relation_name || "Father"}` };
-    }
-    if (relType === "mother") {
-      return gender === "female"
-        ? { badge: "👧 Daughter", style: "bg-purple-500/10 text-purple-600 border-purple-500/20", label: `Daughter of Mother ${member.relation_name || ""}` }
-        : { badge: "👦 Son", style: "bg-blue-500/10 text-blue-600 border-blue-500/20", label: `Son of Mother ${member.relation_name || ""}` };
-    }
-    if (isHead) {
-      return { badge: "👑 Head of House", style: "bg-amber-500/10 text-amber-600 border-amber-500/20", label: "Head of Household" };
-    }
-    return { badge: "👤 Resident", style: "bg-slate-500/10 text-slate-600 border-slate-500/20", label: member.relation_name ? `Relative of ${member.relation_name}` : "Resident" };
-  }, [member, isHead]);
-
-  return (
-    <div
-      onClick={onClick}
-      className={`w-64 p-4 rounded-2xl border transition-all cursor-pointer relative group ${
-        isCurrent
-          ? "bg-indigo-50/90 dark:bg-indigo-950/80 border-indigo-500 ring-2 ring-indigo-500/40 shadow-lg"
-          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 hover:shadow-md"
-      }`}
-    >
-      {/* Active Indicator Badge */}
-      {isCurrent && (
-        <span className="absolute -top-2.5 right-4 bg-indigo-600 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-sm">
-          Active Profile
-        </span>
-      )}
-
-      <div className="flex items-start space-x-3">
-        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-white font-black text-sm shrink-0 shadow-sm ${
-          isHead
-            ? "bg-gradient-to-br from-amber-500 to-indigo-600"
-            : "bg-gradient-to-br from-indigo-500 to-purple-600"
-        }`}>
-          {initials}
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <h5 className="font-extrabold text-xs text-foreground truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-            {member.name || "Unnamed Voter"}
-          </h5>
-
-          <div className="flex items-center space-x-1.5 mt-0.5">
-            <span className="font-mono text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 px-1.5 py-0.5 rounded">
-              {member.epic}
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5 mt-2">
-            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase border ${derivedRole.style}`}>
-              {derivedRole.badge}
-            </span>
-            <span className="text-[10px] font-bold text-muted-foreground">
-              {member.age ?? "—"} yrs · {member.gender || "—"}
-            </span>
-          </div>
-
-          <p className="text-[10px] text-muted-foreground truncate mt-1">
-            {derivedRole.label}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-

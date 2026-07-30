@@ -386,13 +386,53 @@ def ai_copilot_endpoint(
     session: Session = Depends(get_session),
     _user: UserRow = Depends(require_user),
 ) -> dict:
-    """Query NVIDIA z-ai/glm-5.2 LLM endpoint for AI application copilot guidance & UI customization."""
+    """Copilot guidance, UI customisation, and chart-ready infographics.
+
+    A statistical question gets an ``infographic`` alongside the reply. Its
+    figures come from SQL, never from the model: the model only chooses which
+    measure to chart and writes the surrounding commentary. See
+    ``app/services/infographic.py`` for why that split matters.
+    """
     user_message = str(payload.get("message") or "").strip()
     context = payload.get("context") if isinstance(payload.get("context"), dict) else None
 
-    from app.services.nvidia_ai_service import query_nvidia_copilot
+    from ..services import infographic as info
+    from ..services.nvidia_ai_service import (
+        local_infographic_spec,
+        narrate_infographic,
+        propose_infographic_spec,
+        query_nvidia_copilot,
+        wants_infographic,
+    )
 
-    return query_nvidia_copilot(user_message, context)
+    result = query_nvidia_copilot(user_message, context)
+    result.setdefault("ui_changes", {})
+    result["infographic"] = None
+
+    if not wants_infographic(user_message):
+        return result
+
+    raw_spec = propose_infographic_spec(user_message, info.catalogue())
+    try:
+        spec = info.validate_spec(raw_spec or {})
+    except info.SpecError as exc:
+        # The model asked for something outside the vocabulary. Fall back to the
+        # keyword matcher rather than serving no chart at all.
+        logger.info("Rejected AI infographic spec (%s); using local matcher", exc)
+        try:
+            spec = info.validate_spec(local_infographic_spec(user_message))
+        except info.SpecError:
+            return result
+
+    try:
+        chart = info.build_infographic(session, spec)
+    except Exception:
+        logger.exception("Failed to build infographic for %r", user_message)
+        return result
+
+    chart["insights"] = narrate_infographic(user_message, chart)
+    result["infographic"] = chart
+    return result
 
 
 @router.get("/export")

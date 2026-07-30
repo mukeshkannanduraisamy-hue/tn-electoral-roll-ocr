@@ -16,6 +16,19 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { queryAiCopilot } from "@/lib/voterApi";
+import type { Infographic } from "@ocr/shared-types";
+import { InfographicCard } from "./InfographicCard";
+
+/**
+ * One line in the transcript. A statistical question also carries a chart of
+ * real figures, so the assistant answers in prose or in a chart depending on
+ * what was asked.
+ */
+interface LogEntry {
+  text: string;
+  isAi?: boolean;
+  infographic?: Infographic | null;
+}
 
 export interface AiCustomizerProps {
   isOpen: boolean;
@@ -45,7 +58,7 @@ export const AiCustomizerModal: React.FC<AiCustomizerProps> = ({
 }) => {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
-  const [logs, setLogs] = useState<{ text: string; isAi?: boolean }[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [savedPresetName, setSavedPresetName] = useState<string | null>(null);
 
   useEffect(() => {
@@ -75,8 +88,15 @@ export const AiCustomizerModal: React.FC<AiCustomizerProps> = ({
       // 1. Call Backend NVIDIA AI Copilot API (z-ai/glm-5.2)
       const res = await queryAiCopilot(inputMsg);
 
-      if (res.reply) {
-        setLogs((prev) => [{ text: res.reply, isAi: true }, ...prev]);
+      if (res.reply || res.infographic) {
+        setLogs((prev) => [
+          {
+            text: res.reply || res.infographic?.title || "",
+            isAi: true,
+            infographic: res.infographic ?? null,
+          },
+          ...prev,
+        ]);
       }
 
       const ui = res.ui_changes || {};
@@ -163,7 +183,7 @@ export const AiCustomizerModal: React.FC<AiCustomizerProps> = ({
       localStorage.removeItem("ai_custom_workspace_preset");
     }
     setSavedPresetName(null);
-    setLogs(["UI and filters reset to system defaults."]);
+    setLogs([{ text: "UI and filters reset to system defaults." }]);
     toast.info("Reset UI layout and filters to default");
   };
 
@@ -299,15 +319,20 @@ export const AiCustomizerModal: React.FC<AiCustomizerProps> = ({
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               AI Conversation & Action Log
             </span>
-            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 text-xs space-y-2 max-h-48 overflow-y-auto">
+            {/* Taller than a pure text log needs: a chart card has to be
+                readable without scrolling it line by line. */}
+            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 text-xs space-y-2 max-h-[26rem] overflow-y-auto">
               {logs.map((log, i) => (
-                <div key={i} className={`flex items-start space-x-2 ${log.isAi ? "text-indigo-300" : "text-emerald-400 font-mono text-[11px]"}`}>
-                  {log.isAi ? (
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0 mt-0.5" />
-                  ) : (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                  )}
-                  <span className="whitespace-pre-wrap leading-relaxed">{log.text}</span>
+                <div key={i} className="space-y-1">
+                  <div className={`flex items-start space-x-2 ${log.isAi ? "text-indigo-300" : "text-emerald-400 font-mono text-[11px]"}`}>
+                    {log.isAi ? (
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0 mt-0.5" />
+                    ) : (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                    )}
+                    <span className="whitespace-pre-wrap leading-relaxed">{log.text}</span>
+                  </div>
+                  {log.infographic && <InfographicCard data={log.infographic} />}
                 </div>
               ))}
             </div>

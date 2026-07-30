@@ -540,6 +540,205 @@ export interface Voter {
   updated_by: string;
 }
 
+// ---------------------------------------------------------------------------
+// Family tree
+//
+// Resolved server-side by app/services/family_tree_solver.py. The client does
+// not re-derive relationships: the roll's Tamil relation labels, the fuzzy name
+// matching and the genealogical constraints all live in one place.
+// ---------------------------------------------------------------------------
+
+export type ConfidenceLevel = 'Confirmed' | 'Strong' | 'Possible' | 'Unverified';
+
+/** Position in the resolved graph, derived from edges rather than edge order. */
+export type ResolvedRole =
+  | 'Father'
+  | 'Mother'
+  | 'Parent'
+  | 'Son'
+  | 'Daughter'
+  | 'Child'
+  | 'Husband'
+  | 'Wife'
+  | 'Spouse'
+  | 'Resident';
+
+/** A voter plus their place in the household graph. */
+export interface FamilyMember extends Voter {
+  resolved_role: ResolvedRole;
+  /** 1 is the senior generation; each step down adds one. */
+  generation_level: number;
+  is_head: boolean;
+  spouse_id: string | null;
+  parent_ids: string[];
+  child_ids: string[];
+}
+
+/** Per-term breakdown of why a link scored what it did. */
+export interface RelationshipEvidence {
+  /** 30 for an exact house match, 15 for serial-window proximity. */
+  locality_score: number;
+  /** Jaro-Winkler similarity, 0–1. */
+  name_score: number;
+  name_points: number;
+  relation_points: number;
+  /** False when the ages contradict *or* when they were never recorded. */
+  age_valid: boolean;
+  /** Distinguishes "check failed" from "check could not run". */
+  age_known: boolean;
+  gender_valid: boolean;
+  gender_known: boolean;
+}
+
+/** An accepted edge. `source` declared `relationship_type` naming `target`. */
+export interface FamilyRelationship {
+  source_id: string;
+  source_name: string;
+  target_id: string;
+  target_name: string;
+  relationship_type: RelationType;
+  confidence: number;
+  confidence_level: ConfidenceLevel;
+  evidence: RelationshipEvidence;
+}
+
+/**
+ * A link the roll asserts but the evidence contradicts — a father younger than
+ * his child, a woman recorded as another woman's husband. Surfaced rather than
+ * silently dropped, because it marks a record worth re-reading.
+ */
+export interface RejectedLink {
+  source_id: string;
+  source_name: string;
+  target_id: string;
+  target_name: string;
+  relationship_type: RelationType | '';
+  reason: string;
+}
+
+/** Why a family resolved no relationships at all. */
+export type UnresolvedReason =
+  /** Nothing to resolve: no relative named on the roll. */
+  | 'no_relation_recorded'
+  /** A relative was named but is not registered at this address. */
+  | 'relative_not_in_household'
+  /** Links were asserted but every one contradicted the evidence. */
+  | 'contradicted';
+
+export interface FamilyTree {
+  family_id: string;
+  family_head: string;
+  house_number: string;
+  locality: 'house' | 'serial_window';
+  members: FamilyMember[];
+  relationships: FamilyRelationship[];
+  rejected_links: RejectedLink[];
+  /** Senior-generation members, already deduplicated across married pairs. */
+  root_ids: string[];
+  generation_count: number;
+  ascii_tree: string;
+  /** Mean of the resolved edges; 0 when nothing resolved. */
+  confidence: number;
+  confidence_level: ConfidenceLevel;
+  unresolved_reason: UnresolvedReason | null;
+}
+
+export interface Household {
+  house_number: string;
+  /**
+   * Canonical building the address resolves to. The roll spells one address
+   * several ways ("2-332", "2/332", "2/332-1"), so members are grouped on this
+   * rather than on the literal value.
+   */
+  building_key: string;
+  /** Every spelling this address appears under in the roll. */
+  house_variants: string[];
+  part_number: string;
+  constituency: string;
+  size: number;
+  /** How the household was identified when no house number was recorded. */
+  grouping: 'house' | 'serial_window';
+  /** True when the address hit the row cap, so members may be missing. */
+  truncated: boolean;
+}
+
+export interface FamilyTreeResponse {
+  target_voter_id: string;
+  household: Household;
+  /** The family containing the target voter; null only for an empty household. */
+  primary_family_id: string | null;
+  /** Every family at the address — unresolved members form their own. */
+  families: FamilyTree[];
+}
+
+// ---------------------------------------------------------------------------
+// Infographics
+//
+// Built by app/services/infographic.py. Every figure here was produced by SQL
+// over the voter table — the language model only chooses which measure to chart
+// and writes `insights`, and any figure it quotes is checked against these
+// values before being returned. So the numbers are safe to render as-is.
+// ---------------------------------------------------------------------------
+
+export type InfographicChartType = 'stat' | 'bar' | 'column' | 'donut';
+
+/** How to format a value. `count` is an integer, `percent` is 0-100. */
+export type MetricUnit = 'count' | 'percent' | 'years';
+
+export interface InfographicPoint {
+  label: string;
+  value: number | null;
+  /** Percent of the total. Null when the parts do not sum to a whole. */
+  share: number | null;
+}
+
+export interface InfographicMetric {
+  key: string;
+  label: string;
+  unit: MetricUnit;
+  description: string;
+}
+
+export interface InfographicHighlight {
+  label: string;
+  value: number | null;
+  unit: MetricUnit;
+  share?: number | null;
+}
+
+export interface InfographicFilter {
+  key: string;
+  label: string;
+  value: string;
+}
+
+export interface Infographic {
+  title: string;
+  chart_type: InfographicChartType;
+  metric: InfographicMetric;
+  /** Null when the figure has no breakdown, which renders as a stat tile. */
+  dimension: { key: string; label: string } | null;
+  series: InfographicPoint[];
+  total: number | null;
+  /** Electors the figures describe, after filters and before grouping. */
+  population: number;
+  highlights: InfographicHighlight[];
+  filters_applied: InfographicFilter[];
+  /** Groups folded into "Other", or omitted when the measure cannot be summed. */
+  truncated_groups: number;
+  /** Model-written commentary, already stripped of unverifiable figures. */
+  insights: string[];
+  generated_at: string;
+  provenance: string;
+}
+
+export interface AiCopilotResponse {
+  reply: string;
+  ui_changes?: Record<string, unknown>;
+  /** Present only when the question was statistical. */
+  infographic?: Infographic | null;
+}
+
 /** Fields a user may set. Server-managed columns are omitted. */
 export type VoterInput = Pick<
   Voter,

@@ -585,3 +585,27 @@
   .family-link--dashed { stroke-dasharray: 5 5; }
   .family-node { transition: none; }
 }
+
+/* ============================================================
+   Data-visualisation palette
+   ============================================================
+   Categorical slots 1-3, validated all-pairs in both modes
+   (worst CVD ΔE 9.2 light / 9.4 dark; normal-vision 24.0 / 20.9).
+   Capped at three deliberately: the fourth slot puts yellow beside
+   orange, which fails the all-pairs floors. A breakdown wider than
+   three uses one hue across bars, where colour carries no meaning.
+   Aqua sits below 3:1 on the light surface, so every slice ships a
+   visible label and a table view rather than relying on colour. */
+.viz {
+  --viz-s1: #2a78d6;
+  --viz-s2: #eb6834;
+  --viz-s3: #1baf7a;
+  /* Single-measure marks: one hue, since colour encodes nothing. */
+  --viz-mark: hsl(var(--primary));
+  --viz-track: hsl(var(--muted-foreground) / 0.14);
+}
+.dark .viz {
+  --viz-s1: #3987e5;
+  --viz-s2: #d95926;
+  --viz-s3: #199e70;
+}

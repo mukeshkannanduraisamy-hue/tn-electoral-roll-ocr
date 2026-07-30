@@ -8,6 +8,7 @@
  */
 
 import {
+  AiCopilotResponse,
   AuthStatus,
   AuthUser,
   FamilyTreeResponse,
@@ -150,8 +151,15 @@ export function getVoterFamilyTree(id: string): Promise<FamilyTreeResponse> {
   return request<FamilyTreeResponse>(`/api/voters/${id}/family-tree`);
 }
 
-export function queryAiCopilot(message: string, context?: Record<string, unknown>): Promise<{ reply: string; ui_changes?: Record<string, unknown> }> {
-  return request<{ reply: string; ui_changes?: Record<string, unknown> }>("/api/voters/ai-copilot", {
+/**
+ * Copilot reply, plus a chart when the question was statistical. Figures in
+ * `infographic` are computed by SQL, not written by the model.
+ */
+export function queryAiCopilot(
+  message: string,
+  context?: Record<string, unknown>,
+): Promise<AiCopilotResponse> {
+  return request<AiCopilotResponse>("/api/voters/ai-copilot", {
     method: "POST",
     body: JSON.stringify({ message, context }),
   });
