@@ -126,6 +126,9 @@ def get_engine(
         # `max` keeps the long side at the limit instead of shrinking to it,
         # which would undo the upscale we just paid for.
         "text_det_limit_type": "max",
+        "enable_mkldnn": True if device.startswith("cpu") else False,
+        "cpu_math_library_num_threads": max(1, os.cpu_count() or 4),
+        "rec_batch_num": 32,
     }
     if version:
         kwargs["ocr_version"] = version
