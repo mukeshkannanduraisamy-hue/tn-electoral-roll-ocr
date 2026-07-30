@@ -62,7 +62,14 @@ interface OcrState {
   // Per-page refresh tracking (pageId -> isLoading boolean)
   pageRefreshing: Record<string, boolean>;
 
-  // Filters & Search
+  // Filters & Engine Settings
+  performanceMode: "turbo" | "balanced" | "max_accuracy";
+  workers: number;
+  useGpu: boolean;
+  cacheEnabled: boolean;
+  retries: number;
+  setEngineSettings: (settings: Partial<{ performanceMode: "turbo" | "balanced" | "max_accuracy"; workers: number; useGpu: boolean; cacheEnabled: boolean; retries: number }>) => void;
+
   searchQuery: string;
   onlyIssuesFilter: boolean;
   onlyEditedFilter: boolean;
@@ -259,6 +266,13 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   fileJobProgress: {},
 
   pageRefreshing: {},
+
+  performanceMode: "turbo",
+  workers: 4,
+  useGpu: true,
+  cacheEnabled: true,
+  retries: 3,
+  setEngineSettings: (newSettings) => set((state) => ({ ...state, ...newSettings })),
 
   searchQuery: "",
   onlyIssuesFilter: false,

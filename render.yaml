@@ -77,9 +77,8 @@ services:
       - key: OCR_OCR_WORKERS
         value: "0"
 
-      # The mobile detector is materially lighter than the default
-      # PP-OCRv5_server_det and costs little accuracy on clean printed forms.
-      # Drop this variable on a larger plan to get the server detector back.
+      # The mobile detector is materially lighter than the default PP-OCRv5_server_det.
+      # ocr_service automatically pairs this with the Tamil recogniser ta_PP-OCRv5_mobile_rec.
       - key: OCR_OCR_DET_MODEL
         value: PP-OCRv5_mobile_det
 

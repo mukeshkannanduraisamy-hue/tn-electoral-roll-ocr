@@ -173,8 +173,8 @@ prefix** — a bare `DATA_DIR` is silently ignored.
 | `OCR_OCR_VERSION` | `PP-OCRv5` | the version with a published Tamil model |
 | `OCR_OCR_DEVICE` | `cpu` | or `gpu:0` |
 | `OCR_OCR_WORKERS` | `1` | `0` = in-process thread, ~half the memory |
-| `OCR_OCR_DET_MODEL` | *(auto)* | set `PP-OCRv5_mobile_det` to cut memory |
-| `OCR_UPSCALE_FACTOR` | `3.0` | source scans are ~144 DPI |
+| `OCR_OCR_DET_MODEL` | `PP-OCRv5_mobile_det` | lightweight detector paired with `ta_PP-OCRv5_mobile_rec` |
+| `OCR_UPSCALE_FACTOR` | `1.5` | source scans are ~144 DPI; 1.5x balances accuracy and speed |
 | `OCR_CONSENSUS_MIN_RATIO` | `3.0` | how decisive a spelling vote must be |
 | `OCR_ALLOW_FOLDER_IMPORT` | `true` | **set `false` in production** |
 | `OCR_CORS_ORIGINS` | `*` | bare hostnames get a scheme applied |

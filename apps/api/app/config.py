@@ -48,17 +48,16 @@ class Settings(BaseSettings):
 
     # ------------------------------------------------------- preprocessing
     ocr_performance_mode: str = "turbo"
-    """`turbo` (fastest, ~2s/page), `balanced` (~4s/page), `max_accuracy` (~14s/page)."""
+    """`turbo` (fastest), `balanced`, or `max_accuracy`."""
 
-    upscale_factor: float = 1.33
-    """Bicubic upscale applied before OCR. Source scans are ~144 DPI; 1.33x provides
-    ample resolution for Tamil glyphs while keeping pixel volume low."""
+    upscale_factor: float = 1.5
+    """Bicubic upscale applied before OCR. Source scans are ~144 DPI; 1.5x provides
+    ample resolution for Tamil glyphs while maintaining low pixel volume."""
 
     denoise_enabled: bool = True
-    fast_denoise_enabled: bool = True
     denoise_strength: int = 7
-    """When `fast_denoise_enabled` is True, fast bilateral/Gaussian filtering is used
-    instead of heavy non-local means denoising, saving ~5s per page."""
+    """`h` parameter for cv2.fastNlMeansDenoising in max_accuracy mode. Applied
+    BEFORE CLAHE so contrast enhancement doesn't amplify paper grain."""
 
     clahe_enabled: bool = True
     clahe_clip_limit: float = 2.0
@@ -87,8 +86,7 @@ class Settings(BaseSettings):
     mobile models are fast enough. See README for the GPU path."""
 
     ocr_det_limit_side_len: int = 1536
-    """Detection input is resized so its long side is at most this. 1536px provides
-    accurate text bounding box detection while running 5x-8x faster than 2560px."""
+    """Detection input is resized so its long side is at most this."""
 
     ocr_text_score_thresh: float = 0.30
     """Drop recognitions below this. Deliberately low: for a review-driven
@@ -117,14 +115,8 @@ class Settings(BaseSettings):
     batch_ocr_size: int = 4
     """Batch size for processing image crops / pages in parallel."""
 
-    image_optimization_mode: str = "fast"
-    """Preprocessing optimization preset: 'fast', 'balanced', or 'high_quality'."""
-
-
-    ocr_det_model: str = ""
-    """Override the text-detection model.
-    Left empty by default so PaddleOCR loads the native Tamil recognition model
-    `ta_PP-OCRv5_mobile_rec` along with detection, ensuring maximum Tamil accuracy."""
+    ocr_det_model: str = "PP-OCRv5_mobile_det"
+    """Override the text-detection model to `PP-OCRv5_mobile_det` for low memory footprint."""
 
     # ------------------------------------------------------- layout / cells
     expected_grid_cols: int = 3

@@ -14,17 +14,33 @@ import {
 import { toast } from "sonner";
 
 export function SettingsView() {
-  const { theme, setTheme, toggleTheme } = useOcrStore();
+  const {
+    theme,
+    setTheme,
+    toggleTheme,
+    performanceMode,
+    workers: storeWorkers,
+    useGpu: storeUseGpu,
+    cacheEnabled: storeCacheEnabled,
+    retries: storeRetries,
+    setEngineSettings,
+  } = useOcrStore();
 
-  const [workers, setWorkers] = useState(4);
-  const [useGpu, setUseGpu] = useState(true);
-  const [cacheEnabled, setCacheEnabled] = useState(true);
-  const [retries, setRetries] = useState(3);
-  const [preprocMode, setPreprocMode] = useState("fast");
-  const [consensusEnabled, setConsensusEnabled] = useState(true);
+  const [workers, setWorkers] = useState(storeWorkers);
+  const [useGpu, setUseGpu] = useState(storeUseGpu);
+  const [cacheEnabled, setCacheEnabled] = useState(storeCacheEnabled);
+  const [retries, setRetries] = useState(storeRetries);
+  const [mode, setMode] = useState<"turbo" | "balanced" | "max_accuracy">(performanceMode);
 
   const handleSaveSettings = () => {
-    toast.success("Extraction engine settings saved successfully!");
+    setEngineSettings({
+      performanceMode: mode,
+      workers,
+      useGpu,
+      cacheEnabled,
+      retries,
+    });
+    toast.success(`Engine settings saved: ${mode.toUpperCase()} mode with ${workers} workers`);
   };
 
   return (
@@ -160,13 +176,13 @@ export function SettingsView() {
                   <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-wider">5x–10x Turbo</span>
                 </label>
                 <select
-                  value={preprocMode}
-                  onChange={(e) => setPreprocMode(e.target.value)}
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value as "turbo" | "balanced" | "max_accuracy")}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-slate-100 font-semibold text-indigo-600 dark:text-indigo-400"
                 >
-                  <option value="fast">⚡ Turbo Mode (Fastest ~2.0s / page)</option>
-                  <option value="balanced">⚖️ Balanced Mode (~4.0s / page)</option>
-                  <option value="high_quality">🎯 Max Accuracy (~14.0s / page)</option>
+                  <option value="turbo">⚡ Turbo Mode (Fastest)</option>
+                  <option value="balanced">⚖️ Balanced Mode</option>
+                  <option value="max_accuracy">🎯 Max Accuracy</option>
                 </select>
               </div>
 

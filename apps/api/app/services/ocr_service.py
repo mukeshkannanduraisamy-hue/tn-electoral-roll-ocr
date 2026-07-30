@@ -133,6 +133,10 @@ def get_engine(
         # Explicit detection model -- used to drop to the mobile detector on
         # memory-constrained hosts. See config.ocr_det_model.
         kwargs["text_detection_model_name"] = settings.ocr_det_model
+        # When text_detection_model_name is set, PaddleOCR skips `lang` resolution.
+        # Explicitly pass text_recognition_model_name so Tamil recognition is preserved.
+        if lang == "ta" and (version == "PP-OCRv5" or not version):
+            kwargs["text_recognition_model_name"] = "ta_PP-OCRv5_mobile_rec"
 
     with _INIT_LOCK:
         # Re-check key inside lock in case another thread initialized it while waiting
