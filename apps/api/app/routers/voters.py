@@ -248,6 +248,71 @@ def voter_stats(
         .limit(20)
     ).all()
 
+
+@router.get("/{voter_id}/family-tree")
+def get_voter_family_tree(
+    voter_id: str,
+    session: Session = Depends(get_session),
+    _user: UserRow = Depends(require_user),
+) -> dict:
+    """Generate deterministic family tree for the voter's household."""
+    target_row = session.execute(
+        select(VoterRow).where(VoterRow.id == voter_id)
+    ).scalar_one_or_none()
+
+    if not target_row:
+        raise HTTPException(404, f"Voter {voter_id!r} not found")
+
+    target_dict = Voter.model_validate(target_row).model_dump()
+
+    # Find housemates sharing the same house number or nearby serial numbers
+    housemates: list[dict] = []
+    house = target_row.house_number.strip() if target_row.house_number else ""
+
+    if house and house not in ("-", "—", "0"):
+        stmt = select(VoterRow).where(VoterRow.house_number == target_row.house_number)
+        if target_row.part_number:
+            stmt = stmt.where(VoterRow.part_number == target_row.part_number)
+        rows = session.execute(stmt).scalars().all()
+        housemates = [Voter.model_validate(r).model_dump() for r in rows]
+    else:
+        # Fallback by Part + Serial window (+/- 15)
+        stmt = select(VoterRow).where(VoterRow.part_number == target_row.part_number)
+        if target_row.serial is not None:
+            stmt = stmt.where(
+                VoterRow.serial >= max(1, target_row.serial - 15),
+                VoterRow.serial <= target_row.serial + 15,
+            )
+        rows = session.execute(stmt).scalars().all()
+        housemates = [Voter.model_validate(r).model_dump() for r in rows]
+
+    from app.services.family_tree_solver import resolve_family_trees
+
+    family_trees = resolve_family_trees(housemates or [target_dict])
+
+    # Find family tree containing target voter
+    selected_tree = None
+    for tree in family_trees:
+        member_ids = [m.get("id") for m in tree.get("members", [])]
+        if voter_id in member_ids:
+            selected_tree = tree
+            break
+
+    if not selected_tree and family_trees:
+        selected_tree = family_trees[0]
+
+    return selected_tree or {
+        "family_id": f"FAM-{voter_id}",
+        "family_head": target_row.name,
+        "house_number": target_row.house_number,
+        "members": [target_dict],
+        "relationships": [],
+        "family_tree": {"name": target_row.name, "epic": target_row.epic},
+        "ascii_tree": f"{target_row.name} ({target_row.age or ''}) [{target_row.gender or ''}]",
+        "confidence": 100,
+        "confidence_level": "Confirmed",
+    }
+
     return {
         "total": total,
         "verified": verified,

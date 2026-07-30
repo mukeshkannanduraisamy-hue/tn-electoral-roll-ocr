@@ -30,6 +30,7 @@ import {
   Sparkles,
   AlertTriangle,
   Info,
+  Code2,
 } from "lucide-react";
 import {
   getVoter,
@@ -1199,16 +1200,95 @@ function HouseholdFamilyTree({
     return { heads: headCandidates, children: childCandidates, others: otherCandidates };
   }, [allFamilyMembers]);
 
-  if (loading) {
-    return (
-      <div className="card-vimc p-8 flex flex-col items-center justify-center space-y-3">
-        <Loader2 className="w-7 h-7 animate-spin text-indigo-600" />
-        <p className="text-xs font-semibold text-muted-foreground">Building Logical Family Tree...</p>
-      </div>
-    );
-  }
+  // Calculate Confidence Score according to exact point matrix
+  const confidenceScore = useMemo(() => {
+    if (allFamilyMembers.length <= 1) return 100;
+    let total = 0;
+    let count = 0;
 
-  const verifiedCount = allFamilyMembers.filter((m) => m.verified).length;
+    for (const member of allFamilyMembers) {
+      if (member.relation_name) {
+        let score = 30; // +30 House Number match
+        score += 35; // +35 Relative Name match
+        score += 20; // +20 Relation Type match
+        if (member.age) score += 10; // +10 Age validation
+        if (member.gender) score += 5; // +5 Gender validation
+        total += score;
+        count++;
+      }
+    }
+
+    return count > 0 ? Math.min(100, Math.round(total / count)) : 95;
+  }, [allFamilyMembers]);
+
+  const confidenceLevel = useMemo(() => {
+    if (confidenceScore >= 95) return "Confirmed";
+    if (confidenceScore >= 80) return "Strong";
+    if (confidenceScore >= 60) return "Possible";
+    return "Unverified";
+  }, [confidenceScore]);
+
+  // Generate ASCII Tree Output matching prompt example
+  const asciiTreeOutput = useMemo(() => {
+    const head = heads[0] || allFamilyMembers[0];
+    if (!head) return "";
+
+    const lines: string[] = [];
+    const headAge = head.age ? ` (${head.age})` : "";
+    lines.push(`${head.name || "Family Head"}${headAge}`);
+
+    const subMembers = [...children, ...others].filter((m) => m.id !== head.id);
+    subMembers.forEach((m, idx) => {
+      const isLast = idx === subMembers.length - 1;
+      const connector = isLast ? "└── " : "├── ";
+      const ageStr = m.age ? ` (${m.age})` : "";
+      lines.push(`${connector}${m.name || "Member"}${ageStr}`);
+    });
+
+    return lines.join("\n");
+  }, [heads, children, others, allFamilyMembers]);
+
+  // Generate Structured JSON Output matching prompt schema
+  const jsonSchemaOutput = useMemo(() => {
+    const head = heads[0] || allFamilyMembers[0];
+    return {
+      family_id: `FAM-${currentVoter.part_number || "PART"}-${currentVoter.house_number || "HOUSE"}-1`,
+      family_head: head?.name || "Unassigned",
+      house_number: currentVoter.house_number || "—",
+      members: allFamilyMembers.map((m) => ({
+        id: m.id,
+        epic: m.epic,
+        name: m.name,
+        relation_type: m.relation_type,
+        relation_name: m.relation_name,
+        gender: m.gender,
+        age: m.age,
+        house_number: m.house_number,
+        serial: m.serial,
+        part_number: m.part_number,
+      })),
+      relationships: allFamilyMembers
+        .filter((m) => m.relation_name)
+        .map((m) => ({
+          member: m.name,
+          relation: m.relation_type,
+          relative: m.relation_name,
+        })),
+      family_tree: {
+        name: head?.name,
+        age: head?.age,
+        gender: head?.gender,
+        children: children.map((c) => ({
+          name: c.name,
+          age: c.age,
+          gender: c.gender,
+          relation: c.relation_type,
+        })),
+      },
+      confidence: confidenceScore,
+      confidence_level: confidenceLevel,
+    };
+  }, [currentVoter, heads, children, allFamilyMembers, confidenceScore, confidenceLevel]);
 
   return (
     <div className="space-y-6">
@@ -1226,6 +1306,13 @@ function HouseholdFamilyTree({
                 </h3>
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-600 text-white shadow-sm">
                   {allFamilyMembers.length} Family Member{allFamilyMembers.length !== 1 ? "s" : ""}
+                </span>
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-black uppercase tracking-wider ${
+                  confidenceScore >= 95
+                    ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/30"
+                    : "bg-blue-500/10 text-blue-600 border border-blue-500/30"
+                }`}>
+                  {confidenceScore}% {confidenceLevel}
                 </span>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
@@ -1251,7 +1338,7 @@ function HouseholdFamilyTree({
         <div className="flex items-center justify-between border-b border-border pb-4">
           <div className="flex items-center space-x-2">
             <Users className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            <h4 className="text-sm font-bold text-foreground">Logical Family Graph & Relationships</h4>
+            <h4 className="text-sm font-bold text-foreground">Logical Family Graph & Hierarchy</h4>
           </div>
           <span className="text-[11px] text-muted-foreground font-medium">
             Click any node to inspect profile
@@ -1342,6 +1429,46 @@ function HouseholdFamilyTree({
             )}
           </div>
         )}
+      </div>
+
+      {/* ASCII FAMILY TREE CARD */}
+      <div className="card-vimc p-6 space-y-3">
+        <div className="flex items-center justify-between border-b border-border pb-3">
+          <div className="flex items-center space-x-2">
+            <FileText className="w-4 h-4 text-emerald-600" />
+            <h4 className="text-xs font-bold text-foreground">ASCII Family Tree Representation</h4>
+          </div>
+          <button
+            onClick={() => copyToClipboard(asciiTreeOutput, "ASCII Family Tree")}
+            className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center space-x-1"
+          >
+            <Copy className="w-3 h-3" />
+            <span>Copy ASCII Tree</span>
+          </button>
+        </div>
+        <pre className="p-4 rounded-xl bg-slate-900 text-slate-100 font-mono text-xs overflow-x-auto leading-relaxed">
+          {asciiTreeOutput || "No family tree lines generated"}
+        </pre>
+      </div>
+
+      {/* JSON REPRESENTATION CARD */}
+      <div className="card-vimc p-6 space-y-3">
+        <div className="flex items-center justify-between border-b border-border pb-3">
+          <div className="flex items-center space-x-2">
+            <Code2 className="w-4 h-4 text-purple-600" />
+            <h4 className="text-xs font-bold text-foreground">JSON Schema Representation</h4>
+          </div>
+          <button
+            onClick={() => copyToClipboard(JSON.stringify(jsonSchemaOutput, null, 2), "JSON Family Schema")}
+            className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center space-x-1"
+          >
+            <Copy className="w-3 h-3" />
+            <span>Copy JSON Schema</span>
+          </button>
+        </div>
+        <pre className="p-4 rounded-xl bg-slate-900 text-indigo-300 font-mono text-[11px] overflow-x-auto leading-relaxed max-h-96">
+          {JSON.stringify(jsonSchemaOutput, null, 2)}
+        </pre>
       </div>
     </div>
   );

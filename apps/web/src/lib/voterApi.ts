@@ -144,6 +144,10 @@ export function getVoter(id: string): Promise<Voter> {
   return request<Voter>(`/api/voters/${id}`);
 }
 
+export function getVoterFamilyTree(id: string): Promise<any> {
+  return request<any>(`/api/voters/${id}/family-tree`);
+}
+
 export function createVoter(input: VoterInput): Promise<Voter> {
   return request<Voter>("/api/voters", {
     method: "POST",
