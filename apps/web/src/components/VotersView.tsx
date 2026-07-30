@@ -360,14 +360,21 @@ export const VotersView: React.FC = () => {
     }
   };
 
-  // Global event listener for voter profiles
+  // Global event listener for voter profiles and AI customizer
   useEffect(() => {
     const handler = (e: Event) => {
       const id = (e as CustomEvent).detail?.id;
       if (id) setOpenVoterId(id);
     };
+    const customizerHandler = () => {
+      setShowAiCustomizer(true);
+    };
     window.addEventListener("vi-mc:open-voter", handler);
-    return () => window.removeEventListener("vi-mc:open-voter", handler);
+    window.addEventListener("vi-mc:open-ai-customizer", customizerHandler);
+    return () => {
+      window.removeEventListener("vi-mc:open-voter", handler);
+      window.removeEventListener("vi-mc:open-ai-customizer", customizerHandler);
+    };
   }, []);
 
   // Fetch Voter List

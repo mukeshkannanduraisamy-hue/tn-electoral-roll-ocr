@@ -17,6 +17,7 @@ import {
   ChevronDown,
   X,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useOcrStore } from "@/store/useOcrStore";
@@ -220,6 +221,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
         )}
+
+        {/* AI Customizer button */}
+        <button
+          onClick={() => {
+            setActiveTab("voters");
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent("vi-mc:open-ai-customizer"));
+            }, 100);
+          }}
+          className="h-8 px-3 rounded-lg bg-gradient-to-r from-indigo-600 via-purple-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white text-xs font-black shadow-md flex items-center gap-1.5 transition-all"
+          title="Open AI Workspace Customizer"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">AI Customizer</span>
+        </button>
 
         {/* Import button */}
         <button
