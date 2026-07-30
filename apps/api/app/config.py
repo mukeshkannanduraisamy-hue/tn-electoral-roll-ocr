@@ -121,10 +121,10 @@ class Settings(BaseSettings):
     """Preprocessing optimization preset: 'fast', 'balanced', or 'high_quality'."""
 
 
-    ocr_det_model: str = "PP-OCRv5_mobile_det"
+    ocr_det_model: str = ""
     """Override the text-detection model.
-    `PP-OCRv5_mobile_det` cuts CPU execution time substantially while maintaining
-    high accuracy on clean printed electoral roll forms."""
+    Left empty by default so PaddleOCR loads the native Tamil recognition model
+    `ta_PP-OCRv5_mobile_rec` along with detection, ensuring maximum Tamil accuracy."""
 
     # ------------------------------------------------------- layout / cells
     expected_grid_cols: int = 3
