@@ -10,6 +10,7 @@
 import {
   AuthStatus,
   AuthUser,
+  FamilyTreeResponse,
   PhotoList,
   PollingStation,
   PromotionResult,
@@ -144,8 +145,16 @@ export function getVoter(id: string): Promise<Voter> {
   return request<Voter>(`/api/voters/${id}`);
 }
 
-export function getVoterFamilyTree(id: string): Promise<any> {
-  return request<any>(`/api/voters/${id}/family-tree`);
+/** Resolved household graph. See app/services/family_tree_solver.py. */
+export function getVoterFamilyTree(id: string): Promise<FamilyTreeResponse> {
+  return request<FamilyTreeResponse>(`/api/voters/${id}/family-tree`);
+}
+
+export function customiseUiWithAi(prompt: string, currentConfig?: any): Promise<{ explanation: string; config: any; raw_ai_response?: string }> {
+  return request<{ explanation: string; config: any; raw_ai_response?: string }>("/api/ai/customize", {
+    method: "POST",
+    body: JSON.stringify({ prompt, current_config: currentConfig }),
+  });
 }
 
 export function createVoter(input: VoterInput): Promise<Voter> {

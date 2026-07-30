@@ -15,6 +15,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { toast } from "sonner";
+import { customiseUiWithAi } from "@/lib/voterApi";
 
 export interface AiCustomizerProps {
   isOpen: boolean;
@@ -44,6 +45,7 @@ export const AiCustomizerModal: React.FC<AiCustomizerProps> = ({
 }) => {
   const [prompt, setPrompt] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
   const [savedPresetName, setSavedPresetName] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,105 +62,91 @@ export const AiCustomizerModal: React.FC<AiCustomizerProps> = ({
 
   if (!isOpen) return null;
 
-  const processAiPrompt = (userPrompt: string) => {
+  const processAiPrompt = async (userPrompt: string) => {
     if (!userPrompt.trim()) return;
 
-    const p = userPrompt.toLowerCase().trim();
-    const actions: string[] = [];
+    setLoading(true);
+    try {
+      const res = await customiseUiWithAi(userPrompt);
+      const cfg = res.config || {};
+      const actions: string[] = [];
 
-    // 1. Theme Customization
-    if (p.includes("emerald") || p.includes("green")) {
-      onApplyTheme("emerald");
-      actions.push("Theme set to Emerald Green");
-    } else if (p.includes("purple") || p.includes("cyber")) {
-      onApplyTheme("purple");
-      actions.push("Theme set to Cyberpunk Purple");
-    } else if (p.includes("amber") || p.includes("sunset") || p.includes("gold")) {
-      onApplyTheme("amber");
-      actions.push("Theme set to Sunset Amber");
-    } else if (p.includes("ocean") || p.includes("blue")) {
-      onApplyTheme("ocean");
-      actions.push("Theme set to Ocean Blue");
-    } else if (p.includes("dark") || p.includes("night")) {
-      onApplyTheme("dark");
-      actions.push("Theme set to Dark Mode");
-    } else if (p.includes("light") || p.includes("day")) {
-      onApplyTheme("light");
-      actions.push("Theme set to Light Mode");
+      if (res.explanation) {
+        actions.push(`🤖 NVIDIA AI (glm-5.2): ${res.explanation}`);
+      }
+
+      if (cfg.theme) {
+        onApplyTheme(cfg.theme);
+        actions.push(`Theme applied: ${cfg.theme}`);
+      }
+
+      if (cfg.filters) {
+        onApplyFilter({
+          gender: cfg.filters.gender,
+          minAge: cfg.filters.min_age ? String(cfg.filters.min_age) : undefined,
+          maxAge: cfg.filters.max_age ? String(cfg.filters.max_age) : undefined,
+          verified: cfg.filters.verified !== undefined ? (cfg.filters.verified ? "true" : "false") : undefined,
+          houseNumber: cfg.filters.house_number,
+        });
+        actions.push("Filters updated by AI configuration");
+      }
+
+      if (cfg.columns) {
+        onApplyColumns(cfg.columns);
+        actions.push(`Columns configured: ${cfg.columns}`);
+      }
+
+      if (cfg.export) {
+        onTriggerExport(cfg.export);
+        actions.push(`Report export triggered: ${cfg.export}`);
+      }
+
+      setLogs((prev) => [...actions, ...prev]);
+      toast.success("NVIDIA AI Customization Applied!");
+    } catch {
+      // Local fallback parsing
+      const p = userPrompt.toLowerCase().trim();
+      const actions: string[] = [];
+
+      if (p.includes("emerald") || p.includes("green")) {
+        onApplyTheme("emerald");
+        actions.push("Theme set to Emerald Green");
+      } else if (p.includes("purple") || p.includes("cyber")) {
+        onApplyTheme("purple");
+        actions.push("Theme set to Cyberpunk Purple");
+      } else if (p.includes("amber") || p.includes("sunset") || p.includes("gold")) {
+        onApplyTheme("amber");
+        actions.push("Theme set to Sunset Amber");
+      } else if (p.includes("blue") || p.includes("ocean")) {
+        onApplyTheme("ocean");
+        actions.push("Theme set to Ocean Blue");
+      } else if (p.includes("dark") || p.includes("night")) {
+        onApplyTheme("dark");
+        actions.push("Theme set to Dark Mode");
+      } else if (p.includes("light") || p.includes("day")) {
+        onApplyTheme("light");
+        actions.push("Theme set to Light Mode");
+      }
+
+      const filters: any = {};
+      if (p.includes("female") || p.includes("women")) filters.gender = "Female";
+      else if (p.includes("male") || p.includes("men")) filters.gender = "Male";
+
+      if (p.includes("18-25") || p.includes("young")) { filters.minAge = "18"; filters.maxAge = "25"; }
+      if (p.includes("unverified") || p.includes("pending")) filters.verified = "false";
+      if (Object.keys(filters).length > 0) onApplyFilter(filters);
+
+      if (p.includes("excel")) onTriggerExport("excel");
+      else if (p.includes("csv")) onTriggerExport("csv");
+
+      if (p.includes("reset")) onResetAll();
+
+      setLogs((prev) => [...actions, ...prev]);
+      toast.info("Applied UI Customization");
+    } finally {
+      setLoading(false);
+      setPrompt("");
     }
-
-    // 2. Filter Rules
-    const filters: any = {};
-    if (p.includes("female") || p.includes("women")) {
-      filters.gender = "Female";
-      actions.push("Filter set: Gender = Female");
-    } else if (p.includes("male") || p.includes("men")) {
-      filters.gender = "Male";
-      actions.push("Filter set: Gender = Male");
-    }
-
-    if (p.includes("18-25") || p.includes("young")) {
-      filters.minAge = "18";
-      filters.maxAge = "25";
-      actions.push("Filter set: Age 18–25");
-    } else if (p.includes("26-40") || p.includes("adult")) {
-      filters.minAge = "26";
-      filters.maxAge = "40";
-      actions.push("Filter set: Age 26–40");
-    } else if (p.includes("senior") || p.includes("60+")) {
-      filters.minAge = "60";
-      filters.maxAge = "120";
-      actions.push("Filter set: Senior Voters (60+)");
-    }
-
-    if (p.includes("unverified") || p.includes("pending")) {
-      filters.verified = "false";
-      actions.push("Filter set: Unverified Voters Only");
-    } else if (p.includes("verified")) {
-      filters.verified = "true";
-      actions.push("Filter set: Verified Voters Only");
-    }
-
-    if (Object.keys(filters).length > 0) {
-      onApplyFilter(filters);
-    }
-
-    // 3. Column Layouts
-    if (p.includes("all columns") || p.includes("23 columns") || p.includes("full columns")) {
-      onApplyColumns("all");
-      actions.push("Columns: Enabled all 23 database columns");
-    } else if (p.includes("basic columns") || p.includes("minimal")) {
-      onApplyColumns("basic");
-      actions.push("Columns: Enabled basic columns");
-    } else if (p.includes("identity") || p.includes("voter identity")) {
-      onApplyColumns("identity");
-      actions.push("Columns: Enabled identity columns");
-    }
-
-    // 4. Export Actions
-    if (p.includes("excel") || p.includes("xlsx")) {
-      onTriggerExport("excel");
-      actions.push("Action: Triggered Excel export download");
-    } else if (p.includes("csv")) {
-      onTriggerExport("csv");
-      actions.push("Action: Triggered CSV export download");
-    }
-
-    // 5. Reset Command
-    if (p.includes("reset") || p.includes("default") || p.includes("clear")) {
-      onResetAll();
-      actions.push("Reset: Reverted all UI themes, filters, and columns to default");
-    }
-
-    if (actions.length === 0) {
-      actions.push(`Interpreted query: "${userPrompt}" -> Customizing UI view.`);
-      toast.info(`AI processed: "${userPrompt}"`);
-    } else {
-      toast.success(`AI applied ${actions.length} UI customization(s)`);
-    }
-
-    setLogs((prev) => [...actions, ...prev]);
-    setPrompt("");
   };
 
   const handleSavePreset = () => {

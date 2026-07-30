@@ -18,7 +18,7 @@ from .config import settings
 from .db import init_db, reconcile_interrupted_work
 from .auth import ensure_admin_user, require_user
 from .routers import (
-    auth, export, files, jobs, pages, photos, polling_stations, records,
+    ai_customizer, auth, export, files, jobs, pages, photos, polling_stations, records,
     templates, voters,
 )
 from .services.job_queue import manager
@@ -140,6 +140,8 @@ app.include_router(pages.router, prefix="/api/pages", tags=["pages"],
 app.include_router(records.router, prefix="/api/records", tags=["records"],
                    dependencies=PROTECTED)
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"],
+                   dependencies=PROTECTED)
+app.include_router(ai_customizer.router, prefix="/api/ai", tags=["ai"],
                    dependencies=PROTECTED)
 app.include_router(export.router, prefix="/api/export", tags=["export"],
                    dependencies=PROTECTED)
