@@ -240,6 +240,14 @@ def voter_stats(
         select(func.count()).select_from(VoterRow).where(VoterRow.verified.is_(True))
     ).scalar_one()
 
+    parts = session.execute(
+        select(VoterRow.part_number, func.count())
+        .where(VoterRow.part_number != "")
+        .group_by(VoterRow.part_number)
+        .order_by(desc(func.count()))
+        .limit(20)
+    ).all()
+
     return {
         "total": total,
         "verified": verified,
