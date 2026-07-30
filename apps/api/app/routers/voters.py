@@ -240,13 +240,17 @@ def voter_stats(
         select(func.count()).select_from(VoterRow).where(VoterRow.verified.is_(True))
     ).scalar_one()
 
-    parts = session.execute(
-        select(VoterRow.part_number, func.count())
-        .where(VoterRow.part_number != "")
-        .group_by(VoterRow.part_number)
-        .order_by(desc(func.count()))
-        .limit(20)
-    ).all()
+    return {
+        "total": total,
+        "verified": verified,
+        "unverified": total - verified,
+        "by_gender": by_gender,
+        "by_relation_type": by_relation,
+        "age_buckets": dict(sorted(buckets.items())),
+        "by_part": [{"part": p or "(none)", "count": c} for p, c in parts],
+        "average_age": round(sum(age_rows) / len(age_rows), 1) if age_rows else None,
+        "missing_age": total - len(age_rows),
+    }
 
 
 @router.get("/{voter_id}/family-tree")
@@ -311,18 +315,6 @@ def get_voter_family_tree(
         "ascii_tree": f"{target_row.name} ({target_row.age or ''}) [{target_row.gender or ''}]",
         "confidence": 100,
         "confidence_level": "Confirmed",
-    }
-
-    return {
-        "total": total,
-        "verified": verified,
-        "unverified": total - verified,
-        "by_gender": by_gender,
-        "by_relation_type": by_relation,
-        "age_buckets": dict(sorted(buckets.items())),
-        "by_part": [{"part": p or "(none)", "count": c} for p, c in parts],
-        "average_age": round(sum(age_rows) / len(age_rows), 1) if age_rows else None,
-        "missing_age": total - len(age_rows),
     }
 
 
