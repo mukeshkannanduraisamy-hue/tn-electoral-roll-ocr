@@ -572,6 +572,13 @@ export interface VoterQuery {
   constituency?: string;
   house_number?: string;
   has_photo?: boolean;
+  polling_station_id?: string;
+  is_supplement?: boolean;
+  min_serial?: number;
+  max_serial?: number;
+  min_page?: number;
+  max_page?: number;
+  source_file_name?: string;
   source_file_id?: string;
   verified?: boolean;
   min_age?: number;

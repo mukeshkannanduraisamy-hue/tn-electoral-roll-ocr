@@ -122,6 +122,13 @@ def list_voters(
     constituency: str | None = Query(None),
     house_number: str | None = Query(None),
     has_photo: bool | None = Query(None),
+    polling_station_id: str | None = Query(None),
+    is_supplement: bool | None = Query(None),
+    min_serial: int | None = Query(None, ge=0),
+    max_serial: int | None = Query(None, ge=0),
+    min_page: int | None = Query(None, ge=1),
+    max_page: int | None = Query(None, ge=1),
+    source_file_name: str | None = Query(None),
     source_file_id: str | None = Query(None),
     verified: bool | None = Query(None),
     min_age: int | None = Query(None, ge=0, le=200),
@@ -156,6 +163,20 @@ def list_voters(
                 stmt = stmt.where(VoterRow.photo_path.isnot(None), VoterRow.photo_path != "")
             else:
                 stmt = stmt.where((VoterRow.photo_path.is_(None)) | (VoterRow.photo_path == ""))
+        if polling_station_id:
+            stmt = stmt.where(VoterRow.polling_station_id == polling_station_id)
+        if is_supplement is not None:
+            stmt = stmt.where(VoterRow.is_supplement.is_(is_supplement))
+        if min_serial is not None:
+            stmt = stmt.where(VoterRow.serial >= min_serial)
+        if max_serial is not None:
+            stmt = stmt.where(VoterRow.serial <= max_serial)
+        if min_page is not None:
+            stmt = stmt.where(VoterRow.page_number >= min_page)
+        if max_page is not None:
+            stmt = stmt.where(VoterRow.page_number <= max_page)
+        if source_file_name:
+            stmt = stmt.where(VoterRow.source_file_name.like(f"%{source_file_name.strip()}%"))
         if source_file_id:
             stmt = stmt.where(VoterRow.source_file_id == source_file_id)
         if verified is not None:

@@ -27,6 +27,8 @@ import {
   Users,
   X,
   Code2,
+  Building2,
+  BookOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Voter, VoterQuery, VoterStats } from "@ocr/shared-types";
@@ -59,6 +61,8 @@ const ALL_COLUMNS: ColumnOption[] = [
   { key: "age", label: "Age" },
   { key: "gender", label: "Gender" },
   { key: "part_number", label: "Part No." },
+  { key: "polling_station_id", label: "Polling Station ID" },
+  { key: "is_supplement", label: "Roll Type" },
   { key: "verified", label: "Verification" },
   { key: "actions", label: "Actions" },
 ];
@@ -147,10 +151,18 @@ export const VotersView: React.FC = () => {
   const [verified, setVerified] = useState<"" | "true" | "false">("");
   const [agePreset, setAgePreset] = useState<"" | "18-25" | "26-40" | "41-60" | "60+">("");
 
+  // Polling Details & Comprehensive Filters
+  const [pollingStationId, setPollingStationId] = useState("");
+  const [isSupplement, setIsSupplement] = useState<"" | "true" | "false">("");
+  const [minSerial, setMinSerial] = useState("");
+  const [maxSerial, setMaxSerial] = useState("");
+  const [minPage, setMinPage] = useState("");
+  const [maxPage, setMaxPage] = useState("");
+
   // Column Visibility Chooser
   const [visibleCols, setVisibleCols] = useState<Set<string>>(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("voter_columns_v1");
+      const saved = localStorage.getItem("voter_columns_v2");
       if (saved) {
         try { return new Set(JSON.parse(saved)); } catch {}
       }
@@ -179,12 +191,12 @@ export const VotersView: React.FC = () => {
     setVisibleCols((prev) => {
       const next = new Set(prev);
       if (next.has(colKey)) {
-        if (next.size > 2) next.delete(colKey); // Ensure at least 2 columns stay visible
+        if (next.size > 2) next.delete(colKey);
       } else {
         next.add(colKey);
       }
       if (typeof window !== "undefined") {
-        localStorage.setItem("voter_columns_v1", JSON.stringify([...next]));
+        localStorage.setItem("voter_columns_v2", JSON.stringify([...next]));
       }
       return next;
     });
@@ -192,7 +204,7 @@ export const VotersView: React.FC = () => {
 
   // Cell Click-to-Filter Helper
   const filterByCellValue = (field: string, val: any) => {
-    if (!val) return;
+    if (val === undefined || val === null || val === "") return;
     setOffset(0);
     switch (field) {
       case "gender":
@@ -206,6 +218,14 @@ export const VotersView: React.FC = () => {
       case "part_number":
         setPartNumber(String(val));
         toast.info(`Filtered by Part No.: ${val}`);
+        break;
+      case "polling_station_id":
+        setPollingStationId(String(val));
+        toast.info(`Filtered by Polling Station: ${val}`);
+        break;
+      case "is_supplement":
+        setIsSupplement(val ? "true" : "false");
+        toast.info(`Filtered by Roll Type: ${val ? "Supplement Roll" : "Main Roll"}`);
         break;
       case "house_number":
         setHouseNumber(String(val));
@@ -247,6 +267,12 @@ export const VotersView: React.FC = () => {
         part_number: partNumber || undefined,
         house_number: houseNumber || undefined,
         has_photo: hasPhoto === "" ? undefined : hasPhoto === "true",
+        polling_station_id: pollingStationId || undefined,
+        is_supplement: isSupplement === "" ? undefined : isSupplement === "true",
+        min_serial: minSerial ? Number(minSerial) : undefined,
+        max_serial: maxSerial ? Number(maxSerial) : undefined,
+        min_page: minPage ? Number(minPage) : undefined,
+        max_page: maxPage ? Number(maxPage) : undefined,
         verified: verified === "" ? undefined : verified === "true",
         min_age: minAge ? Number(minAge) : undefined,
         max_age: maxAge ? Number(maxAge) : undefined,
@@ -263,7 +289,7 @@ export const VotersView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [search, gender, relationType, partNumber, houseNumber, hasPhoto, verified, minAge, maxAge, sort, order, offset, limit]);
+  }, [search, gender, relationType, partNumber, houseNumber, hasPhoto, pollingStationId, isSupplement, minSerial, maxSerial, minPage, maxPage, verified, minAge, maxAge, sort, order, offset, limit]);
 
   useEffect(() => { void loadData(); }, [loadData]);
 
@@ -399,12 +425,13 @@ export const VotersView: React.FC = () => {
 
   const pages = Math.max(1, Math.ceil(total / limit));
   const currentPage = Math.floor(offset / limit) + 1;
-  const hasFilters = !!(search || gender || relationType || partNumber || houseNumber || hasPhoto || minAge || maxAge || verified || agePreset);
+  const hasFilters = !!(search || gender || relationType || partNumber || houseNumber || hasPhoto || pollingStationId || isSupplement || minSerial || maxSerial || minPage || maxPage || minAge || maxAge || verified || agePreset);
 
   const clearFilters = () => {
     setSearchInput(""); setSearch(""); setGender(""); setRelationType("");
-    setPartNumber(""); setHouseNumber(""); setHasPhoto(""); setMinAge(""); setMaxAge("");
-    setVerified(""); setAgePreset("");
+    setPartNumber(""); setHouseNumber(""); setHasPhoto(""); setPollingStationId("");
+    setIsSupplement(""); setMinSerial(""); setMaxSerial(""); setMinPage(""); setMaxPage("");
+    setMinAge(""); setMaxAge(""); setVerified(""); setAgePreset("");
     setOffset(0);
   };
 
@@ -446,7 +473,7 @@ export const VotersView: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Click any cell value to filter. Configure column visibility and export datasets.
+              Polling station details, supplement roll filtering, serial ranges, and customizable columns.
             </p>
           </div>
 
@@ -540,7 +567,7 @@ export const VotersView: React.FC = () => {
             </button>
 
             {showColChooser && (
-              <div className="absolute right-0 mt-2 w-48 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl z-50 space-y-2 animate-in fade-in zoom-in-95">
+              <div className="absolute right-0 mt-2 w-52 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl z-50 space-y-2 animate-in fade-in zoom-in-95">
                 <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 block px-1">
                   Show / Hide Columns
                 </span>
@@ -624,6 +651,30 @@ export const VotersView: React.FC = () => {
             </div>
 
             <div>
+              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Polling Station ID</label>
+              <input
+                type="text"
+                placeholder="Polling St. ID"
+                value={pollingStationId}
+                onChange={(e) => { setPollingStationId(e.target.value); setOffset(0); }}
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Roll Type</label>
+              <select
+                value={isSupplement}
+                onChange={(e) => { setIsSupplement(e.target.value as any); setOffset(0); }}
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+              >
+                <option value="">All Rolls</option>
+                <option value="false">Main Roll Only</option>
+                <option value="true">Supplement Only</option>
+              </select>
+            </div>
+
+            <div>
               <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">House Number</label>
               <input
                 type="text"
@@ -632,6 +683,48 @@ export const VotersView: React.FC = () => {
                 onChange={(e) => { setHouseNumber(e.target.value); setOffset(0); }}
                 className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
               />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Serial Range</label>
+              <div className="flex items-center space-x-1">
+                <input
+                  type="number"
+                  placeholder="Min"
+                  value={minSerial}
+                  onChange={(e) => { setMinSerial(e.target.value); setOffset(0); }}
+                  className="w-1/2 px-2 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+                />
+                <span className="text-xs text-slate-400">-</span>
+                <input
+                  type="number"
+                  placeholder="Max"
+                  value={maxSerial}
+                  onChange={(e) => { setMaxSerial(e.target.value); setOffset(0); }}
+                  className="w-1/2 px-2 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Page Range</label>
+              <div className="flex items-center space-x-1">
+                <input
+                  type="number"
+                  placeholder="Min"
+                  value={minPage}
+                  onChange={(e) => { setMinPage(e.target.value); setOffset(0); }}
+                  className="w-1/2 px-2 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+                />
+                <span className="text-xs text-slate-400">-</span>
+                <input
+                  type="number"
+                  placeholder="Max"
+                  value={maxPage}
+                  onChange={(e) => { setMaxPage(e.target.value); setOffset(0); }}
+                  className="w-1/2 px-2 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+                />
+              </div>
             </div>
 
             <div>
@@ -644,19 +737,6 @@ export const VotersView: React.FC = () => {
                 <option value="">Any Status</option>
                 <option value="true">Verified Only</option>
                 <option value="false">Unverified Only</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Photo Status</label>
-              <select
-                value={hasPhoto}
-                onChange={(e) => { setHasPhoto(e.target.value as any); setOffset(0); }}
-                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
-              >
-                <option value="">All Voters</option>
-                <option value="true">Has Photo</option>
-                <option value="false">No Photo</option>
               </select>
             </div>
           </div>
@@ -686,14 +766,29 @@ export const VotersView: React.FC = () => {
                 Part: {partNumber} <X className="w-3 h-3 cursor-pointer hover:text-slate-900" onClick={() => setPartNumber("")} />
               </span>
             )}
+            {pollingStationId && (
+              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5">
+                Polling St. ID: {pollingStationId} <X className="w-3 h-3 cursor-pointer hover:text-indigo-800" onClick={() => setPollingStationId("")} />
+              </span>
+            )}
+            {isSupplement && (
+              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 dark:bg-purple-950 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800 flex items-center gap-1.5">
+                {isSupplement === "true" ? "Supplement Roll Only" : "Main Roll Only"} <X className="w-3 h-3 cursor-pointer hover:text-purple-800" onClick={() => setIsSupplement("")} />
+              </span>
+            )}
             {houseNumber && (
               <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5">
                 House No: {houseNumber} <X className="w-3 h-3 cursor-pointer hover:text-slate-900" onClick={() => setHouseNumber("")} />
               </span>
             )}
-            {minAge && maxAge && minAge === maxAge && (
+            {minSerial && maxSerial && (
               <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 flex items-center gap-1.5">
-                Age: {minAge} <X className="w-3 h-3 cursor-pointer hover:text-amber-800" onClick={() => { setMinAge(""); setMaxAge(""); setAgePreset(""); }} />
+                Serial: {minSerial}–{maxSerial} <X className="w-3 h-3 cursor-pointer hover:text-amber-800" onClick={() => { setMinSerial(""); setMaxSerial(""); }} />
+              </span>
+            )}
+            {minPage && maxPage && (
+              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5">
+                Pages: {minPage}–{maxPage} <X className="w-3 h-3 cursor-pointer hover:text-slate-900" onClick={() => { setMinPage(""); setMaxPage(""); }} />
               </span>
             )}
             {verified && (
@@ -750,6 +845,8 @@ export const VotersView: React.FC = () => {
                     {visibleCols.has("age") && <SortTh col="age" label="Age" className="w-16 text-center" />}
                     {visibleCols.has("gender") && <SortTh col="gender" label="Gender" className="w-24" />}
                     {visibleCols.has("part_number") && <SortTh col="part_number" label="Part" className="w-20 text-center" />}
+                    {visibleCols.has("polling_station_id") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Polling St.</th>}
+                    {visibleCols.has("is_supplement") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 text-center">Roll Type</th>}
                     {visibleCols.has("verified") && <th className="w-24 px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 text-center">Verification</th>}
                     {visibleCols.has("actions") && <th className="w-24 px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 text-center">Actions</th>}
                   </tr>
@@ -871,6 +968,33 @@ export const VotersView: React.FC = () => {
                               className="font-mono font-semibold text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition-colors cursor-pointer"
                             >
                               {voter.part_number || "—"}
+                            </span>
+                          </td>
+                        )}
+
+                        {visibleCols.has("polling_station_id") && (
+                          <td className="px-4 py-3">
+                            <span
+                              onClick={(e) => { e.stopPropagation(); filterByCellValue("polling_station_id", voter.polling_station_id); }}
+                              title={voter.polling_station_id ? `Click to filter by Polling St: ${voter.polling_station_id}` : undefined}
+                              className="font-mono text-[11px] text-slate-600 dark:text-slate-400 hover:text-indigo-600 cursor-pointer"
+                            >
+                              {voter.polling_station_id || "—"}
+                            </span>
+                          </td>
+                        )}
+
+                        {visibleCols.has("is_supplement") && (
+                          <td className="px-4 py-3 text-center">
+                            <span
+                              onClick={(e) => { e.stopPropagation(); filterByCellValue("is_supplement", voter.is_supplement); }}
+                              className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border cursor-pointer ${
+                                voter.is_supplement
+                                  ? "bg-purple-500/10 text-purple-600 border-purple-500/30"
+                                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 border-slate-300 dark:border-slate-700"
+                              }`}
+                            >
+                              {voter.is_supplement ? "Supplement" : "Main Roll"}
                             </span>
                           </td>
                         )}
