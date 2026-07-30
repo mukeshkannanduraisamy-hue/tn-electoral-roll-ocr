@@ -34,9 +34,11 @@ import {
   User,
   ShieldCheck,
   RotateCcw,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Voter, VoterQuery, VoterStats } from "@ocr/shared-types";
+import { AiCustomizerModal } from "./AiCustomizerModal";
 import {
   bulkDeleteVoters,
   deleteVoter,
@@ -232,6 +234,48 @@ export const VotersView: React.FC = () => {
   const [exportLoading, setExportLoading] = useState(false);
   const [openVoterId, setOpenVoterId] = useState<string | null>(null);
   const [copiedEpic, setCopiedEpic] = useState<string | null>(null);
+  const [showAiCustomizer, setShowAiCustomizer] = useState(false);
+
+  const handleApplyTheme = (theme: string) => {
+    if (typeof document !== "undefined") {
+      document.body.classList.remove("theme-emerald", "theme-purple", "theme-amber", "theme-ocean", "dark");
+      if (theme === "dark") {
+        document.body.classList.add("dark");
+      } else if (theme !== "light") {
+        document.body.classList.add(`theme-${theme}`);
+      }
+    }
+  };
+
+  const handleAiFilter = (filters: any) => {
+    if (filters.gender) setGender(filters.gender);
+    if (filters.minAge) setMinAge(filters.minAge);
+    if (filters.maxAge) setMaxAge(filters.maxAge);
+    if (filters.verified !== undefined) setVerified(filters.verified);
+    if (filters.houseNumber) setHouseNumber(filters.houseNumber);
+    if (filters.relationType) setRelationType(filters.relationType);
+    setOffset(0);
+  };
+
+  const handleAiColumns = (preset: "all" | "basic" | "identity") => {
+    if (preset === "all") {
+      selectAllColumns();
+    } else {
+      resetDefaultColumns();
+    }
+  };
+
+  const handleAiExport = (format: "excel" | "csv" | "json") => {
+    if (format === "excel") void handleExport("xlsx");
+    else if (format === "csv") void handleExport("csv");
+    else if (format === "json") handleJSONExport();
+  };
+
+  const handleAiReset = () => {
+    clearFilters();
+    resetDefaultColumns();
+    handleApplyTheme("light");
+  };
 
   // Save Column Visibility
   const toggleColumnVisibility = (colKey: string) => {
@@ -552,6 +596,13 @@ export const VotersView: React.FC = () => {
           </div>
 
           <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setShowAiCustomizer(true)}
+              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white text-xs font-black shadow-md shadow-indigo-600/30 transition-all flex items-center space-x-2 shrink-0"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>AI Customizer</span>
+            </button>
             <button
               onClick={() => { setEditingVoter(null); setIsFormOpen(true); }}
               className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition-all flex items-center space-x-2 shrink-0"
@@ -1340,6 +1391,17 @@ export const VotersView: React.FC = () => {
           onSaved={(_v) => { setIsFormOpen(false); setEditingVoter(null); void loadData(); }}
         />
       )}
+
+      {/* AI Customizer Modal */}
+      <AiCustomizerModal
+        isOpen={showAiCustomizer}
+        onClose={() => setShowAiCustomizer(false)}
+        onApplyTheme={handleApplyTheme}
+        onApplyFilter={handleAiFilter}
+        onApplyColumns={handleAiColumns}
+        onTriggerExport={handleAiExport}
+        onResetAll={handleAiReset}
+      />
     </div>
   );
 };

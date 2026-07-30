@@ -36,12 +36,45 @@
     --input: 218 20% 90%;
     --ring: 246 83% 60%;
     --radius: 0.75rem;
+  }
 
+  /* AI CUSTOM THEMES */
+  body.theme-emerald {
+    --primary: 158 64% 42%;
+    --ring: 158 64% 42%;
+  }
+
+  body.theme-purple {
+    --primary: 263 70% 50%;
+    --ring: 263 70% 50%;
+  }
+
+  body.theme-amber {
+    --primary: 38 92% 50%;
+    --ring: 38 92% 50%;
+  }
+
+  body.theme-ocean {
+    --primary: 199 89% 48%;
+    --ring: 199 89% 48%;
+  }
+
+  :root {
     /* VIMC Surfaces */
     --surface-0: 0 0% 100%;
     --surface-1: 218 28% 97%;
     --surface-2: 218 22% 94%;
     --surface-3: 218 16% 88%;
+
+    /* Relationship confidence ramp.
+       The family canvas draws every link in one of these four, so the strength
+       of the evidence is readable from the linework alone. Four steps because
+       that is what the solver reports: Confirmed / Strong / Possible /
+       Unverified. */
+    --conf-confirmed: 160 84% 36%;
+    --conf-strong: 217 91% 52%;
+    --conf-possible: 32 94% 44%;
+    --conf-unverified: 350 79% 50%;
 
     /* Sidebar */
     --sidebar-bg: 226 45% 8%;
@@ -72,6 +105,12 @@
     --border: 223 30% 14%;
     --input: 223 30% 14%;
     --ring: 246 83% 67%;
+
+    /* Lifted for legibility against the dark canvas. */
+    --conf-confirmed: 158 64% 52%;
+    --conf-strong: 213 94% 68%;
+    --conf-possible: 43 96% 56%;
+    --conf-unverified: 351 95% 71%;
 
     --surface-0: 224 40% 8%;
     --surface-1: 222 47% 5%;
@@ -496,4 +535,53 @@
   color: hsl(var(--primary));
   border-radius: 3px;
   padding: 0 2px;
+}
+
+/* ============================================================
+   Family canvas
+   ============================================================ */
+
+/* Links trace themselves in once on load, which shows the reader how to follow
+   the tree. Purely introductory — nothing depends on it having run. */
+@keyframes family-link-draw {
+  from { stroke-dashoffset: var(--link-length); }
+  to   { stroke-dashoffset: 0; }
+}
+
+.family-link {
+  --link-length: 400;
+  stroke-dasharray: var(--link-length);
+  animation: family-link-draw 520ms cubic-bezier(.4, 0, .2, 1) backwards;
+  transition: opacity 180ms ease, stroke-width 180ms ease;
+}
+
+/* A link the evidence contradicts is drawn broken, so a household with bad
+   data reads as broken from across the room. */
+.family-link--dashed {
+  animation: none;
+  stroke-dasharray: 5 5;
+}
+
+.family-node {
+  transition: opacity 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+}
+
+.family-node:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 3px;
+}
+
+/* Dim everything that is not related to the person under the cursor. */
+.family-canvas[data-focusing="true"] .family-node:not([data-related="true"]),
+.family-canvas[data-focusing="true"] .family-link:not([data-related="true"]) {
+  opacity: 0.18;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .family-link {
+    animation: none;
+    stroke-dasharray: none;
+  }
+  .family-link--dashed { stroke-dasharray: 5 5; }
+  .family-node { transition: none; }
 }
