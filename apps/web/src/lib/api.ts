@@ -8,7 +8,11 @@ import {
   TemplateInfo,
 } from "@ocr/shared-types";
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
+const API_BASE = (
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE ||
+  (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") ? "http://localhost:8000" : "")
+).replace(/\/$/, "");
 
 export interface RecordPageResponse {
   items: Record_[];
