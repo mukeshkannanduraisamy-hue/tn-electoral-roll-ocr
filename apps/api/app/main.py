@@ -21,6 +21,8 @@ from .routers import (
     auth, export, files, jobs, pages, photos, polling_stations, records,
     templates, voters,
 )
+# Aliased: `settings` is already the config object imported above.
+from .routers import settings as settings_router
 from .services.job_queue import manager
 
 logging.basicConfig(
@@ -144,6 +146,8 @@ app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"],
 app.include_router(export.router, prefix="/api/export", tags=["export"],
                    dependencies=PROTECTED)
 app.include_router(templates.router, prefix="/api/templates", tags=["templates"],
+                   dependencies=PROTECTED)
+app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"],
                    dependencies=PROTECTED)
 
 

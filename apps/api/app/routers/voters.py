@@ -386,17 +386,19 @@ def ai_copilot_endpoint(
     session: Session = Depends(get_session),
     _user: UserRow = Depends(require_user),
 ) -> dict:
-    """Copilot guidance, UI customisation, and chart-ready infographics.
+    """Answer a question, attaching a chart when the question is statistical.
 
-    A statistical question gets an ``infographic`` alongside the reply. Its
-    figures come from SQL, never from the model: the model only chooses which
-    measure to chart and writes the surrounding commentary. See
-    ``app/services/infographic.py`` for why that split matters.
+    Figures in ``infographic`` come from SQL, never from the model: the model
+    only chooses which measure to chart and writes the surrounding commentary.
+    See ``app/services/infographic.py`` for why that split matters.
+
+    The assistant does not change the interface — it answers, and the operator
+    decides what to do about it.
     """
     user_message = str(payload.get("message") or "").strip()
     context = payload.get("context") if isinstance(payload.get("context"), dict) else None
 
-    from ..services import infographic as info
+    from ..services import app_settings, infographic as info
     from ..services.nvidia_ai_service import (
         local_infographic_spec,
         narrate_infographic,
@@ -405,19 +407,22 @@ def ai_copilot_endpoint(
         wants_infographic,
     )
 
-    result = query_nvidia_copilot(user_message, context)
-    result.setdefault("ui_changes", {})
+    creds = app_settings.resolve_ai_credentials(session)
+
+    result = query_nvidia_copilot(user_message, creds, context)
     result["infographic"] = None
+    result["ai_configured"] = creds.configured
 
     if not wants_infographic(user_message):
         return result
 
-    raw_spec = propose_infographic_spec(user_message, info.catalogue())
+    raw_spec = propose_infographic_spec(user_message, info.catalogue(), creds)
     try:
         spec = info.validate_spec(raw_spec or {})
     except info.SpecError as exc:
-        # The model asked for something outside the vocabulary. Fall back to the
-        # keyword matcher rather than serving no chart at all.
+        # The model asked for something outside the vocabulary, or is not
+        # configured at all. Fall back to the keyword matcher rather than
+        # serving no chart.
         logger.info("Rejected AI infographic spec (%s); using local matcher", exc)
         try:
             spec = info.validate_spec(local_infographic_spec(user_message))
@@ -430,7 +435,7 @@ def ai_copilot_endpoint(
         logger.exception("Failed to build infographic for %r", user_message)
         return result
 
-    chart["insights"] = narrate_infographic(user_message, chart)
+    chart["insights"] = narrate_infographic(user_message, chart, creds)
     result["infographic"] = chart
     return result
 

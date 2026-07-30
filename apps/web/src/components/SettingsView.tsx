@@ -12,6 +12,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AiSettingsPanel } from "./AiSettingsPanel";
 
 export function SettingsView() {
   const {
@@ -204,8 +205,10 @@ export function SettingsView() {
           </div>
         </div>
 
-        {/* Right Column: Theme & System Specs */}
+        {/* Right Column: AI, Theme & System Specs */}
         <div className="space-y-6">
+          <AiSettingsPanel />
+
           {/* Appearance Panel */}
           <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-sm space-y-5">
             <div className="flex items-center space-x-3">

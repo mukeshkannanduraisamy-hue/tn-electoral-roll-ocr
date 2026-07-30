@@ -734,9 +734,40 @@ export interface Infographic {
 
 export interface AiCopilotResponse {
   reply: string;
-  ui_changes?: Record<string, unknown>;
   /** Present only when the question was statistical. */
   infographic?: Infographic | null;
+  /** False when no API key is set, so the reply came from the offline guide. */
+  ai_configured?: boolean;
+}
+
+/**
+ * AI configuration as the server reports it. The API key is write-only over the
+ * HTTP surface: it can be set, tested and cleared, but is never returned — only
+ * `key_hint` comes back, so an operator can tell which key is stored.
+ */
+export interface AiSettings {
+  configured: boolean;
+  /** Masked, e.g. `nvapi-…mOzN`. Empty when nothing is configured. */
+  key_hint: string;
+  /** Where the active key came from. */
+  source: 'settings' | 'environment' | 'none';
+  base_url: string;
+  model: string;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+/** Omit a field to leave it unchanged; send an empty string to clear it. */
+export interface AiSettingsUpdate {
+  api_key?: string;
+  base_url?: string;
+  model?: string;
+}
+
+export interface AiSettingsTest {
+  ok: boolean;
+  detail: string;
+  model?: string;
 }
 
 /** Fields a user may set. Server-managed columns are omitted. */

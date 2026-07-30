@@ -234,7 +234,12 @@ def test_blank_insights_are_skipped():
 @pytest.mark.parametrize(
     "message",
     ["show me an infographic", "how many female voters?", "give me a summary",
-     "gender breakdown please", "visual summary of part 289", "எத்தனை வாக்காளர்கள்?"],
+     "gender breakdown please", "visual summary of part 289", "எத்தனை வாக்காளர்கள்?",
+     # "X by Y" carries none of the cue words but is plainly a request for
+     # figures, and it is the phrasing people reach for first.
+     "voters by gender", "Voters by gender", "electors by part",
+     "average age by part", "voters per constituency", "grouped by relation",
+     "வாக்காளர்கள் பாலினம் வாரியாக"],
 )
 def test_statistical_questions_are_routed_to_a_chart(message):
     assert wants_infographic(message) is True

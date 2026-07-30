@@ -377,6 +377,27 @@ class AuditLogRow(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
 
 
+class AppSettingRow(Base):
+    """Operator-editable settings that outlive a process.
+
+    Exists so credentials entered in the UI are held by the server rather than
+    the browser: an API key in `localStorage` is readable by any script on the
+    page and travels with every request. Values here are returned to the client
+    masked, never in full.
+
+    Not a place for anything the code depends on at import time -- that belongs
+    in `config.py` and the environment.
+    """
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    """Stored as written. Treated as secret by the API layer, never logged."""
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_by: Mapped[str] = mapped_column(String(128), default="")
+
+
 class SummaryRow(Base):
     """The statutory summary sheet, plus what extraction actually produced.
 

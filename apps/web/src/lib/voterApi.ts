@@ -9,6 +9,9 @@
 
 import {
   AiCopilotResponse,
+  AiSettings,
+  AiSettingsTest,
+  AiSettingsUpdate,
   AuthStatus,
   AuthUser,
   FamilyTreeResponse,
@@ -152,7 +155,7 @@ export function getVoterFamilyTree(id: string): Promise<FamilyTreeResponse> {
 }
 
 /**
- * Copilot reply, plus a chart when the question was statistical. Figures in
+ * Assistant reply, plus a chart when the question was statistical. Figures in
  * `infographic` are computed by SQL, not written by the model.
  */
 export function queryAiCopilot(
@@ -163,6 +166,34 @@ export function queryAiCopilot(
     method: "POST",
     body: JSON.stringify({ message, context }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// AI settings
+//
+// The API key travels one way only. It is posted once and stored on the server;
+// reads return a masked hint, so the browser never holds the secret and a
+// compromised session cannot read it back out.
+// ---------------------------------------------------------------------------
+
+export function getAiSettings(): Promise<AiSettings> {
+  return request<AiSettings>("/api/settings/ai");
+}
+
+export function saveAiSettings(patch: AiSettingsUpdate): Promise<AiSettings> {
+  return request<AiSettings>("/api/settings/ai", {
+    method: "PUT",
+    body: JSON.stringify(patch),
+  });
+}
+
+export function clearAiKey(): Promise<void> {
+  return request<void>("/api/settings/ai/key", { method: "DELETE" });
+}
+
+/** One live call, so a pasted key can be checked before it is relied on. */
+export function testAiSettings(): Promise<AiSettingsTest> {
+  return request<AiSettingsTest>("/api/settings/ai/test", { method: "POST" });
 }
 
 export function createVoter(input: VoterInput): Promise<Voter> {
