@@ -5,9 +5,16 @@ import {
   ArrowDownAZ,
   ArrowUpAZ,
   BadgeCheck,
+  Check,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Download,
+  Eye,
+  FileSpreadsheet,
+  FileText,
+  Filter,
+  Image as ImageIcon,
   Loader2,
   Pencil,
   Plus,
@@ -15,12 +22,10 @@ import {
   Search,
   SlidersHorizontal,
   Trash2,
+  UserCheck,
   Users,
   X,
-  Filter,
-  FileSpreadsheet,
-  FileText,
-  Database,
+  Code2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Voter, VoterQuery, VoterStats } from "@ocr/shared-types";
@@ -29,6 +34,7 @@ import {
   deleteVoter,
   downloadVoterExport,
   listVoters,
+  updateVoter,
   voterStats,
 } from "@/lib/voterApi";
 import { VoterFormModal } from "./VoterFormModal";
@@ -40,19 +46,47 @@ type SortKey = "serial" | "epic" | "name" | "age" | "gender" | "house_number" | 
 
 function GenderBadge({ gender }: { gender: string }) {
   if (gender === "Male")
-    return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold badge-blue">{gender}</span>;
+    return <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">Male</span>;
   if (gender === "Female")
-    return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold badge-rose">{gender}</span>;
+    return <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">Female</span>;
   if (gender)
-    return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold badge-slate">{gender}</span>;
+    return <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20">{gender}</span>;
   return <span className="text-xs text-muted-foreground">—</span>;
+}
+
+function RelationBadge({ type, name }: { type: string; name: string }) {
+  if (!type && !name) return <span className="text-xs text-muted-foreground">—</span>;
+  
+  const getBadgeStyle = (t: string) => {
+    switch (t?.toLowerCase()) {
+      case "husband":
+        return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20";
+      case "father":
+        return "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20";
+      case "mother":
+        return "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20";
+      default:
+        return "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20";
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 max-w-[180px]">
+      {type && (
+        <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border ${getBadgeStyle(type)} shrink-0`}>
+          {type}
+        </span>
+      )}
+      <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">{name || "—"}</span>
+    </div>
+  );
 }
 
 function SortIcon({ col, sort, order }: { col: string; sort: string; order: string }) {
   if (sort !== col) return null;
   return order === "asc"
-    ? <ArrowUpAZ className="w-3 h-3 text-primary inline-block ml-1" />
-    : <ArrowDownAZ className="w-3 h-3 text-primary inline-block ml-1" />;
+    ? <ArrowUpAZ className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 inline-block ml-1" />
+    : <ArrowDownAZ className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 inline-block ml-1" />;
 }
 
 export const VotersView: React.FC = () => {
@@ -60,25 +94,36 @@ export const VotersView: React.FC = () => {
   const [total, setTotal] = useState(0);
   const [stats, setStats] = useState<VoterStats | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Filtering States
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [gender, setGender] = useState("");
+  const [relationType, setRelationType] = useState("");
   const [partNumber, setPartNumber] = useState("");
+  const [houseNumber, setHouseNumber] = useState("");
+  const [hasPhoto, setHasPhoto] = useState<"" | "true" | "false">("");
   const [minAge, setMinAge] = useState("");
   const [maxAge, setMaxAge] = useState("");
   const [verified, setVerified] = useState<"" | "true" | "false">("");
+  const [agePreset, setAgePreset] = useState<"" | "18-25" | "26-40" | "41-60" | "60+">("");
+
+  // Sorting & Pagination
   const [sort, setSort] = useState<SortKey>("created_at");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [offset, setOffset] = useState(0);
   const [limit, setLimit] = useState(50);
+  
+  // UI Interactions
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingVoter, setEditingVoter] = useState<Voter | null>(null);
   const [exportLoading, setExportLoading] = useState(false);
   const [openVoterId, setOpenVoterId] = useState<string | null>(null);
+  const [copiedEpic, setCopiedEpic] = useState<string | null>(null);
 
-  // Listen for global profile open events
+  // Global event listener for voter profiles
   useEffect(() => {
     const handler = (e: Event) => {
       const id = (e as CustomEvent).detail?.id;
@@ -88,6 +133,7 @@ export const VotersView: React.FC = () => {
     return () => window.removeEventListener("vi-mc:open-voter", handler);
   }, []);
 
+  // Fetch Voter List
   const loadData = useCallback(async () => {
     setLoading(true);
     setSelectedIds(new Set());
@@ -95,7 +141,10 @@ export const VotersView: React.FC = () => {
       const query: VoterQuery = {
         search: search || undefined,
         gender: gender || undefined,
+        relation_type: relationType || undefined,
         part_number: partNumber || undefined,
+        house_number: houseNumber || undefined,
+        has_photo: hasPhoto === "" ? undefined : hasPhoto === "true",
         verified: verified === "" ? undefined : verified === "true",
         min_age: minAge ? Number(minAge) : undefined,
         max_age: maxAge ? Number(maxAge) : undefined,
@@ -108,26 +157,48 @@ export const VotersView: React.FC = () => {
       setRows(data.items || []);
       setTotal(data.total || 0);
     } catch {
-      toast.error("Failed to load voters");
+      toast.error("Failed to load voters dataset");
     } finally {
       setLoading(false);
     }
-  }, [search, gender, partNumber, verified, minAge, maxAge, sort, order, offset, limit]);
+  }, [search, gender, relationType, partNumber, houseNumber, hasPhoto, verified, minAge, maxAge, sort, order, offset, limit]);
 
   useEffect(() => { void loadData(); }, [loadData]);
 
+  // Fetch Dashboard Stats
   useEffect(() => {
     voterStats().then(setStats).catch(() => null);
   }, []);
 
-  // Debounce search
+  // Search Debouncing
   useEffect(() => {
     const t = setTimeout(() => {
       setSearch(searchInput);
       setOffset(0);
-    }, 350);
+    }, 300);
     return () => clearTimeout(t);
   }, [searchInput]);
+
+  // Handle Age Presets
+  const handleAgePreset = (preset: "" | "18-25" | "26-40" | "41-60" | "60+") => {
+    setAgePreset(preset);
+    setOffset(0);
+    if (!preset) {
+      setMinAge("");
+      setMaxAge("");
+      return;
+    }
+    switch (preset) {
+      case "18-25":
+        setMinAge("18"); setMaxAge("25"); break;
+      case "26-40":
+        setMinAge("26"); setMaxAge("40"); break;
+      case "41-60":
+        setMinAge("41"); setMaxAge("60"); break;
+      case "60+":
+        setMinAge("60"); setMaxAge("120"); break;
+    }
+  };
 
   const handleSort = (col: SortKey) => {
     if (sort === col) setOrder((o) => (o === "asc" ? "desc" : "asc"));
@@ -148,22 +219,55 @@ export const VotersView: React.FC = () => {
     else setSelectedIds(new Set(rows.map((r) => r.id)));
   };
 
+  const handleCopyEpic = (e: React.MouseEvent, epic: string) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(epic);
+    setCopiedEpic(epic);
+    toast.success(`EPIC ID copied: ${epic}`);
+    setTimeout(() => setCopiedEpic(null), 2000);
+  };
+
+  const handleToggleVerify = async (e: React.MouseEvent, voter: Voter) => {
+    e.stopPropagation();
+    try {
+      const updated = await updateVoter(voter.id, { verified: !voter.verified });
+      setRows((prev) => prev.map((r) => (r.id === voter.id ? updated : r)));
+      toast.success(`Voter ${voter.epic} ${updated.verified ? "verified" : "marked unverified"}`);
+    } catch {
+      toast.error("Failed to update verification status");
+    }
+  };
+
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete voter "${name}"?`)) return;
+    if (!confirm(`Are you sure you want to delete voter record "${name}"?`)) return;
     try {
       await deleteVoter(id);
-      toast.success("Voter deleted");
+      toast.success("Voter record removed cleanly");
       void loadData();
-    } catch { toast.error("Failed to delete"); }
+    } catch { toast.error("Failed to delete voter record"); }
   };
 
   const handleBulkDelete = async () => {
-    if (!confirm(`Delete ${selectedIds.size} voter(s)?`)) return;
+    if (!confirm(`Permanently delete ${selectedIds.size} selected voter(s)?`)) return;
     try {
       const { deleted } = await bulkDeleteVoters([...selectedIds]);
-      toast.success(`Deleted ${deleted} voter(s)`);
+      toast.success(`Successfully deleted ${deleted} voter records`);
       void loadData();
-    } catch { toast.error("Bulk delete failed"); }
+    } catch { toast.error("Bulk deletion failed"); }
+  };
+
+  const handleBulkVerify = async () => {
+    try {
+      let count = 0;
+      for (const id of selectedIds) {
+        await updateVoter(id, { verified: true });
+        count++;
+      }
+      toast.success(`Marked ${count} voter records as Verified!`);
+      void loadData();
+    } catch {
+      toast.error("Bulk verification completed with warnings");
+    }
   };
 
   const handleExport = async (format: "xlsx" | "csv") => {
@@ -172,33 +276,49 @@ export const VotersView: React.FC = () => {
       await downloadVoterExport(format, {
         search: search || undefined,
         gender: gender || undefined,
+        relation_type: relationType || undefined,
         part_number: partNumber || undefined,
       });
-    } catch (e: any) { toast.error(e?.message || "Export failed"); }
+      toast.success(`Export downloaded (${format.toUpperCase()})`);
+    } catch (e: any) { toast.error(e?.message || "Export download failed"); }
     finally { setExportLoading(false); }
+  };
+
+  const handleJSONExport = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(rows, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `voters_export_${new Date().toISOString().slice(0, 10)}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+    toast.success(`Downloaded ${rows.length} records as JSON`);
   };
 
   const pages = Math.max(1, Math.ceil(total / limit));
   const currentPage = Math.floor(offset / limit) + 1;
-  const hasFilters = !!(search || gender || partNumber || minAge || maxAge || verified);
+  const hasFilters = !!(search || gender || relationType || partNumber || houseNumber || hasPhoto || minAge || maxAge || verified || agePreset);
 
   const clearFilters = () => {
-    setSearchInput(""); setSearch(""); setGender("");
-    setPartNumber(""); setMinAge(""); setMaxAge(""); setVerified("");
+    setSearchInput(""); setSearch(""); setGender(""); setRelationType("");
+    setPartNumber(""); setHouseNumber(""); setHasPhoto(""); setMinAge(""); setMaxAge("");
+    setVerified(""); setAgePreset("");
     setOffset(0);
   };
 
   const SortTh = ({ col, label, className = "" }: { col: SortKey; label: React.ReactNode; className?: string }) => (
     <th
-      className={`cursor-pointer select-none hover:bg-muted/80 transition-colors ${className}`}
+      className={`px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors ${className}`}
       onClick={() => handleSort(col)}
     >
-      {label}
-      <SortIcon col={col} sort={sort} order={order} />
+      <div className="flex items-center space-x-1">
+        <span>{label}</span>
+        <SortIcon col={col} sort={sort} order={order} />
+      </div>
     </th>
   );
 
-  // Show voter profile if one is open
+  // Profile view fallback
   if (openVoterId) {
     return (
       <VoterProfilePage
@@ -209,268 +329,483 @@ export const VotersView: React.FC = () => {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-
-      {/* Header Bar */}
-      <div className="shrink-0 px-6 py-4 border-b border-border bg-card/60 backdrop-blur-sm">
-        <div className="flex items-center justify-between gap-4 mb-4">
+    <div className="flex-1 flex flex-col overflow-hidden bg-slate-50/50 dark:bg-slate-950/50">
+      
+      {/* Header & Metric Cards */}
+      <div className="shrink-0 px-6 py-5 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-lg font-bold text-foreground">Voters</h1>
-            <p className="text-xs text-muted-foreground">
-              {loading ? "Loading…" : `${total.toLocaleString()} voter${total !== 1 ? "s" : ""} in database`}
+            <div className="flex items-center space-x-3">
+              <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                Voter Directory
+              </h1>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                {total.toLocaleString()} Records
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Multi-attribute search, demographic breakdown, and verification control panel.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {selectedIds.size > 0 && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-medium">
-                <span>{selectedIds.size} selected</span>
-                <button onClick={handleBulkDelete} className="flex items-center gap-1 hover:text-rose-700">
-                  <Trash2 className="w-3.5 h-3.5" /> Delete
-                </button>
-              </div>
-            )}
-            {/* Export */}
-            <div className="relative group">
-              <button className="vimc-btn-ghost h-8 text-xs" disabled={exportLoading}>
-                {exportLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                Export
-              </button>
-              <div className="absolute right-0 top-full mt-1 w-36 card-vimc rounded-xl shadow-xl border border-border z-50 py-1 hidden group-hover:block">
-                <button onClick={() => handleExport("xlsx")} className="flex items-center gap-2 px-3 py-2 text-xs w-full hover:bg-muted transition-colors">
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-green-500" />XLSX
-                </button>
-                <button onClick={() => handleExport("csv")} className="flex items-center gap-2 px-3 py-2 text-xs w-full hover:bg-muted transition-colors">
-                  <FileText className="w-3.5 h-3.5 text-blue-500" />CSV
-                </button>
-              </div>
-            </div>
+
+          <div className="flex items-center space-x-2">
             <button
               onClick={() => { setEditingVoter(null); setIsFormOpen(true); }}
-              className="vimc-btn-primary h-8 text-xs"
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition-all flex items-center space-x-2 shrink-0"
             >
-              <Plus className="w-3.5 h-3.5" />
-              Add Voter
+              <Plus className="w-4 h-4" />
+              <span>Add Voter</span>
+            </button>
+            <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 mx-1" />
+            <button
+              onClick={() => handleExport("xlsx")}
+              disabled={exportLoading}
+              className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold shadow-sm transition-all flex items-center space-x-1.5"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <span>Excel</span>
+            </button>
+            <button
+              onClick={() => handleExport("csv")}
+              disabled={exportLoading}
+              className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold shadow-sm transition-all flex items-center space-x-1.5"
+            >
+              <FileText className="w-4 h-4 text-blue-600" />
+              <span>CSV</span>
+            </button>
+            <button
+              onClick={handleJSONExport}
+              className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold shadow-sm transition-all flex items-center space-x-1.5"
+            >
+              <Code2 className="w-4 h-4 text-purple-600" />
+              <span>JSON</span>
             </button>
           </div>
         </div>
 
-        {/* Search + Filter Row */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+        {/* Search & Main Action Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <div className="relative flex-1 min-w-[280px] max-w-md">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Search name, EPIC, house…"
+              placeholder="Search by Name, EPIC ID, House No, or Part..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="vimc-input pl-9 h-8 text-xs"
+              className="w-full pl-10 pr-9 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
             />
             {searchInput && (
-              <button onClick={() => { setSearchInput(""); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <button
+                onClick={() => setSearchInput("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
+
+          {/* Demographic Quick Filters */}
+          <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-800/60 p-1 rounded-xl">
+            {[
+              { id: "", label: "All Ages" },
+              { id: "18-25", label: "🎓 18-25" },
+              { id: "26-40", label: "👔 26-40" },
+              { id: "41-60", label: "🏢 41-60" },
+              { id: "60+", label: "👴 60+" },
+            ].map((preset) => (
+              <button
+                key={preset.id}
+                onClick={() => handleAgePreset(preset.id as any)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  agePreset === preset.id
+                    ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
           <button
-            onClick={() => setShowFilters((v) => !v)}
-            className={`vimc-btn-ghost h-8 text-xs ${showFilters || hasFilters ? "bg-primary/10 text-primary border-primary/30" : ""}`}
+            onClick={() => setShowFilters(!showFilters)}
+            className={`px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-all flex items-center space-x-2 ${
+              showFilters || hasFilters
+                ? "bg-indigo-50 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400"
+                : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300"
+            }`}
           >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            Filters
-            {hasFilters && <span className="ml-1 w-4 h-4 rounded-full bg-primary text-white text-[9px] flex items-center justify-center">!</span>}
+            <Filter className="w-4 h-4" />
+            <span>Filters</span>
+            {hasFilters && (
+              <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
+            )}
           </button>
-          {hasFilters && (
-            <button onClick={clearFilters} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
-              <X className="w-3 h-3" /> Clear
-            </button>
-          )}
-          <button onClick={() => void loadData()} className="vimc-btn-ghost h-8 w-8 p-0 justify-center" title="Refresh">
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-          </button>
-          <select
-            value={limit}
-            onChange={(e) => { setLimit(Number(e.target.value)); setOffset(0); }}
-            className="vimc-input h-8 text-xs w-20 pr-2"
-          >
-            {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} / pg</option>)}
-          </select>
         </div>
 
-        {/* Advanced Filters */}
+        {/* Collapsible Advanced Filter Drawer */}
         {showFilters && (
-          <div className="flex flex-wrap items-center gap-2 mt-3 p-3 rounded-xl bg-muted/40 border border-border animate-fade-slide">
-            <select value={gender} onChange={(e) => { setGender(e.target.value); setOffset(0); }} className="vimc-input h-8 text-xs w-28">
-              <option value="">All Genders</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Other">Other</option>
-            </select>
-            <input type="text" placeholder="Part No." value={partNumber} onChange={(e) => { setPartNumber(e.target.value); setOffset(0); }} className="vimc-input h-8 text-xs w-24" />
-            <input type="number" placeholder="Min Age" value={minAge} onChange={(e) => { setMinAge(e.target.value); setOffset(0); }} className="vimc-input h-8 text-xs w-20" />
-            <input type="number" placeholder="Max Age" value={maxAge} onChange={(e) => { setMaxAge(e.target.value); setOffset(0); }} className="vimc-input h-8 text-xs w-20" />
-            <select value={verified} onChange={(e) => { setVerified(e.target.value as any); setOffset(0); }} className="vimc-input h-8 text-xs w-32">
-              <option value="">Any Status</option>
-              <option value="true">Verified</option>
-              <option value="false">Unverified</option>
-            </select>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 pt-3 p-4 rounded-2xl bg-slate-100/70 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-top-2">
+            <div>
+              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Gender</label>
+              <select
+                value={gender}
+                onChange={(e) => { setGender(e.target.value); setOffset(0); }}
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+              >
+                <option value="">All Genders</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Relation Type</label>
+              <select
+                value={relationType}
+                onChange={(e) => { setRelationType(e.target.value); setOffset(0); }}
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+              >
+                <option value="">All Relations</option>
+                <option value="Husband">Husband</option>
+                <option value="Father">Father</option>
+                <option value="Mother">Mother</option>
+                <option value="Other">Other / Guardian</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Part Number</label>
+              <input
+                type="text"
+                placeholder="Part No."
+                value={partNumber}
+                onChange={(e) => { setPartNumber(e.target.value); setOffset(0); }}
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">House Number</label>
+              <input
+                type="text"
+                placeholder="House No."
+                value={houseNumber}
+                onChange={(e) => { setHouseNumber(e.target.value); setOffset(0); }}
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Verification</label>
+              <select
+                value={verified}
+                onChange={(e) => { setVerified(e.target.value as any); setOffset(0); }}
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+              >
+                <option value="">Any Status</option>
+                <option value="true">Verified Only</option>
+                <option value="false">Unverified Only</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Photo Status</label>
+              <select
+                value={hasPhoto}
+                onChange={(e) => { setHasPhoto(e.target.value as any); setOffset(0); }}
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+              >
+                <option value="">All Voters</option>
+                <option value="true">Has Photo</option>
+                <option value="false">No Photo</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* Active Filter Badges Bar */}
+        {hasFilters && (
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Active Filters:</span>
+            {search && (
+              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5">
+                Search: "{search}" <X className="w-3 h-3 cursor-pointer hover:text-indigo-800" onClick={() => { setSearchInput(""); setSearch(""); }} />
+              </span>
+            )}
+            {gender && (
+              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 flex items-center gap-1.5">
+                Gender: {gender} <X className="w-3 h-3 cursor-pointer hover:text-blue-800" onClick={() => setGender("")} />
+              </span>
+            )}
+            {relationType && (
+              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 dark:bg-purple-950 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800 flex items-center gap-1.5">
+                Relation: {relationType} <X className="w-3 h-3 cursor-pointer hover:text-purple-800" onClick={() => setRelationType("")} />
+              </span>
+            )}
+            {partNumber && (
+              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5">
+                Part: {partNumber} <X className="w-3 h-3 cursor-pointer hover:text-slate-900" onClick={() => setPartNumber("")} />
+              </span>
+            )}
+            {verified && (
+              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5">
+                {verified === "true" ? "Verified Only" : "Unverified Only"} <X className="w-3 h-3 cursor-pointer hover:text-emerald-800" onClick={() => setVerified("")} />
+              </span>
+            )}
+            <button
+              onClick={clearFilters}
+              className="text-xs font-bold text-rose-500 hover:text-rose-600 hover:underline ml-2"
+            >
+              Clear All
+            </button>
           </div>
         )}
       </div>
 
-      {/* Stats chips */}
-      {stats && (
-        <div className="shrink-0 px-6 py-2.5 flex items-center gap-3 border-b border-border bg-muted/20 overflow-x-auto">
-          {[
-            { label: "Total", value: stats.total, color: "text-foreground" },
-            { label: "Male", value: stats.by_gender?.["Male"] ?? 0, color: "text-blue-500" },
-            { label: "Female", value: stats.by_gender?.["Female"] ?? 0, color: "text-rose-500" },
-            { label: "Verified", value: stats.verified, color: "text-green-500" },
-            { label: "Avg Age", value: stats.average_age ? `${stats.average_age}y` : "—", color: "text-amber-500" },
-          ].map(({ label, value, color }) => (
-            <div key={label} className="flex items-center gap-1.5 whitespace-nowrap">
-              <span className="text-[10px] text-muted-foreground font-medium">{label}</span>
-              <span className={`text-xs font-bold ${color}`}>{typeof value === "number" ? value.toLocaleString() : value}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Table */}
-      <div className="flex-1 overflow-auto">
+      {/* Main Data Table Area */}
+      <div className="flex-1 overflow-auto p-6">
         {loading && rows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <Loader2 className="w-6 h-6 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Loading voters…</p>
+          <div className="flex flex-col items-center justify-center h-64 gap-3">
+            <Loader2 className="w-7 h-7 animate-spin text-indigo-600" />
+            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Fetching voter records...</p>
           </div>
         ) : rows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <Users className="w-10 h-10 text-muted-foreground/30" />
-            <p className="text-sm font-medium text-muted-foreground">No voters found</p>
+          <div className="flex flex-col items-center justify-center h-64 gap-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm">
+            <Users className="w-12 h-12 text-slate-300 dark:text-slate-700" />
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No matching voter records found</p>
             {hasFilters && (
-              <button onClick={clearFilters} className="text-xs text-primary hover:underline">Clear filters</button>
+              <button onClick={clearFilters} className="text-xs font-semibold text-indigo-600 hover:underline">
+                Reset active filters
+              </button>
             )}
           </div>
         ) : (
-          <table className="vimc-table">
-            <thead>
-              <tr>
-                <th className="w-10 text-center">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.size === rows.length && rows.length > 0}
-                    onChange={toggleSelectAll}
-                    className="rounded border-border"
-                  />
-                </th>
-                <SortTh col="serial"       label="S.No" className="w-16" />
-                <SortTh col="epic"         label="EPIC" className="w-36" />
-                <SortTh col="name"         label="Name" />
-                <th>Relative</th>
-                <SortTh col="house_number" label="House" className="w-24" />
-                <SortTh col="age"          label="Age" className="w-14" />
-                <SortTh col="gender"       label="Gender" className="w-24" />
-                <SortTh col="part_number"  label="Part" className="w-16" />
-                <th className="w-20 text-center">Status</th>
-                <th className="w-16 text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((voter) => {
-                const initials = (voter.name || "?")[0].toUpperCase();
-                const isSelected = selectedIds.has(voter.id);
-                return (
-                  <tr
-                    key={voter.id}
-                    onClick={() => setOpenVoterId(voter.id)}
-                    className={`${isSelected ? "bg-primary/5" : ""}`}
-                  >
-                    <td className="text-center" onClick={(e) => e.stopPropagation()}>
+          <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-sm">
+                    <th className="w-12 px-4 py-3.5 text-center">
                       <input
                         type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleSelect(voter.id)}
-                        className="rounded border-border"
+                        checked={selectedIds.size === rows.length && rows.length > 0}
+                        onChange={toggleSelectAll}
+                        className="rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
                       />
-                    </td>
-                    <td className="text-xs text-muted-foreground font-mono">{voter.serial ?? "—"}</td>
-                    <td>
-                      <span className="font-mono text-xs text-primary bg-primary/8 px-2 py-0.5 rounded-md">
-                        {voter.epic}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-white font-bold text-[11px] shrink-0">
-                          {initials}
-                        </div>
-                        <span className="font-medium text-sm truncate max-w-[160px]">
-                          {voter.name || "—"}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="text-xs text-muted-foreground">
-                      <span className="text-[10px] text-muted-foreground mr-1">{voter.relation_type}</span>
-                      <span className="truncate max-w-[100px] inline-block">{voter.relation_name || "—"}</span>
-                    </td>
-                    <td className="text-xs text-muted-foreground font-mono">{voter.house_number || "—"}</td>
-                    <td className="text-xs font-semibold text-foreground text-center">{voter.age ?? "—"}</td>
-                    <td><GenderBadge gender={voter.gender || ""} /></td>
-                    <td className="text-xs text-muted-foreground text-center">{voter.part_number || "—"}</td>
-                    <td className="text-center">
-                      {voter.verified && (
-                        <BadgeCheck className="w-4 h-4 text-green-500 mx-auto" />
-                      )}
-                    </td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => { setEditingVoter(voter); setIsFormOpen(true); }}
-                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                        >
-                          <Pencil className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(voter.id, voter.name || voter.epic)}
-                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors text-muted-foreground hover:text-rose-500"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </td>
+                    </th>
+                    <SortTh col="serial" label="S.No" className="w-16" />
+                    <SortTh col="epic" label="EPIC ID" className="w-40" />
+                    <SortTh col="name" label="Voter Name" />
+                    <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Relation / Relative</th>
+                    <SortTh col="house_number" label="House No" className="w-28" />
+                    <SortTh col="age" label="Age" className="w-16 text-center" />
+                    <SortTh col="gender" label="Gender" className="w-24" />
+                    <SortTh col="part_number" label="Part" className="w-20 text-center" />
+                    <th className="w-24 px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 text-center">Verification</th>
+                    <th className="w-24 px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 text-center">Actions</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+                  {rows.map((voter) => {
+                    const initials = (voter.name || "?")[0].toUpperCase();
+                    const isSelected = selectedIds.has(voter.id);
+                    return (
+                      <tr
+                        key={voter.id}
+                        onClick={() => setOpenVoterId(voter.id)}
+                        className={`group cursor-pointer transition-colors ${
+                          isSelected
+                            ? "bg-indigo-50/50 dark:bg-indigo-950/30"
+                            : "hover:bg-slate-50/80 dark:hover:bg-slate-800/50"
+                        }`}
+                      >
+                        <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelect(voter.id)}
+                            className="rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
+                          />
+                        </td>
+
+                        <td className="px-4 py-3 font-mono font-medium text-slate-500 dark:text-slate-400">
+                          {voter.serial ?? "—"}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={(e) => handleCopyEpic(e, voter.epic)}
+                            className="inline-flex items-center space-x-1.5 font-mono text-[11px] font-bold px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 border border-indigo-200/80 dark:border-indigo-800/80 hover:bg-indigo-100 transition-all"
+                            title="Click to copy EPIC ID"
+                          >
+                            <span>{voter.epic}</span>
+                            {copiedEpic === voter.epic ? (
+                              <Check className="w-3 h-3 text-emerald-500" />
+                            ) : (
+                              <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100" />
+                            )}
+                          </button>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs shadow-sm shrink-0">
+                              {initials}
+                            </div>
+                            <div>
+                              <span className="font-bold text-slate-900 dark:text-slate-100 block text-xs group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                                {voter.name || "—"}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <RelationBadge type={voter.relation_type || ""} name={voter.relation_name || ""} />
+                        </td>
+
+                        <td className="px-4 py-3 font-mono font-medium text-slate-700 dark:text-slate-300">
+                          {voter.house_number || "—"}
+                        </td>
+
+                        <td className="px-4 py-3 font-extrabold text-slate-900 dark:text-slate-100 text-center">
+                          {voter.age ?? "—"}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <GenderBadge gender={voter.gender || ""} />
+                        </td>
+
+                        <td className="px-4 py-3 font-mono font-semibold text-slate-600 dark:text-slate-400 text-center">
+                          {voter.part_number || "—"}
+                        </td>
+
+                        <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={(e) => handleToggleVerify(e, voter)}
+                            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold transition-all border ${
+                              voter.verified
+                                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-300 dark:border-slate-700"
+                            }`}
+                          >
+                            <BadgeCheck className={`w-3.5 h-3.5 ${voter.verified ? "text-emerald-500" : "opacity-40"}`} />
+                            <span>{voter.verified ? "Verified" : "Pending"}</span>
+                          </button>
+                        </td>
+
+                        <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center space-x-1">
+                            <button
+                              onClick={() => setOpenVoterId(voter.id)}
+                              title="View Profile"
+                              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-900 transition-colors"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => { setEditingVoter(voter); setIsFormOpen(true); }}
+                              title="Edit Record"
+                              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-indigo-600 transition-colors"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(voter.id, voter.name || voter.epic)}
+                              title="Delete Record"
+                              className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
       </div>
 
-      {/* Pagination */}
-      <div className="shrink-0 flex items-center justify-between px-6 py-3 border-t border-border bg-card/60 backdrop-blur-sm">
-        <div className="text-xs text-muted-foreground">
-          Showing {offset + 1}–{Math.min(offset + limit, total)} of {total.toLocaleString()} voters
+      {/* Floating Multi-Select Actions Bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 px-6 py-3 rounded-2xl bg-slate-900/90 dark:bg-white/90 text-white dark:text-slate-900 shadow-2xl backdrop-blur-md flex items-center space-x-4 border border-slate-700 dark:border-slate-300 animate-in slide-in-from-bottom-5 z-50">
+          <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-600 text-white">
+            {selectedIds.size} Selected
+          </span>
+          <div className="h-4 w-px bg-slate-700 dark:bg-slate-300" />
+          <button
+            onClick={handleBulkVerify}
+            className="text-xs font-bold flex items-center space-x-1.5 hover:text-emerald-400 transition-colors"
+          >
+            <UserCheck className="w-4 h-4 text-emerald-400" />
+            <span>Mark Verified</span>
+          </button>
+          <button
+            onClick={handleBulkDelete}
+            className="text-xs font-bold flex items-center space-x-1.5 hover:text-rose-400 transition-colors"
+          >
+            <Trash2 className="w-4 h-4 text-rose-400" />
+            <span>Delete Selected</span>
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="p-1 rounded-lg hover:bg-slate-800 dark:hover:bg-slate-200"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-        <div className="flex items-center gap-1.5">
+      )}
+
+      {/* Pagination Control Bar */}
+      <div className="shrink-0 flex items-center justify-between px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md">
+        <div className="flex items-center space-x-3 text-xs text-slate-500 dark:text-slate-400">
+          <span>
+            Showing <strong className="text-slate-900 dark:text-slate-100">{offset + 1}</strong>–
+            <strong className="text-slate-900 dark:text-slate-100">{Math.min(offset + limit, total)}</strong> of{" "}
+            <strong className="text-slate-900 dark:text-slate-100">{total.toLocaleString()}</strong> voters
+          </span>
+          <div className="h-4 w-px bg-slate-200 dark:border-slate-800" />
+          <div className="flex items-center space-x-1">
+            <span>Per Page:</span>
+            <select
+              value={limit}
+              onChange={(e) => { setLimit(Number(e.target.value)); setOffset(0); }}
+              className="px-2 py-1 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+            >
+              {PAGE_SIZES.map((sz) => (
+                <option key={sz} value={sz}>{sz}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-2">
           <button
             onClick={() => setOffset((o) => Math.max(0, o - limit))}
             disabled={currentPage === 1}
-            className="vimc-btn-ghost h-7 w-7 p-0 justify-center disabled:opacity-40"
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-50 transition-all"
           >
-            <ChevronLeft className="w-3.5 h-3.5" />
+            <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="text-xs font-medium text-foreground px-2">
-            {currentPage} / {pages}
+          <span className="text-xs font-bold text-slate-700 dark:text-slate-300 px-2">
+            Page {currentPage} of {pages}
           </span>
           <button
             onClick={() => setOffset((o) => Math.min((pages - 1) * limit, o + limit))}
             disabled={currentPage === pages}
-            className="vimc-btn-ghost h-7 w-7 p-0 justify-center disabled:opacity-40"
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-50 transition-all"
           >
-            <ChevronRight className="w-3.5 h-3.5" />
+            <ChevronRight className="w-4 h-4" />
           </button>
         </div>
       </div>
 
+      {/* Edit Form Modal */}
       {isFormOpen && (
         <VoterFormModal
           isOpen={isFormOpen}

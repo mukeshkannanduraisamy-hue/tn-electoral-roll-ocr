@@ -117,7 +117,11 @@ def _apply_fields(
 def list_voters(
     search: str | None = Query(None, description="Matches name, EPIC, house, part"),
     gender: str | None = Query(None),
+    relation_type: str | None = Query(None),
     part_number: str | None = Query(None),
+    constituency: str | None = Query(None),
+    house_number: str | None = Query(None),
+    has_photo: bool | None = Query(None),
     source_file_id: str | None = Query(None),
     verified: bool | None = Query(None),
     min_age: int | None = Query(None, ge=0, le=200),
@@ -139,8 +143,19 @@ def list_voters(
             stmt = stmt.where(VoterRow.search_text.like(f"%{search.lower().strip()}%"))
         if gender:
             stmt = stmt.where(VoterRow.gender == gender)
+        if relation_type:
+            stmt = stmt.where(VoterRow.relation_type == relation_type)
         if part_number:
             stmt = stmt.where(VoterRow.part_number == part_number)
+        if constituency:
+            stmt = stmt.where(VoterRow.constituency == constituency)
+        if house_number:
+            stmt = stmt.where(VoterRow.house_number.like(f"%{house_number.strip()}%"))
+        if has_photo is not None:
+            if has_photo:
+                stmt = stmt.where(VoterRow.photo_path.isnot(None), VoterRow.photo_path != "")
+            else:
+                stmt = stmt.where((VoterRow.photo_path.is_(None)) | (VoterRow.photo_path == ""))
         if source_file_id:
             stmt = stmt.where(VoterRow.source_file_id == source_file_id)
         if verified is not None:

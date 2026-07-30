@@ -567,7 +567,11 @@ export interface VoterPage {
 export interface VoterQuery {
   search?: string;
   gender?: string;
+  relation_type?: string;
   part_number?: string;
+  constituency?: string;
+  house_number?: string;
+  has_photo?: boolean;
   source_file_id?: string;
   verified?: boolean;
   min_age?: number;
