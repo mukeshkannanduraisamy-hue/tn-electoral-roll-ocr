@@ -357,8 +357,8 @@ export const VotersView: React.FC = () => {
       const data = await listVoters(query);
       setRows(data.items || []);
       setTotal(data.total || 0);
-    } catch {
-      toast.error("Failed to load voters dataset");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to load voters dataset");
     } finally {
       setLoading(false);
     }
@@ -526,6 +526,7 @@ export const VotersView: React.FC = () => {
       <VoterProfilePage
         voterId={openVoterId}
         onBack={() => setOpenVoterId(null)}
+        onNavigateVoter={setOpenVoterId}
       />
     );
   }
