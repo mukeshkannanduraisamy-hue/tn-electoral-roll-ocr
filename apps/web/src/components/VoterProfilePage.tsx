@@ -1455,26 +1455,6 @@ function HouseholdFamilyTree({
           {asciiTreeOutput || "No family tree lines generated"}
         </pre>
       </div>
-
-      {/* JSON REPRESENTATION CARD */}
-      <div className="card-vimc p-6 space-y-3">
-        <div className="flex items-center justify-between border-b border-border pb-3">
-          <div className="flex items-center space-x-2">
-            <Code2 className="w-4 h-4 text-purple-600" />
-            <h4 className="text-xs font-bold text-foreground">JSON Schema Representation</h4>
-          </div>
-          <button
-            onClick={() => copyToClipboard(JSON.stringify(jsonSchemaOutput, null, 2), "JSON Family Schema")}
-            className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center space-x-1"
-          >
-            <Copy className="w-3 h-3" />
-            <span>Copy JSON Schema</span>
-          </button>
-        </div>
-        <pre className="p-4 rounded-xl bg-slate-900 text-indigo-300 font-mono text-[11px] overflow-x-auto leading-relaxed max-h-96">
-          {JSON.stringify(jsonSchemaOutput, null, 2)}
-        </pre>
-      </div>
     </div>
   );
 }
