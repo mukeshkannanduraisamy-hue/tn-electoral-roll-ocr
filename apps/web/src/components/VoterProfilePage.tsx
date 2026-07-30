@@ -1290,6 +1290,11 @@ function HouseholdFamilyTree({
     };
   }, [currentVoter, heads, children, allFamilyMembers, confidenceScore, confidenceLevel]);
 
+  const verifiedCount = useMemo(
+    () => allFamilyMembers.filter((m) => m.verified).length,
+    [allFamilyMembers]
+  );
+
   return (
     <div className="space-y-6">
       {/* Household Header Summary Card */}
