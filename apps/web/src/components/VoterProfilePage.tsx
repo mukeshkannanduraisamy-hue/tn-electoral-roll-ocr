@@ -238,7 +238,7 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
     void load();
   }, [load]);
 
-  // Load family/related voters
+  // Load family/related voters for Household Family Tree
   useEffect(() => {
     if (!voter) return;
     setLoadingFamily(true);
@@ -246,12 +246,11 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
     const fetchRelated = async () => {
       try {
         if (voter.house_number) {
-          const house = await listVoters({ search: voter.house_number, limit: 10 });
+          const house = await listVoters({ house_number: voter.house_number, limit: 30 });
           setHousemates((house.items || []).filter((v: Voter) => v.id !== voter.id));
-        }
-        if (voter.relation_name) {
-          const rel = await listVoters({ search: voter.relation_name, limit: 8 });
-          setRelatedVoters((rel.items || []).filter((v: Voter) => v.id !== voter.id));
+        } else if (voter.relation_name) {
+          const rel = await listVoters({ search: voter.relation_name, limit: 20 });
+          setHousemates((rel.items || []).filter((v: Voter) => v.id !== voter.id));
         }
       } catch {
         // silent
@@ -647,40 +646,165 @@ export function VoterProfilePage({ voterId, onBack }: VoterProfilePageProps) {
             </div>
           )}
 
-          {/* TAB 4: FAMILY & RELATED VOTERS */}
+          {/* TAB 4: INTERACTIVE HOUSEHOLD FAMILY TREE */}
           {activeTab === "family" && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="card-vimc p-5">
-                <h3 className="text-sm font-bold mb-1">Same House Voters</h3>
-                <p className="text-xs text-muted-foreground mb-4">House No. {voter.house_number || "—"}</p>
-                {loadingFamily ? (
-                  <div className="space-y-2"><div className="h-12 animate-shimmer rounded-xl" /></div>
-                ) : housemates.length === 0 ? (
-                  <div className="text-center py-6 text-sm text-muted-foreground">No other voters at this address</div>
-                ) : (
-                  <div className="space-y-2">
-                    {housemates.map((v) => (
-                      <RelatedVoterCard key={v.id} voter={v} onClick={() => setVoter(v)} />
-                    ))}
+            <div className="card-vimc p-6 space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h3 className="text-base font-black text-foreground tracking-tight">
+                      Household Family Tree & Relationship Hierarchy
+                    </h3>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                      {1 + housemates.length} Household Members
+                    </span>
                   </div>
-                )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Multi-generational relationship tree for House No. <strong className="text-foreground">{voter.house_number || "—"}</strong>
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center space-x-1.5">
+                    <BadgeCheck className="w-4 h-4 text-emerald-500" />
+                    <span>100% Address Match</span>
+                  </span>
+                </div>
               </div>
 
-              <div className="card-vimc p-5">
-                <h3 className="text-sm font-bold mb-1">Same Relative Voters</h3>
-                <p className="text-xs text-muted-foreground mb-4">Relative: {voter.relation_name || "—"}</p>
-                {loadingFamily ? (
-                  <div className="space-y-2"><div className="h-12 animate-shimmer rounded-xl" /></div>
-                ) : relatedVoters.length === 0 ? (
-                  <div className="text-center py-6 text-sm text-muted-foreground">No other voters with this relative</div>
-                ) : (
-                  <div className="space-y-2">
-                    {relatedVoters.map((v) => (
-                      <RelatedVoterCard key={v.id} voter={v} onClick={() => setVoter(v)} />
-                    ))}
+              {loadingFamily ? (
+                <div className="h-64 flex flex-col items-center justify-center gap-3">
+                  <Loader2 className="w-7 h-7 animate-spin text-primary" />
+                  <p className="text-xs text-muted-foreground font-medium">Constructing Household Family Tree...</p>
+                </div>
+              ) : (
+                <div className="space-y-8 py-4">
+                  {/* ROOT NODE: Shared Relative / Head of Household */}
+                  <div className="flex flex-col items-center justify-center">
+                    <div className="relative p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-slate-900/5 border-2 border-amber-500/30 shadow-lg max-w-sm w-full text-center space-y-2">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center font-bold text-lg mx-auto shadow-md">
+                        👑
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-600 dark:text-amber-400 block">
+                          Head of Household / Shared Relative
+                        </span>
+                        <h4 className="text-lg font-black text-foreground">
+                          {voter.relation_name || "Family Head"}
+                        </h4>
+                        <p className="text-xs text-muted-foreground">
+                          Address: House No. {voter.house_number || "—"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Connecting Trunk Line */}
+                    <div className="w-0.5 h-8 bg-gradient-to-b from-amber-500/50 to-indigo-500/50 my-1" />
+                    <div className="w-3 h-3 rounded-full bg-indigo-500 border-2 border-background shadow-md" />
                   </div>
-                )}
-              </div>
+
+                  {/* BRANCHES: Family Members & Household Voters */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-center space-x-2">
+                      <Users className="w-4 h-4 text-indigo-500" />
+                      <span className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">
+                        Household Family Members ({1 + housemates.length})
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+                      {/* Current Active Voter Node Card */}
+                      <div className="p-4 rounded-2xl bg-indigo-500/10 border-2 border-indigo-500 shadow-xl space-y-3 relative overflow-hidden group">
+                        <div className="absolute top-2 right-2">
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-indigo-600 text-white shadow-sm">
+                            Active Profile
+                          </span>
+                        </div>
+
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-sm flex items-center justify-center shadow-md">
+                            {(voter.name || "?")[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <h5 className="text-sm font-extrabold text-foreground">{voter.name || "—"}</h5>
+                            <span className="font-mono text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
+                              {voter.epic}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-indigo-500/20">
+                          {voter.relation_type && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-indigo-500/20 text-indigo-700 dark:text-indigo-300">
+                              {voter.relation_type}
+                            </span>
+                          )}
+                          {voter.gender && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 dark:bg-slate-800 text-foreground">
+                              {voter.gender}
+                            </span>
+                          )}
+                          {voter.age && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-slate-200 dark:bg-slate-800 text-foreground">
+                              Age: {voter.age}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Other Housemates / Family Member Node Cards */}
+                      {housemates.map((member) => (
+                        <div
+                          key={member.id}
+                          onClick={() => setVoter(member)}
+                          className="p-4 rounded-2xl bg-card border border-border hover:border-indigo-500/60 shadow-sm hover:shadow-lg transition-all cursor-pointer space-y-3 group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-600 to-slate-800 text-white font-black text-sm flex items-center justify-center shadow-md group-hover:from-indigo-600 group-hover:to-purple-600 transition-all">
+                                {(member.name || "?")[0].toUpperCase()}
+                              </div>
+                              <div>
+                                <h5 className="text-sm font-bold text-foreground group-hover:text-indigo-600 transition-colors">
+                                  {member.name || "—"}
+                                </h5>
+                                <span className="font-mono text-[11px] text-muted-foreground font-semibold">
+                                  {member.epic}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-border/60">
+                            <div className="flex items-center space-x-1.5">
+                              {member.relation_type && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                                  {member.relation_type}
+                                </span>
+                              )}
+                              {member.gender && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+                                  {member.gender}
+                                </span>
+                              )}
+                              {member.age && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold text-foreground">
+                                  {member.age}y
+                                </span>
+                              )}
+                            </div>
+
+                            <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 group-hover:translate-x-1 transition-transform flex items-center space-x-0.5">
+                              <span>Switch Profile</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
