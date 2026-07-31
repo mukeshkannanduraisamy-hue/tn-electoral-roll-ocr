@@ -44,7 +44,7 @@ class FileStatusArgs(BaseModel):
     name="file_status",
     description=(
         "Processing state of one uploaded PDF or of every file: status, pages "
-        f"done out of total, page count, template and any error. Lists at "
+        "done out of total, page count, template and any error. Lists at "
         f"most {MAX_FILES} files at a time; the response's `total` and "
         "`truncated` say whether more exist than were returned."
     ),
