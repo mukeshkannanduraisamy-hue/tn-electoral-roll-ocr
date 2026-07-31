@@ -11,7 +11,8 @@
 ## Global Constraints
 
 - **Read-only.** No task adds a write path to the chat. No `INSERT`/`UPDATE`/`DELETE` reachable from the agent.
-- **The model never produces a number.** Permitted figures are rebuilt from every tool result in the turn; sentences quoting anything else are dropped.
+- **The model never produces a number — on the agent path.** Permitted figures are rebuilt from every tool result in the turn; sentences quoting anything else are dropped. This binds `run_agent` only. The fast path (`smalltalk`/`howto`) never sees tool results, so the guard would have nothing to permit and would strip every figure out of the offline guide; it keeps the prompt-level rule already stated in `SYSTEM_PROMPT`, unchanged from today.
+- **`users` rows are real.** SQLite runs with `PRAGMA foreign_keys=ON` (`db.py:477`), and `chat_threads.user_id` references `users.id`. Any test inserting a thread must create and clean up a real `UserRow` first.
 - **The model never produces a record reference.** `[[v:<id>]]` markers not present in the turn's tool results are stripped server-side.
 - **The model never produces a render block.** Tables, cards and charts are built by the backend from tool results.
 - **Forbidden tables, absolutely:** `users`, `sessions`, `app_settings`. `app_settings` holds the NVIDIA API key.
@@ -86,14 +87,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pytest  # noqa: E402
 
-from app.db import ChatMessageRow, ChatThreadRow, session_scope  # noqa: E402
+from app.db import ChatMessageRow, ChatThreadRow, UserRow, session_scope  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def owner_id():
+    """A real user row: foreign keys are enforced (db.py PRAGMA foreign_keys=ON)."""
+    uid = uuid.uuid4().hex[:32]
+    with session_scope() as s:
+        s.add(UserRow(id=uid, username=f"test-{uid[:8]}", password_hash="x"))
+    yield uid
+    with session_scope() as s:
+        row = s.get(UserRow, uid)
+        if row is not None:
+            s.delete(row)
 
 
 @pytest.fixture()
-def thread_id():
+def thread_id(owner_id):
     tid = uuid.uuid4().hex[:32]
     with session_scope() as s:
-        s.add(ChatThreadRow(id=tid, user_id="test-user", title="Fixture thread"))
+        s.add(ChatThreadRow(id=tid, user_id=owner_id, title="Fixture thread"))
     yield tid
     with session_scope() as s:
         row = s.get(ChatThreadRow, tid)
@@ -3934,14 +3948,31 @@ from app.db import ChatThreadRow, UserRow, session_scope  # noqa: E402
 from app.main import app  # noqa: E402
 
 
-@pytest.fixture()
-def client_as():
-    """A client authenticated as an arbitrary user id."""
+@pytest.fixture(scope="module")
+def users():
+    """Two real user rows. Foreign keys are enforced, so these must exist."""
+    ids = {"owner": uuid.uuid4().hex[:32], "other": uuid.uuid4().hex[:32]}
+    with session_scope() as s:
+        for role, uid in ids.items():
+            s.add(UserRow(id=uid, username=f"{role}-{uid[:8]}", password_hash="x"))
+    yield ids
+    with session_scope() as s:
+        for uid in ids.values():
+            row = s.get(UserRow, uid)
+            if row is not None:
+                s.delete(row)
 
-    def _make(user_id: str):
-        app.dependency_overrides[require_user] = lambda: UserRow(
-            id=user_id, username=user_id, password_hash="x", display_name=user_id
-        )
+
+@pytest.fixture()
+def client_as(users):
+    """A client authenticated as one of the fixture users."""
+
+    def _make(role: str):
+        uid = users[role]
+        with session_scope() as s:
+            user = s.get(UserRow, uid)
+            s.expunge(user)
+        app.dependency_overrides[require_user] = lambda: user
         return TestClient(app)
 
     yield _make
@@ -3949,10 +3980,10 @@ def client_as():
 
 
 @pytest.fixture()
-def owned_thread():
+def owned_thread(users):
     tid = uuid.uuid4().hex[:32]
     with session_scope() as s:
-        s.add(ChatThreadRow(id=tid, user_id="owner", title="Mine"))
+        s.add(ChatThreadRow(id=tid, user_id=users["owner"], title="Mine"))
     yield tid
     with session_scope() as s:
         row = s.get(ChatThreadRow, tid)
@@ -3964,17 +3995,17 @@ def test_threads_list_only_the_callers_own(client_as, owned_thread):
     mine = client_as("owner").get("/api/ai/threads").json()
     assert any(t["id"] == owned_thread for t in mine["threads"])
 
-    theirs = client_as("someone-else").get("/api/ai/threads").json()
+    theirs = client_as("other").get("/api/ai/threads").json()
     assert all(t["id"] != owned_thread for t in theirs["threads"])
 
 
 def test_another_users_thread_is_not_readable(client_as, owned_thread):
-    response = client_as("someone-else").get(f"/api/ai/threads/{owned_thread}")
+    response = client_as("other").get(f"/api/ai/threads/{owned_thread}")
     assert response.status_code == 404
 
 
 def test_another_users_thread_cannot_be_deleted(client_as, owned_thread):
-    assert client_as("someone-else").delete(f"/api/ai/threads/{owned_thread}").status_code == 404
+    assert client_as("other").delete(f"/api/ai/threads/{owned_thread}").status_code == 404
     with session_scope() as s:
         assert s.get(ChatThreadRow, owned_thread) is not None
 
