@@ -48,6 +48,8 @@ def register(
     """Declare a tool. Re-registering a name replaces it, which keeps reloads sane."""
 
     def decorate(handler: Callable[..., Dict[str, Any]]):
+        if name in REGISTRY:
+            logger.warning(f"Tool {name!r} is being re-registered")
         REGISTRY[name] = ToolDef(
             name=name,
             description=description,
@@ -106,10 +108,14 @@ def execute(
 ) -> Dict[str, Any]:
     """Validate the model's arguments, then run the tool.
 
-    Arguments are rejected rather than coerced. A model that passes a string
-    where a part number's row count belongs has misunderstood the question, and
-    guessing on its behalf produces a confident answer to the wrong query.
+    Arguments are coerced to declared types where possible (e.g., "42" becomes int 42),
+    and rejected with a ToolError when coercion fails. This is the right trade-off for
+    LLM-supplied arguments: a model that writes "20" for a limit meant 20, and failing
+    that call would be worse than accepting it. Only when the type is truly incompatible
+    (e.g., a string that is not a valid integer) will the call fail.
     """
+    if not isinstance(name, str):
+        raise ToolError(f"Invalid tool name: {name!r}")
     tool = REGISTRY.get(name)
     if tool is None:
         raise ToolError(

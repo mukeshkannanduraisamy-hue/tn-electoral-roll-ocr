@@ -45,9 +45,21 @@ def test_unknown_tool_is_refused():
         registry.execute(None, "definitely_not_a_tool", {})
 
 
-def test_bad_arguments_are_refused_not_coerced(sample_tool):
+def test_unusable_arguments_are_refused(sample_tool):
     with pytest.raises(registry.ToolError, match="Invalid arguments"):
         registry.execute(None, "_sample", {"n": "not a number"})
+
+
+def test_compatible_arguments_are_coerced(sample_tool):
+    # String "42" is coerced to int 42 because pydantic can do so successfully
+    assert registry.execute(None, "_sample", {"n": "42"}) == {"doubled": 84}
+    # Bool True is coerced to int 1
+    assert registry.execute(None, "_sample", {"n": True}) == {"doubled": 2}
+
+
+def test_non_string_tool_name_is_refused():
+    with pytest.raises(registry.ToolError, match="Invalid tool name"):
+        registry.execute(None, ["not", "a", "string"], {})
 
 
 def test_catalogue_names_every_registered_tool(sample_tool):
