@@ -6,7 +6,11 @@ declared totals in `polling_stations`. Neither is currently surfaced as a
 question anyone can ask. These tools make both askable.
 
 Every flagged row says *why* it was flagged. A list of suspect records with no
-stated reason is an accusation, not a finding.
+stated reason is an accusation, not a finding. And where a tool cannot afford
+to look at every row, it says how much it looked at — a scan that quietly
+covers a fraction of the table and reports "found none" is worse than no
+answer at all, for a tool whose whole purpose is telling you what not to
+believe.
 """
 
 from __future__ import annotations
@@ -19,13 +23,17 @@ from sqlalchemy import Integer, distinct, func, select
 from sqlalchemy.orm import Session
 
 from ....db import PollingStationRow, RecordRow, VoterRow
+from ...infographic import MIN_PLAUSIBLE_AGE
 from ..registry import ToolError, register
 
-#: Matches `infographic.MIN_PLAUSIBLE_AGE`. An elector below this is a mis-read.
-MIN_PLAUSIBLE_AGE = 18
 #: Tamil Nadu EPIC numbers are three letters then seven digits.
 EPIC_PATTERN = "^[A-Z]{3}[0-9]{7}$"
 _EPIC_RE = re.compile(EPIC_PATTERN)
+
+#: SQLite has no REGEXP, so `epic_format` filters in Python over a bounded
+#: scan rather than the whole table. Past this many rows the payload must say
+#: `truncated` rather than let a partial scan read as a complete answer.
+EPIC_FORMAT_SCAN_LIMIT = 500
 
 
 class OcrQualityArgs(BaseModel):
@@ -62,8 +70,13 @@ def ocr_quality(session: Session, args: OcrQualityArgs) -> Dict[str, Any]:
     elif args.scope == "page":
         stmt = stmt.where(RecordRow.page_id == args.id)
     elif args.scope == "part":
-        # Records carry no part number; the voters promoted from them do.
-        pages = select(distinct(VoterRow.page_id)).where(VoterRow.part_number == args.id)
+        # Records carry no part number; the voters promoted from them do. A
+        # voter who was never promoted from OCR has page_id=NULL, and an
+        # all-NULL IN-list matches nothing by SQL three-valued logic — so
+        # NULLs are filtered out here rather than left to poison the join.
+        pages = select(distinct(VoterRow.page_id)).where(
+            VoterRow.part_number == args.id, VoterRow.page_id.is_not(None)
+        )
         stmt = stmt.where(RecordRow.page_id.in_(pages))
 
     count, mean_c, min_c, errors, warnings, edited, reviewed = session.execute(
@@ -157,15 +170,37 @@ def _citable(voter: VoterRow, reason: str) -> Dict[str, Any]:
     }
 
 
+def _effective_epic():
+    """The EPIC that `RecordRow.fields["epic"]` would display.
+
+    Mirrors `FieldValue.value` in `schemas/core.py`: the user's edit if one
+    was made, else the raw OCR value. Built with SQLAlchemy's JSON comparator
+    (`[...]` indexing plus `.as_string()`) so it reads correctly on SQLite
+    today and on whatever `database_url()` points at tomorrow, instead of a
+    SQLite-specific `json_extract(...)` string.
+    """
+    epic_field = RecordRow.fields["epic"]
+    return func.upper(
+        func.trim(
+            func.coalesce(
+                epic_field["edited_value"].as_string(),
+                epic_field["original_value"].as_string(),
+            )
+        )
+    )
+
+
 @register(
     name="find_anomalies",
     description=(
-        "Records that look wrong. kind=duplicate_epic finds repeated EPIC "
-        "numbers; implausible_age finds electors under 18; missing_field finds "
-        "blank name, gender or house number; epic_format finds EPICs that do "
-        "not match three letters and seven digits; count_mismatch compares each "
-        "polling station's declared elector total against how many were "
-        "actually extracted."
+        "Records that look wrong. kind=duplicate_epic finds EPIC numbers "
+        "extracted onto more than one OCR record; implausible_age finds "
+        "electors under 18; missing_field finds blank name, gender or house "
+        "number; epic_format finds EPICs that do not match three letters and "
+        f"seven digits (scans at most {EPIC_FORMAT_SCAN_LIMIT} electors per "
+        "call and reports whether that scan was truncated); count_mismatch "
+        "compares each polling station's declared elector total against how "
+        "many were actually extracted."
     ),
     args_model=AnomalyArgs,
     label="Scanning for anomalies",
@@ -175,6 +210,7 @@ def find_anomalies(session: Session, args: AnomalyArgs) -> Dict[str, Any]:
         return stmt.where(VoterRow.part_number == args.part_number) if args.part_number else stmt
 
     rows: List[Dict[str, Any]] = []
+    extra: Dict[str, Any] = {}
 
     if args.kind == "implausible_age":
         found = session.execute(
@@ -203,39 +239,69 @@ def find_anomalies(session: Session, args: AnomalyArgs) -> Dict[str, Any]:
             blank = [
                 f for f in ("name", "gender", "house_number") if not getattr(v, f)
             ]
-            rows = rows + [_citable(v, f"Blank: {', '.join(blank)}.")]
+            rows.append(_citable(v, f"Blank: {', '.join(blank)}."))
 
     elif args.kind == "epic_format":
         # SQLite has no built-in REGEXP, so the pattern is applied in Python
-        # over a bounded scan rather than pushed into the query.
-        found = session.execute(scoped(select(VoterRow)).limit(500)).scalars().all()
-        rows = [
+        # over a bounded scan rather than pushed into the query. `scanned`
+        # and `truncated` disclose exactly how much of the table that bound
+        # actually covered, so "no malformed EPICs" cannot be misread as a
+        # verdict on rows the scan never reached.
+        total_candidates = session.execute(
+            scoped(select(func.count()).select_from(VoterRow))
+        ).scalar_one()
+        found = session.execute(
+            scoped(select(VoterRow)).order_by(VoterRow.id).limit(EPIC_FORMAT_SCAN_LIMIT)
+        ).scalars().all()
+        scanned = len(found)
+        matches = [
             _citable(v, f"EPIC {v.epic!r} does not match three letters then seven digits.")
             for v in found
             if not _EPIC_RE.match((v.epic or "").upper())
-        ][: args.limit]
+        ]
+        rows = matches[: args.limit]
+        extra["scanned"] = scanned
+        extra["truncated"] = total_candidates > scanned
 
     elif args.kind == "duplicate_epic":
         # The voters table enforces uniqueness, so duplicates can only survive
-        # upstream in the OCR records. That is where to look.
-        dupes = session.execute(
-            select(RecordRow.search_text, func.count())
-            .where(RecordRow.search_text != "")
-            .group_by(RecordRow.search_text)
+        # upstream in the OCR records — that is where to look. The extracted
+        # EPIC lives in the per-field JSON blob (`RecordRow.fields["epic"]`),
+        # not in `search_text`, which flattens every field into one
+        # lower-cased blob and is therefore almost never repeated between two
+        # records even when their EPICs match exactly.
+        epic_expr = _effective_epic()
+        groups = session.execute(
+            select(epic_expr.label("epic"), func.count().label("occurrences"))
+            .where(epic_expr.is_not(None), epic_expr != "")
+            .group_by(epic_expr)
             .having(func.count() > 1)
+            .order_by(epic_expr)
             .limit(args.limit)
         ).all()
-        rows = [
-            {"search_text": text[:120], "occurrences": n,
-             "reason": "The same extracted text appears on more than one record."}
-            for text, n in dupes
-        ]
+        for epic_value, occurrences in groups:
+            record_ids = session.execute(
+                select(RecordRow.id).where(epic_expr == epic_value)
+            ).scalars().all()
+            rows.append(
+                {
+                    "epic": epic_value,
+                    "occurrences": occurrences,
+                    "record_ids": list(record_ids),
+                    "reason": f"EPIC {epic_value} was extracted onto {occurrences} OCR records.",
+                }
+            )
 
     else:  # count_mismatch
-        stations = session.execute(
-            select(PollingStationRow).limit(args.limit)
-        ).scalars().all()
-        for st in stations:
+        # `limit` bounds mismatches *returned*, not stations *examined*: an
+        # unordered, station-scan-capped query could report "no mismatches"
+        # purely because the real one fell outside an arbitrary scan window.
+        # Ordering by part_number also makes which mismatches surface first
+        # reproducible instead of depending on incidental DB row order.
+        stmt = select(PollingStationRow).order_by(PollingStationRow.part_number)
+        if args.part_number:
+            stmt = stmt.where(PollingStationRow.part_number == args.part_number)
+        for st in session.execute(stmt).scalars().all():
             extracted = session.execute(
                 select(func.count())
                 .select_from(VoterRow)
@@ -253,5 +319,7 @@ def find_anomalies(session: Session, args: AnomalyArgs) -> Dict[str, Any]:
                         "reason": "The roll's printed total and the extracted count disagree.",
                     }
                 )
+                if len(rows) >= args.limit:
+                    break
 
-    return {"kind": args.kind, "rows": rows, "returned": len(rows)}
+    return {"kind": args.kind, "rows": rows, "returned": len(rows), **extra}
