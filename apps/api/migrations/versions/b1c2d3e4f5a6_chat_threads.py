@@ -25,7 +25,7 @@ def upgrade() -> None:
             sa.ForeignKey("users.id", ondelete="CASCADE"),
             nullable=False,
         ),
-        sa.Column("title", sa.String(255), server_default=""),
+        sa.Column("title", sa.String(255), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
     )
@@ -41,11 +41,11 @@ def upgrade() -> None:
             sa.ForeignKey("chat_threads.id", ondelete="CASCADE"),
             nullable=False,
         ),
-        sa.Column("role", sa.String(16), server_default="user"),
-        sa.Column("content", sa.Text(), server_default=""),
-        sa.Column("tool_trace", sa.JSON(), nullable=True),
-        sa.Column("citations", sa.JSON(), nullable=True),
-        sa.Column("blocks", sa.JSON(), nullable=True),
+        sa.Column("role", sa.String(16), nullable=False),
+        sa.Column("content", sa.Text(), nullable=False),
+        sa.Column("tool_trace", sa.JSON(), nullable=False),
+        sa.Column("citations", sa.JSON(), nullable=False),
+        sa.Column("blocks", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
     )
     op.create_index("ix_chat_messages_thread_id", "chat_messages", ["thread_id"])
