@@ -33,6 +33,7 @@ SECRET_KEYS = frozenset({NVIDIA_API_KEY})
 
 DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
 DEFAULT_MODEL = "z-ai/glm-5.2"
+DEFAULT_NVIDIA_API_KEY = "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"
 
 
 @dataclass(frozen=True)
@@ -91,8 +92,13 @@ def resolve_ai_credentials(session: Session) -> AiCredentials:
     the key without a redeploy. The environment still works for headless
     deployments that never open the Settings page.
     """
+    api_key = (
+        get_setting(session, NVIDIA_API_KEY)
+        or os.getenv("NVIDIA_API_KEY")
+        or DEFAULT_NVIDIA_API_KEY
+    )
     return AiCredentials(
-        api_key=get_setting(session, NVIDIA_API_KEY) or os.getenv("NVIDIA_API_KEY", ""),
+        api_key=api_key,
         base_url=(
             get_setting(session, NVIDIA_BASE_URL)
             or os.getenv("NVIDIA_BASE_URL")
@@ -132,6 +138,8 @@ def describe_ai_config(session: Session) -> dict:
         source = "settings"
     elif env_key:
         source = "environment"
+    elif DEFAULT_NVIDIA_API_KEY:
+        source = "default"
     else:
         source = "none"
 
@@ -141,12 +149,10 @@ def describe_ai_config(session: Session) -> dict:
 
     return {
         "configured": creds.configured,
-        "key_hint": mask_secret(creds.api_key),
-        # Where the active key came from, so "I set it but it's not used" is
-        # answerable without reading the database.
         "source": source,
         "base_url": creds.base_url,
         "model": creds.model,
+        "key_hint": mask_secret(creds.api_key),
         "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
         "updated_by": row.updated_by if row else None,
     }

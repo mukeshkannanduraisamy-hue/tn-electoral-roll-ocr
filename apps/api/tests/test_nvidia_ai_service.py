@@ -287,6 +287,7 @@ def test_unconfigured_is_reported_when_nothing_is_set(
     session, clean_settings, monkeypatch
 ):
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.setattr(store, "DEFAULT_NVIDIA_API_KEY", "")
     described = store.describe_ai_config(session)
     assert described["configured"] is False
     assert described["source"] == "none"
