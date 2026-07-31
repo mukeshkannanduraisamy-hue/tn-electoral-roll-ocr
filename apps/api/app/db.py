@@ -43,7 +43,14 @@ from sqlalchemy import (
     inspect,
     select,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    Session,
+    mapped_column,
+    relationship,
+    sessionmaker,
+)
 
 if TYPE_CHECKING:
     from alembic.config import Config
@@ -435,6 +442,60 @@ class SummaryRow(Base):
     """Full `RollSummary`, including the per-gender supplement breakdowns."""
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+
+# ---------------------------------------------------------------------------
+# Assistant conversations
+# ---------------------------------------------------------------------------
+
+
+class ChatThreadRow(Base):
+    """One conversation with the assistant.
+
+    Threads are per-user. The assistant reads the database on the operator's
+    behalf, so a thread must never be visible to another account.
+    """
+
+    __tablename__ = "chat_threads"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow, index=True
+    )
+
+    messages: Mapped[list["ChatMessageRow"]] = relationship(
+        back_populates="thread", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class ChatMessageRow(Base):
+    """One turn.
+
+    `tool_trace`, `citations` and `blocks` are stored so reopening a thread
+    replays exactly what the operator saw, including which tools ran. An answer
+    whose workings cannot be reread is an answer that cannot be audited.
+    """
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("chat_threads.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(16), default="user")
+    """user | assistant"""
+    content: Mapped[str] = mapped_column(Text, default="")
+    tool_trace: Mapped[list] = mapped_column(JSON, default=list)
+    citations: Mapped[list] = mapped_column(JSON, default=list)
+    blocks: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+    thread: Mapped["ChatThreadRow"] = relationship(back_populates="messages")
 
 
 # ---------------------------------------------------------------------------
