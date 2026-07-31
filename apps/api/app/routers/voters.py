@@ -267,18 +267,13 @@ def voter_stats(
 MAX_HOUSEHOLD_ROWS = 200
 
 
-@router.get("/{voter_id}/family-tree")
-def get_voter_family_tree(
-    voter_id: str,
-    session: Session = Depends(get_session),
-    _user: UserRow = Depends(require_user),
-) -> dict:
-    """Resolve the voter's household into deterministic family trees.
+def resolve_household(session: Session, voter_id: str) -> dict:
+    """Household and resolved families for one elector.
 
-    Returns the whole household rather than only the component containing the
-    voter: when a relationship cannot be resolved the household fragments into
-    several one-person families, and returning just one of them would hide real
-    people living at the address.
+    Extracted from the endpoint so the assistant's `household_of` tool answers
+    with exactly what the Family tab shows. Two code paths producing two
+    different households for the same person is a bug waiting to be reported as
+    a data problem.
     """
     target_row = session.execute(
         select(VoterRow).where(VoterRow.id == voter_id)
@@ -378,6 +373,22 @@ def get_voter_family_tree(
         "primary_family_id": primary_family_id,
         "families": families,
     }
+
+
+@router.get("/{voter_id}/family-tree")
+def get_voter_family_tree(
+    voter_id: str,
+    session: Session = Depends(get_session),
+    _user: UserRow = Depends(require_user),
+) -> dict:
+    """Resolve the voter's household into deterministic family trees.
+
+    Returns the whole household rather than only the component containing the
+    voter: when a relationship cannot be resolved the household fragments into
+    several one-person families, and returning just one of them would hide real
+    people living at the address.
+    """
+    return resolve_household(session, voter_id)
 
 
 @router.post("/ai-copilot")
