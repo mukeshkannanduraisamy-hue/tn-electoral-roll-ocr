@@ -271,7 +271,7 @@ def _chat(
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             body = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         try:
@@ -288,8 +288,8 @@ def _chat(
         )
         logger.warning("AI call failed: %s", message)
         return ChatOutcome(error=message)
-    except socket.timeout:
-        message = "The provider did not answer within 60 seconds."
+    except (socket.timeout, TimeoutError):
+        message = "The NVIDIA AI provider response timed out (30s). Please try your request again."
         logger.warning("AI call failed: %s", message)
         return ChatOutcome(error=message)
     except Exception as exc:
@@ -456,13 +456,14 @@ def query_nvidia_copilot(
         ],
         creds,
         temperature=0.6,
-        max_tokens=2048,
+        max_tokens=1024,
     )
     if not outcome.ok:
-        # Answer from the guide, but say why the model is not being used — a
-        # silent downgrade looks like the assistant simply got worse.
         fallback = _local_rule_fallback(user_message)
-        fallback["reply"] = f"{fallback['reply']}\n\n({outcome.error})"
+        if fallback.get("reply", "").startswith("The AI assistant is not configured"):
+            fallback["reply"] = f"NVIDIA AI Status: {outcome.error}\n\nI can still answer offline topics or generate database charts."
+        else:
+            fallback["reply"] = f"{fallback['reply']}\n\n({outcome.error})"
         return fallback
     return {"reply": outcome.content.strip()}
 
