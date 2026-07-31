@@ -97,7 +97,9 @@ class PageDetailsArgs(BaseModel):
     description=(
         "One page, or the pages of a file: page type, classification "
         "confidence, OCR duration, error, and how many records it produced. "
-        "Set failed_only to list just the pages that failed. Lists at most "
+        "Set failed_only to list just the pages that failed. Errors if "
+        "file_id does not match a real file; an empty list means the file "
+        "exists but nothing matched page_number/failed_only. Lists at most "
         f"{MAX_PAGES} pages at a time; the response's `total` and "
         "`truncated` say whether more exist than were returned."
     ),
@@ -112,7 +114,19 @@ def page_details(session: Session, args: PageDetailsArgs) -> Dict[str, Any]:
     if args.page_id:
         base_stmt = base_stmt.where(PageRow.id == args.page_id.strip())
     else:
-        base_stmt = base_stmt.where(PageRow.file_id == args.file_id.strip())
+        file_id = args.file_id.strip()
+        # An unknown file and a real file with no matching pages are
+        # different facts -- "no such file" vs. "that file has no failed
+        # pages" are opposite answers to "did anything go wrong here?" --
+        # so the file's existence is checked independently of whatever the
+        # page filter below then matches (which may legitimately be empty).
+        file_exists = session.execute(
+            select(FileRow.id).where(FileRow.id == file_id)
+        ).scalar_one_or_none()
+        if file_exists is None:
+            raise ToolError(f"No file with id {args.file_id!r}.")
+
+        base_stmt = base_stmt.where(PageRow.file_id == file_id)
         if args.page_number is not None:
             base_stmt = base_stmt.where(PageRow.page_number == args.page_number)
         if args.failed_only:
