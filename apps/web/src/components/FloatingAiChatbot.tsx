@@ -14,7 +14,8 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Bot, ChevronDown, Send, Sparkles, User } from "lucide-react";
-import { queryAiCopilot } from "@/lib/voterApi";
+import { queryAiCopilot, getAiSettings } from "@/lib/voterApi";
+import { useOcrStore } from "@/store/useOcrStore";
 import type { Infographic } from "@ocr/shared-types";
 import { InfographicCard } from "./InfographicCard";
 
@@ -59,11 +60,21 @@ export const FloatingAiChatbot: React.FC = () => {
     },
   ]);
 
+  const { activeTab, activeFileId, activePageId, selectedRecordId, files } = useOcrStore();
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isOpen) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isOpen]);
+  }, [messages, isOpen, loading]);
+
+  useEffect(() => {
+    if (isOpen && aiConfigured === null) {
+      getAiSettings()
+        .then((res) => setAiConfigured(res.configured))
+        .catch(() => setAiConfigured(false));
+    }
+  }, [isOpen, aiConfigured]);
 
   // The navbar button opens the assistant through this event.
   useEffect(() => {
@@ -83,8 +94,17 @@ export const FloatingAiChatbot: React.FC = () => {
     if (!textToSend) setInput("");
     setLoading(true);
 
+    const activeFileName = files.find((f) => f.id === activeFileId)?.name;
+
+    const context: Record<string, unknown> = {
+      activeTab,
+      ...(activeFileId ? { activeFileId, activeFileName } : {}),
+      ...(activePageId ? { activePageId } : {}),
+      ...(selectedRecordId ? { selectedRecordId } : {}),
+    };
+
     try {
-      const res = await queryAiCopilot(queryText);
+      const res = await queryAiCopilot(queryText, context);
       if (typeof res.ai_configured === "boolean") setAiConfigured(res.ai_configured);
       setMessages((prev) => [
         ...prev,

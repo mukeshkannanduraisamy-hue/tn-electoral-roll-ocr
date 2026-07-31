@@ -265,7 +265,9 @@ def _chat(
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
+                "Accept": "application/json",
                 "Authorization": f"Bearer {creds.api_key}",
+                "User-Agent": "TN-Electoral-Roll-OCR/1.0 (Windows NT 10.0; x64)",
             },
             method="POST",
         )
