@@ -259,6 +259,7 @@ def _chat(
         "top_p": 0.9,
         "max_tokens": max_tokens,
     }
+
     try:
         req = urllib.request.Request(
             f"{creds.base_url}/chat/completions",
@@ -267,7 +268,7 @@ def _chat(
                 "Content-Type": "application/json",
                 "Accept": "application/json",
                 "Authorization": f"Bearer {creds.api_key}",
-                "User-Agent": "TN-Electoral-Roll-OCR/1.0 (Windows NT 10.0; x64)",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             },
             method="POST",
         )
@@ -293,7 +294,6 @@ def _chat(
         logger.warning("AI call failed: %s", message)
         return ChatOutcome(error=message)
     except Exception as exc:
-        # Never interpolate the credentials into a log line.
         message = f"Unexpected failure calling the model: {type(exc).__name__}."
         logger.warning("AI call failed: %s", message)
         return ChatOutcome(error=message)
@@ -307,23 +307,17 @@ def _chat(
     if content:
         return ChatOutcome(content=content, status=200)
 
-    # Reasoning models spend the token budget thinking before they answer, and
-    # return that separately. An empty `content` with a non-empty
-    # `reasoning_content` means the budget ran out mid-thought, not that the
-    # model had nothing to say.
     reasoning = (message_obj.get("reasoning_content") or "").strip()
     finish = choices[0].get("finish_reason")
     if reasoning and finish == "length":
         return ChatOutcome(
             error=(
                 f"{creds.model} used its entire {max_tokens}-token budget on "
-                "internal reasoning and never produced an answer. Raise the limit "
-                "or choose a non-reasoning model."
+                "internal reasoning and never produced an answer."
             ),
             status=200,
         )
     if reasoning:
-        # It thought but emitted nothing usable; the reasoning is not an answer.
         return ChatOutcome(
             error=f"{creds.model} returned reasoning but no answer.", status=200
         )
@@ -431,6 +425,19 @@ def narrate_infographic(
     return kept
 
 
+def _sanitize_context(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep context lightweight and compact to prevent prompt inflation and LLM timeouts."""
+    clean = {}
+    for k, v in ctx.items():
+        if isinstance(v, (str, int, float, bool)) or v is None:
+            clean[k] = v
+        elif isinstance(v, list):
+            clean[k] = f"List of {len(v)} item(s)"
+        elif isinstance(v, dict):
+            clean[k] = {dk: dv for dk, dv in list(v.items())[:5] if isinstance(dv, (str, int, float, bool))}
+    return clean
+
+
 def query_nvidia_copilot(
     user_message: str,
     creds: Optional[AiCredentials] = None,
@@ -447,7 +454,8 @@ def query_nvidia_copilot(
 
     content = (user_message or "").strip()
     if context:
-        content += f"\n\n[What the user is looking at: {json.dumps(context, default=str)}]"
+        clean_ctx = _sanitize_context(context)
+        content += f"\n\n[App View Context: {json.dumps(clean_ctx, default=str)}]"
 
     outcome = _chat(
         [
@@ -456,7 +464,7 @@ def query_nvidia_copilot(
         ],
         creds,
         temperature=0.6,
-        max_tokens=1024,
+        max_tokens=512,
     )
     if not outcome.ok:
         fallback = _local_rule_fallback(user_message)

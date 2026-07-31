@@ -32,7 +32,7 @@ NVIDIA_MODEL = "nvidia_model"
 SECRET_KEYS = frozenset({NVIDIA_API_KEY})
 
 DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
-DEFAULT_MODEL = "z-ai/glm-5.2"
+DEFAULT_MODEL = "meta/llama-3.1-8b-instruct"
 DEFAULT_NVIDIA_API_KEY = "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"
 
 
