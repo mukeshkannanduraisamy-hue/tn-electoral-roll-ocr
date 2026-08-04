@@ -493,6 +493,14 @@ class ChatMessageRow(Base):
     tool_trace: Mapped[list] = mapped_column(JSON, default=list)
     citations: Mapped[list] = mapped_column(JSON, default=list)
     blocks: Mapped[list] = mapped_column(JSON, default=list)
+    budget_exhausted: Mapped[bool] = mapped_column(Boolean, default=False)
+    """The turn that produced this reply ran out of rounds, calls or wall
+    clock (`done.budget_exhausted` from the agent loop). The model is only
+    nudged to say so in prose and may not, so this is the one guaranteed
+    signal a reader has that the answer may be incomplete."""
+    provider_notice: Mapped[str | None] = mapped_column(Text, nullable=True)
+    """A provider failure surfaced mid-stream (rate limit, truncation) that
+    was deliberately kept out of the answer prose (`done.provider_notice`)."""
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
 
     thread: Mapped["ChatThreadRow"] = relationship(back_populates="messages")
