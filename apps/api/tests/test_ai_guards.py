@@ -94,17 +94,22 @@ def test_sql_results_become_a_sql_block_and_a_table():
     assert kinds == ["sql", "table"]
 
 
-# --- Regression tests added after review found two defects that only real
-# data (not the fixtures above) exposed: a sign mismatch in permitted_numbers
-# and a column-dropping bug in blocks_for for duplicate_epic rows. ---
+# --- Regression tests added after review found defects that only real data
+# (not the fixtures above) exposed: a column-dropping bug in blocks_for for
+# duplicate_epic rows, and two rounds on numeric permitting -- a sentence
+# quoting a negative magnitude ("-20") wrongly dropped, then a merged
+# percentage/plain set that let a fabricated bare count survive because it
+# happened to equal some unrelated confidence score's x100 rendering. ---
 
 
-def test_a_negative_magnitude_is_permitted_signed_and_unsigned():
+def test_a_negative_magnitude_survives_however_the_sentence_writes_it():
     # `difference` fields (polling_station's, count_mismatch's) are
-    # legitimately negative. `_DIGITS` extracts the *unsigned* run out of
-    # prose, so a correct sentence written either way -- "-20" or "20 fewer"
-    # -- must survive. Regression for a bug where only the signed string was
-    # permitted and the natural unsigned phrasing was wrongly dropped.
+    # legitimately negative. `_DIGITS` has no sign in its pattern, so it
+    # extracts the *unsigned* run out of prose regardless of how the
+    # sentence is written -- "-20" and "20 fewer" both yield "20" on the
+    # text side. Only the unsigned form needs to be in `allowed`; a signed
+    # entry would be dead code, since the text-side extraction never
+    # produces a signed string to look up.
     allowed = guards.permitted_numbers([{"difference": -20}])
     kept_unsigned, dropped_unsigned = guards.strip_unverified_numbers(
         "The count is 20 fewer than declared.", allowed
@@ -138,19 +143,45 @@ def test_sign_direction_is_a_documented_limitation_not_desired_behaviour():
 
 def test_a_confidence_fraction_is_permitted_as_a_percentage():
     # quality.py stores mean/min confidence as 0-1 floats, but a spoken
-    # answer naturally renders that as a percentage. Regression for a bug
-    # where the whole sentence was dropped because only the raw fraction
-    # ("0.897"), not its x100 rendering, was permitted.
-    allowed = guards.permitted_numbers([{"mean_confidence": 0.897}])
+    # answer naturally renders that as a percentage. permitted_percentages
+    # supplies the x100 rendering; strip_unverified_numbers only consults it
+    # for a digit run actually written with a trailing '%'.
+    tool_results = [{"mean_confidence": 0.897}]
+    allowed = guards.permitted_numbers(tool_results)
+    percentages = guards.permitted_percentages(tool_results)
     text = "Mean confidence is 89.7%."
-    kept, dropped = guards.strip_unverified_numbers(text, allowed)
+    kept, dropped = guards.strip_unverified_numbers(text, allowed, percentages)
     assert kept == text
     assert dropped == 0
-    # An invented percentage is still caught.
-    _, dropped_invented = guards.strip_unverified_numbers(
-        "Mean confidence is 99%.", allowed
-    )
-    assert dropped_invented == 1
+
+
+def test_a_bare_count_matching_only_a_percentage_rendering_is_dropped():
+    # This is the actual Finding 2 defect: an earlier design merged the x100
+    # rendering into the same set consulted for plain digit runs, so a
+    # fabricated bare count ("72 electors") survived purely because some
+    # unrelated confidence score's x100 rendering happened to equal 72. A
+    # digit run with no trailing '%' must never match against `percentages`.
+    tool_results = [{"mean_confidence": 0.715}]  # x100 rendering includes "72"
+    allowed = guards.permitted_numbers(tool_results)
+    percentages = guards.permitted_percentages(tool_results)
+    assert "72" in percentages and "72" not in allowed  # sanity on the fixture
+    text = "There are 72 electors whose EPIC could not be matched at all."
+    kept, dropped = guards.strip_unverified_numbers(text, allowed, percentages)
+    assert kept == ""
+    assert dropped == 1
+
+
+def test_a_fabricated_percentage_with_no_matching_fraction_is_dropped():
+    # A percentage-context digit run is still checked against real data --
+    # it just gets to consult `percentages` too, not skip verification.
+    tool_results = [{"mean_confidence": 0.10}]  # x100 rendering nowhere near 85
+    allowed = guards.permitted_numbers(tool_results)
+    percentages = guards.permitted_percentages(tool_results)
+    assert "85" not in (allowed | percentages)  # sanity on the fixture
+    text = "About 85% of records failed review entirely."
+    kept, dropped = guards.strip_unverified_numbers(text, allowed, percentages)
+    assert kept == ""
+    assert dropped == 1
 
 
 def test_duplicate_epic_rows_keep_their_evidence_columns():
