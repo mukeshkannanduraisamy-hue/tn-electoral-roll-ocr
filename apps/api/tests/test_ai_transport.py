@@ -47,13 +47,45 @@ def test_stream_chat_yields_content_deltas(monkeypatch):
 
 
 def test_stream_chat_ignores_frames_without_content(monkeypatch):
+    # A frame that parses fine but carries no content (e.g. the role-announcing
+    # frame most providers send first) produces no output and no marker — this
+    # is not data loss, there was never any content to lose.
     frames = [
         json.dumps({"choices": [{"delta": {"role": "assistant"}}]}),
+        json.dumps({"choices": [{"delta": {"content": "ok"}}]}),
+    ]
+    monkeypatch.setattr(svc.urllib.request, "urlopen", lambda *a, **k: _sse(*frames))
+    assert "".join(svc.stream_chat([], CREDS, temperature=0.3, max_tokens=64)) == "ok"
+
+
+def test_stream_chat_flags_an_unparseable_frame_instead_of_going_silent(monkeypatch):
+    # Unlike a contentless frame, a frame that FAILS to parse as JSON is always a
+    # reliable signal something was lost — valid JSON, however short, always
+    # parses. The stream still terminates cleanly with [DONE] here; the marker
+    # must still appear because content genuinely went missing along the way.
+    frames = [
         json.dumps({"choices": [{"delta": {"content": "ok"}}]}),
         "not json at all",
     ]
     monkeypatch.setattr(svc.urllib.request, "urlopen", lambda *a, **k: _sse(*frames))
-    assert "".join(svc.stream_chat([], CREDS, temperature=0.3, max_tokens=64)) == "ok"
+    out = "".join(svc.stream_chat([], CREDS, temperature=0.3, max_tokens=64))
+    assert out == "ok\n\n[Part of the response could not be read and has been omitted.]"
+
+
+def test_stream_chat_flags_truncation_when_stream_ends_without_done(monkeypatch):
+    # A connection that drops mid-write: one good frame, then a frame cut off
+    # mid-JSON, then nothing — no [DONE] sentinel at all. Silently returning
+    # "Hi " here would read as a complete answer; Task 11 hands this text
+    # straight to the number guard and presents it as the assistant's reply.
+    body = (
+        f"data: {json.dumps({'choices': [{'delta': {'content': 'Hi '}}]})}\n\n"
+        'data: {"choices": [{"delta": {"content": "cut off\n\n'
+    )
+    monkeypatch.setattr(
+        svc.urllib.request, "urlopen", lambda *a, **k: _FakeResponse(body.encode("utf-8"))
+    )
+    out = "".join(svc.stream_chat([], CREDS, temperature=0.3, max_tokens=64))
+    assert out == "Hi \n\n[Part of the response could not be read and has been omitted.]"
 
 
 def test_stream_chat_reports_missing_credentials_without_calling_out(monkeypatch):

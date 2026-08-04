@@ -649,6 +649,7 @@ def stream_chat(
         "stream": True,
     }
 
+    had_parse_failure = False
     try:
         with urllib.request.urlopen(_request(payload, creds, stream=True), timeout=60) as resp:
             for raw in resp:
@@ -657,15 +658,27 @@ def stream_chat(
                     continue
                 data = line[5:].strip()
                 if data == "[DONE]":
-                    return
+                    break
                 try:
                     frame = json.loads(data)
                 except ValueError:
+                    # Valid JSON, however short, always parses — a failure here is
+                    # never ambiguous, it means a frame was lost (e.g. the
+                    # connection dropped mid-write and the stream ended without
+                    # [DONE]). Keep going so the rest of the answer still comes
+                    # through, but do not let the loss pass unmarked: a truncated
+                    # answer that looks complete is worse than one flagged as
+                    # incomplete, especially once Task 11 hands this text to the
+                    # number guard as if it were a finished reply.
+                    had_parse_failure = True
                     continue
                 for choice in frame.get("choices") or []:
                     delta = (choice.get("delta") or {}).get("content")
                     if delta:
                         yield delta
+        if had_parse_failure:
+            yield "\n\n[Part of the response could not be read and has been omitted.]"
+        return
     except urllib.error.HTTPError as exc:
         try:
             detail = exc.read().decode("utf-8", "replace")
