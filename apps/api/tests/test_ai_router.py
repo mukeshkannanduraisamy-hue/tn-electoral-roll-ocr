@@ -145,6 +145,15 @@ def test_tamil_application_questions_take_the_fast_path(message):
         ("list low confidence records", "data"),
         ("எத்தனை வாக்காளர்கள் உள்ளனர்", "data"),
         ("பாலினம் வாரியாக", "data"),
+        # --- data: this is the round-3 "export" finding -- a bare "export"
+        # cue in _HOWTO_CUES outranked the data-cue scan (howto is checked
+        # first), so every one of these count questions that merely mentions
+        # "export" was routed to the canned guide instead of the analytics
+        # tools. Fixed by making the how-to cue a phrase ("can i export" /
+        # "export to") instead of the bare word.
+        ("how many verified records would export?", "data"),
+        ("how many records are ready to export", "data"),
+        ("how many voters are there in the export", "data"),
         # --- smalltalk: the round-2 overshoot list -- a greeting or
         # acknowledgement with a tail must still land as smalltalk once the
         # pattern stopped being end-anchored. ---
@@ -186,6 +195,37 @@ def test_router_precedence_handles_both_directions_at_once(message, expected):
     # the original data/howto rows, so a future change has to satisfy all of
     # them together.
     assert router.classify(message) == expected
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        # Round 3: the round-2 fix used an "opens with a greeting" prefix
+        # check for step 4, but reaching step 4 only means no cue word
+        # matched -- which is routine for a real question phrased without
+        # one. Every one of these is a genuine question about the corpus
+        # wearing a courtesy opener, with no _DATA_CUES/_HOWTO_CUES word in
+        # it, so the prefix check swallowed all of them as smalltalk. Fixed
+        # by requiring the *whole* message to be nothing but pleasantries
+        # (_is_pure_pleasantry) rather than merely opening with one.
+        #
+        # These assert != "smalltalk" rather than a specific intent: with no
+        # credentials configured in this test module, an unclassified
+        # message falls through _heuristic's None to classify()'s "data"
+        # default -- pinning that exact fallback value would make the test
+        # about classify()'s fallback behaviour instead of about the router
+        # never mistaking these for smalltalk, which is the actual bug.
+        "hi, what's up with 289?",
+        "hello, anything strange in the last upload?",
+        "hi, can you tell me about record 4521?",
+        "thanks, and what about house 12?",
+        "hi, tell me about the roll",
+        "hi, can you check on Muthu for me",
+        "hi, is 289 done yet",
+    ],
+)
+def test_courtesy_prefixed_real_questions_are_not_smalltalk(message):
+    assert router.classify(message) != "smalltalk"
 
 
 def test_roll_profile_reports_the_shape_of_the_corpus():

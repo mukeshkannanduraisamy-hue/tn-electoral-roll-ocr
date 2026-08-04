@@ -37,9 +37,19 @@ _DATA_CUES = (
 )
 
 #: Asking how to operate the workspace. Answered from the guide, not the data.
+#:
+#: "export" is deliberately a *phrase* here, not the bare word: "can i
+#: export" / "export to" name an application action, but "how many verified
+#: records would export?" and "how many voters are there in the export" are
+#: count questions that merely mention the word -- the analytics tools can
+#: answer those and the static guide cannot. A bare "export" cue outranked
+#: the data-cue scan (this list is checked first) and sent all three of
+#: those count questions to the canned guide. The phrase form still catches
+#: "help me export to excel" (via "export to") without also catching a data
+#: question that happens to use the word.
 _HOWTO_CUES = (
     "how do i", "how to", "how can i", "where is", "where do i", "what does the",
-    "export", "keyboard shortcut", "which button",
+    "can i export", "export to", "keyboard shortcut", "which button",
     # Tamil. "எப்படி" is "how" and "எங்கே"/"எங்கு" is "where"; the roll's own
     # data cues never use these words (they use எத்தனை "how many", பகுதி
     # "part", etc.), so there is no overlap to arbitrate.
@@ -69,32 +79,63 @@ _SMALLTALK_SELF = re.compile(
     re.IGNORECASE,
 )
 
-#: A message that *opens* with a greeting or acknowledgement — "hi", "thanks",
-#: "ok", a Tamil greeting — regardless of what follows.
+#: Closed vocabulary of words that, on their own, say nothing about the roll
+#: or the app: greetings, acknowledgements, and the small grammatical words
+#: that glue them together ("a lot", "to you", "very much"). Deliberately
+#: small and closed: a word not in it is assumed to matter, which is what
+#: keeps this from being a second, looser cue list.
 #:
-#: Deliberately *not* end-anchored. It only runs after both cue scans below
-#: have already had a chance to claim the message, so by the time this is
-#: reached the message contains no how-to or data cue; a courtesy opener
-#: attached to nothing in particular ("hi there", "thanks a lot", "hi.
-#: thanks.", "bye bye") is smalltalk regardless of its tail. Matching prefix-
-#: only is what makes that correct; the previous end-anchored version treated
-#: "hi there" as a failed match for a smalltalk pattern instead of a
-#: successful match for "opens with a greeting", which is the actual rule.
-#:
-#: The lookahead after each alternative — end of string, or whitespace/
-#: punctuation — stands in for `\b` on purpose. `\b` never worked for Tamil:
-#: a word like "வணக்கம்" ends in a combining virama (Unicode category Mn),
-#: which `\w` does not match, so the transition `\b` looks for right after
-#: the word never exists and the Tamil alternatives would silently fail to
-#: match at that boundary. Checking the literal next character instead of a
-#: `\w`/non-`\w` transition sidesteps that: the virama is simply part of the
-#: literal alternative text, and whatever comes after it (space, punctuation,
-#: end of string) is what the lookahead inspects.
-_GREETING_OPEN = re.compile(
-    r"^\s*(good (morning|evening)|thank you|hi|hey|hello|yo|thanks|ok|okay|cool|"
-    r"bye|வணக்கம்|நன்றி)(?=$|[\s,.!?])",
-    re.IGNORECASE,
+#: This replaces an earlier "opens with a greeting" prefix pattern, which was
+#: itself wrong: reaching this point in `_heuristic` only means no cue word
+#: matched anywhere in the message, and a real question can easily contain
+#: none of the words in `_DATA_CUES`/`_HOWTO_CUES` — "hi, what's up with
+#: 289?", "hi, tell me about the roll", "hi, is 289 done yet" all matched
+#: the old prefix pattern on "hi" and returned smalltalk for a real question
+#: about the corpus, wearing a courtesy opener, with nothing to tell the
+#: operator it happened. Requiring *every* token to be a known pleasantry
+#: routes all of those to `_is_pure_pleasantry` returning False instead, so
+#: `_heuristic` returns `None` and `classify()` hands the message to the
+#: model classifier (or the `data` default with no model configured) — the
+#: safe direction, since an unclassifiable message becomes a slow, correct
+#: answer, not a canned, fast, wrong one.
+_PLEASANTRY_WORDS = frozenset(
+    {
+        "hi", "hii", "hello", "hey", "heyy", "yo", "greetings", "howdy", "sup",
+        "thanks", "thank", "you", "thx", "ok", "okay", "k", "cool", "nice",
+        "great", "awesome", "bye", "goodbye", "cheers", "good", "morning",
+        "evening", "afternoon", "night", "day", "there", "a", "lot", "very",
+        "much", "please", "welcome", "no", "worries", "to", "and", "my",
+        "friend",
+        # Tamil
+        "வணக்கம்", "நன்றி",
+    }
 )
+
+#: Punctuation stripped from each token's *edges* before the vocabulary
+#: check — never characters internal to a token, which is what keeps a
+#: Tamil word's combining marks attached to their base letter.
+_TOKEN_EDGE_CHARS = " \t,.!?;:'\"()-"
+
+
+def _tokenize(msg: str) -> tuple[str, ...]:
+    """Split on whitespace and trim edge punctuation from each token.
+
+    Not a `\\w+`-based tokenizer on purpose: `\\w` excludes combining marks
+    (Unicode category Mn/Mc), so splitting a Tamil word like "வணக்கம்" on
+    `\\w`/non-`\\w` boundaries would fragment it at its own internal virama
+    and it would never match the whole-word vocabulary entry. Splitting on
+    whitespace first and trimming only known punctuation from each token's
+    edges leaves the combining marks exactly where they belong, wherever
+    they land inside the word.
+    """
+    return tuple(t for t in (tok.strip(_TOKEN_EDGE_CHARS) for tok in msg.split()) if t)
+
+
+def _is_pure_pleasantry(msg: str) -> bool:
+    """True only if every token in the message is a known pleasantry."""
+    tokens = _tokenize(msg)
+    return bool(tokens) and all(tok in _PLEASANTRY_WORDS for tok in tokens)
+
 
 _CLASSIFY_PROMPT = (
     "Classify the user's message for an electoral-roll OCR workspace. Reply with "
@@ -131,9 +172,11 @@ def _heuristic(message: str) -> Optional[Intent]:
         return "data"
 
     # Nothing here asked about the app or the data — both checks above
-    # already returned if it did. A message that merely opens with a greeting
-    # or acknowledgement is smalltalk regardless of what follows.
-    if _GREETING_OPEN.match(msg):
+    # already returned if it did. Only treat this as smalltalk if the
+    # message consists of nothing *but* pleasantries; a real question that
+    # simply didn't happen to use a recognised cue word must fall through to
+    # the model classifier below rather than be swallowed by a greeting.
+    if _is_pure_pleasantry(msg):
         return "smalltalk"
 
     return None
