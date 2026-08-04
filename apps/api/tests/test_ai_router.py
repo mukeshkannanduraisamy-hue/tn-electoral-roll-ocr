@@ -123,6 +123,71 @@ def test_tamil_application_questions_take_the_fast_path(message):
     assert router.classify(message) == "howto"
 
 
+@pytest.mark.parametrize(
+    "message, expected",
+    [
+        # --- data: a courtesy opener must not swallow a real question. ---
+        # These two are exactly the round-1 regression: an end-anchored
+        # smalltalk pattern let "hi"/"hello" match on their own and never
+        # reached the data-cue scan for the rest of the message.
+        ("hi, how many voters are there?", "data"),
+        ("hello, how many voters are there?", "data"),
+        ("hey how many parts are covered", "data"),
+        ("thanks, now show me duplicate records", "data"),
+        ("ok list low confidence records", "data"),
+        ("வணக்கம், எத்தனை வாக்காளர்கள் உள்ளனர்?", "data"),
+        ("how many voters are in part 289?", "data"),
+        ("voters by gender", "data"),
+        ("find electors named Muthu", "data"),
+        ("which pages failed OCR", "data"),
+        ("show me the household at house 12", "data"),
+        ("what is the average age", "data"),
+        ("list low confidence records", "data"),
+        ("எத்தனை வாக்காளர்கள் உள்ளனர்", "data"),
+        ("பாலினம் வாரியாக", "data"),
+        # --- smalltalk: the round-2 overshoot list -- a greeting or
+        # acknowledgement with a tail must still land as smalltalk once the
+        # pattern stopped being end-anchored. ---
+        ("hi there", "smalltalk"),
+        ("hi, thanks", "smalltalk"),
+        ("hi. thanks.", "smalltalk"),
+        ("hi hi", "smalltalk"),
+        ("hello hello", "smalltalk"),
+        ("thanks a lot", "smalltalk"),
+        ("thank you very much", "smalltalk"),
+        ("ok thanks", "smalltalk"),
+        ("bye bye", "smalltalk"),
+        ("good morning to you", "smalltalk"),
+        # --- smalltalk: this is the round-0 regression -- "who are" is a
+        # data cue, so this only stays smalltalk because the about-the-
+        # assistant pattern is checked first and unconditionally. ---
+        ("who are you", "smalltalk"),
+        ("what can you do", "smalltalk"),
+        ("help", "smalltalk"),
+        ("வணக்கம்", "smalltalk"),
+        ("நன்றி", "smalltalk"),
+        ("வணக்கம்.", "smalltalk"),
+        ("நன்றி!", "smalltalk"),
+        ("வணக்கம் ", "smalltalk"),
+        ("நன்றி ", "smalltalk"),
+        # --- howto ---
+        ("how do I export to Excel?", "howto"),
+        ("where is the column chooser", "howto"),
+        ("how to mark a record verified", "howto"),
+        ("எக்செல் ஏற்றுமதி செய்வது எப்படி", "howto"),
+        ("பதிவை சரிபார்க்கப்பட்டதாக குறிக்க எப்படி", "howto"),
+        ("பட்டன் எங்கே இருக்கிறது", "howto"),
+        ("help me export to excel", "howto"),
+    ],
+)
+def test_router_precedence_handles_both_directions_at_once(message, expected):
+    # Round 0->1 and round 1->2 each fixed one direction and broke the other.
+    # This table holds every message that mattered to either regression, plus
+    # the original data/howto rows, so a future change has to satisfy all of
+    # them together.
+    assert router.classify(message) == expected
+
+
 def test_roll_profile_reports_the_shape_of_the_corpus():
     with session_scope() as s:
         profile = context.roll_profile(s)
