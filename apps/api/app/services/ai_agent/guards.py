@@ -9,6 +9,16 @@ without letting it say "roughly 400".
 Record references work the same way. The model cites electors as `[[v:<id>]]`
 markers; a marker naming a record the tools did not return is removed before the
 reply leaves the server. There are no hallucinated electors.
+
+**What this guard does not verify.** `strip_unverified_numbers` checks that a
+*magnitude* in the reply also appears somewhere in a tool result. It does not
+check that the *claim* built around that magnitude is true. In particular it
+cannot verify sign direction, comparison or attribution: given a tool result
+of `{"difference": -20}` (twenty fewer than declared), both "20 fewer than
+declared" and the false "20 more than declared" pass, because both quote the
+same permitted magnitude, `20`. Whether a magnitude is real is checked; what a
+sentence claims about it is not. Treat a pass as "this number is grounded",
+never as "this sentence is true".
 """
 
 from __future__ import annotations
@@ -23,15 +33,23 @@ _DIGITS = re.compile(r"\d+(?:\.\d+)?")
 _SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
 _MARKER = re.compile(r"\[\[v:([A-Za-z0-9_-]{1,40})\]\]")
 
+#: Tool results are ordinary JSON-shaped data, a handful of levels deep at
+#: most. A cap well below Python's default recursion limit turns a
+#: pathologically deep or self-referential structure into "stop descending"
+#: instead of an unhandled `RecursionError` reaching the caller.
+_MAX_DEPTH = 100
 
-def _walk(value: Any) -> Iterable[Any]:
+
+def _walk(value: Any, _depth: int = 0) -> Iterable[Any]:
     """Every scalar anywhere inside a tool result."""
+    if _depth > _MAX_DEPTH:
+        return
     if isinstance(value, dict):
         for item in value.values():
-            yield from _walk(item)
+            yield from _walk(item, _depth + 1)
     elif isinstance(value, (list, tuple)):
         for item in value:
-            yield from _walk(item)
+            yield from _walk(item, _depth + 1)
     else:
         yield value
 
@@ -42,21 +60,34 @@ def permitted_numbers(tool_results: List[Dict[str, Any]]) -> Set[str]:
     Generous within the results and closed outside them: a count may legitimately
     be quoted rounded, and an identifier such as an EPIC or a part code contains
     digits that are not claims about quantity.
+
+    This only ever verifies a magnitude, never the claim wrapped around it.
+    Both the signed and unsigned forms of a number are permitted (`-20` and
+    `20`), because `_DIGITS` extracts the unsigned run out of prose and a
+    correct sentence may write either ("20 fewer than declared" or "-20").
+    That also means a sentence that flips the sign -- "20 more" instead of "20
+    fewer" -- is not caught here: sign *direction as a claim* is prose, not a
+    digit, and this guard cannot check it. See the module docstring.
     """
     allowed: Set[str] = set()
     for scalar in _walk(tool_results):
         if scalar is None or isinstance(scalar, bool):
             continue
         if isinstance(scalar, (int, float)):
-            # `_DIGITS` (used below and in `strip_unverified_numbers`) has no
-            # sign in its pattern, so it only ever extracts the unsigned run
-            # out of prose -- "-20" in a sentence yields "20". A field that is
-            # legitimately negative (`polling_station`'s and `count_mismatch`'s
-            # `difference`) must therefore be permitted unsigned too, or a
-            # correct sentence quoting it gets dropped as if invented.
-            allowed.add(f"{float(scalar):g}".lstrip("-"))
-            allowed.add(str(int(scalar)).lstrip("-"))
-            allowed.add(str(int(scalar) + 1).lstrip("-"))  # a rate may round either way
+            for candidate in (f"{float(scalar):g}", str(int(scalar)), str(int(scalar) + 1)):
+                allowed.add(candidate)  # signed, e.g. "-20"
+                allowed.add(candidate.lstrip("-"))  # unsigned, e.g. "20"
+            if isinstance(scalar, float) and 0.0 <= scalar <= 1.0:
+                # Confidence scores are stored as 0-1 fractions
+                # (`ocr_quality`'s and `low_confidence_records`' mean/min
+                # confidence) but are naturally spoken as percentages, so the
+                # x100 rendering is permitted alongside the raw fraction --
+                # both the one-decimal form ("89.7") and the rounded integer
+                # ("90"), with the same round-either-way slack as elsewhere.
+                pct = round(scalar * 100, 1)
+                allowed.add(f"{pct:g}")
+                allowed.add(str(int(pct)))
+                allowed.add(str(int(pct) + 1))
         else:
             for run in _DIGITS.findall(str(scalar)):
                 allowed.add(run)
@@ -98,7 +129,9 @@ def collect_citations(tool_results: List[Dict[str, Any]]) -> Dict[str, Dict[str,
     """
     found: Dict[str, Dict[str, Any]] = {}
 
-    def visit(value: Any) -> None:
+    def visit(value: Any, depth: int = 0) -> None:
+        if depth > _MAX_DEPTH:
+            return
         if isinstance(value, dict):
             if "id" in value and "epic" in value:
                 found[str(value["id"])] = {
@@ -108,10 +141,10 @@ def collect_citations(tool_results: List[Dict[str, Any]]) -> Dict[str, Dict[str,
                     "part_number": value.get("part_number"),
                 }
             for item in value.values():
-                visit(item)
+                visit(item, depth + 1)
         elif isinstance(value, (list, tuple)):
             for item in value:
-                visit(item)
+                visit(item, depth + 1)
 
     visit(tool_results)
     return found
