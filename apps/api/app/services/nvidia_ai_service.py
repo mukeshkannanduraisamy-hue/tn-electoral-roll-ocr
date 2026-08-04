@@ -23,7 +23,7 @@ import re
 import socket
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from .app_settings import AiCredentials
@@ -581,3 +581,188 @@ def _local_rule_fallback(user_message: str) -> Dict[str, Any]:
             "or “average age by part”."
         )
     }
+
+
+# ---------------------------------------------------------------------------
+# Transports for the agent
+#
+# Two additions, both additive: a streaming call so a long answer appears as it
+# is written rather than after twenty seconds of silence, and a tool-calling
+# call so the model can ask for data instead of guessing at it.
+#
+# Everything above this line keeps its existing behaviour; the legacy
+# `/api/voters/ai-copilot` path does not go through here.
+# ---------------------------------------------------------------------------
+
+#: Whether a given model accepted a `tools` array. Learned on first refusal
+#: rather than hard-coded, because the provider's catalogue changes and an
+#: operator can type any model name into the Settings page.
+_TOOL_SUPPORT: Dict[str, bool] = {}
+
+
+def supports_native_tools(model: str) -> Optional[bool]:
+    """True, False, or None when it has not been tried yet."""
+    return _TOOL_SUPPORT.get(model)
+
+
+def remember_tool_support(model: str, supported: bool) -> None:
+    _TOOL_SUPPORT[model] = supported
+
+
+def _request(payload: Dict[str, Any], creds: AiCredentials, *, stream: bool):
+    return urllib.request.Request(
+        f"{creds.base_url}/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream" if stream else "application/json",
+            "Authorization": f"Bearer {creds.api_key}",
+        },
+        method="POST",
+    )
+
+
+def stream_chat(
+    messages: List[Dict[str, Any]],
+    creds: AiCredentials,
+    *,
+    temperature: float,
+    max_tokens: int,
+):
+    """Yield content deltas as the model writes them.
+
+    A generator rather than a return value: the caller forwards each fragment to
+    the browser, so the operator watches the answer form instead of watching a
+    spinner. Errors are yielded as text — an exception mid-stream would leave a
+    half-written bubble with no explanation in it.
+    """
+    payload = {
+        "model": creds.model,
+        "messages": messages,
+        "temperature": temperature,
+        "top_p": 0.9,
+        "max_tokens": max_tokens,
+        "stream": True,
+    }
+
+    try:
+        with urllib.request.urlopen(_request(payload, creds, stream=True), timeout=60) as resp:
+            for raw in resp:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    return
+                try:
+                    frame = json.loads(data)
+                except ValueError:
+                    continue
+                for choice in frame.get("choices") or []:
+                    delta = (choice.get("delta") or {}).get("content")
+                    if delta:
+                        yield delta
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8", "replace")
+        except Exception:
+            detail = ""
+        yield f"\n\n[{_explain_http_error(exc.code, detail, creds.model)}]"
+    except (socket.timeout, TimeoutError):
+        yield "\n\n[The provider stopped responding while writing the answer.]"
+    except Exception as exc:
+        logger.warning("Streaming call failed: %s", type(exc).__name__)
+        yield f"\n\n[The answer could not be completed: {type(exc).__name__}.]"
+
+
+@dataclass(frozen=True)
+class ToolCallOutcome:
+    """One turn of a tool-calling conversation."""
+
+    content: Optional[str] = None
+    tool_calls: List[Dict[str, Any]] = field(default_factory=list)
+    error: Optional[str] = None
+    status: Optional[int] = None
+    #: True when the provider rejected the request because of the tools array,
+    #: which is how a model without function calling announces itself.
+    unsupported: bool = False
+
+
+def chat_with_tools(
+    messages: List[Dict[str, Any]],
+    creds: AiCredentials,
+    tools: List[Dict[str, Any]],
+    *,
+    temperature: float,
+    max_tokens: int,
+) -> ToolCallOutcome:
+    """One call that may come back asking for data instead of answering."""
+    if not creds.configured:
+        return ToolCallOutcome(error="No API key is configured.")
+
+    payload: Dict[str, Any] = {
+        "model": creds.model,
+        "messages": messages,
+        "temperature": temperature,
+        "top_p": 0.9,
+        "max_tokens": max_tokens,
+    }
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
+
+    try:
+        with urllib.request.urlopen(_request(payload, creds, stream=False), timeout=45) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8", "replace")
+        except Exception:
+            detail = ""
+        # A 400 mentioning tools or functions means this model cannot do it.
+        # Only meaningful when a `tools` array was actually sent — otherwise an
+        # unrelated 400 (bad max_tokens, malformed message, ...) that happens to
+        # contain the word "function" in its prose gets misread as a refusal.
+        unsupported = bool(tools) and exc.code == 400 and bool(
+            re.search(r"tool|function", detail, re.IGNORECASE)
+        )
+        if unsupported:
+            logger.info("%s does not support native tool calling", creds.model)
+        return ToolCallOutcome(
+            error=_explain_http_error(exc.code, detail, creds.model),
+            status=exc.code,
+            unsupported=unsupported,
+        )
+    except (socket.timeout, TimeoutError):
+        return ToolCallOutcome(error="The provider timed out.")
+    except Exception as exc:
+        logger.warning("Tool call failed: %s", type(exc).__name__)
+        return ToolCallOutcome(error=f"Unexpected failure: {type(exc).__name__}.")
+
+    choices = body.get("choices") or []
+    if not choices:
+        return ToolCallOutcome(error="The provider returned no choices.", status=200)
+
+    message = choices[0].get("message") or {}
+    calls: List[Dict[str, Any]] = []
+    for call in message.get("tool_calls") or []:
+        function = call.get("function") or {}
+        raw_args = function.get("arguments")
+        try:
+            parsed = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+        except ValueError:
+            logger.info("Model emitted unparseable tool arguments: %r", raw_args)
+            parsed = {}
+        calls.append(
+            {
+                "id": call.get("id") or f"call_{len(calls)}",
+                "name": function.get("name") or "",
+                "arguments": parsed if isinstance(parsed, dict) else {},
+            }
+        )
+
+    return ToolCallOutcome(
+        content=(message.get("content") or "").strip() or None,
+        tool_calls=calls,
+        status=200,
+    )
