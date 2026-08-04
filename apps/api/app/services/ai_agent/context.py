@@ -23,19 +23,26 @@ _cached: Optional[Tuple[float, Dict[str, Any]]] = None
 
 
 def roll_profile(session: Session, *, force: bool = False) -> Dict[str, Any]:
-    """Counts and coverage, straight from `roll_overview`."""
+    """Counts and coverage, straight from `roll_overview`.
+
+    Returns a shallow copy, not the cached dict itself: every cache hit inside
+    the same 60-second window would otherwise hand out the same object, and a
+    caller that annotates or mutates its copy (as a system-prompt builder is
+    liable to do) would silently corrupt what every other concurrent request
+    sees until the cache expires.
+    """
     global _cached
 
     now = time.monotonic()
     if not force and _cached is not None and now - _cached[0] < _TTL_SECONDS:
-        return _cached[1]
+        return dict(_cached[1])
 
     from .registry import execute
     from . import tools  # noqa: F401  (registers the tools)
 
     profile = execute(session, "roll_overview", {})
     _cached = (now, profile)
-    return profile
+    return dict(profile)
 
 
 def invalidate() -> None:

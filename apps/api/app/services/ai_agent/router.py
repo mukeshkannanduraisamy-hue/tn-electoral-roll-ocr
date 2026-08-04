@@ -40,25 +40,39 @@ _DATA_CUES = (
 _HOWTO_CUES = (
     "how do i", "how to", "how can i", "where is", "where do i", "what does the",
     "can i export", "keyboard shortcut", "which button",
+    # Tamil. "எப்படி" is "how" and "எங்கே"/"எங்கு" is "where"; the roll's own
+    # data cues never use these words (they use எத்தனை "how many", பகுதி
+    # "part", etc.), so there is no overlap to arbitrate.
+    "எப்படி", "எங்கே", "எங்கு",
 )
 
 #: A greeting, thanks, or a question about the assistant itself.
 #:
-#: The trailing lookahead stands in for `\b`. Plain `\b` breaks on Tamil: a
-#: word like "வணக்கம்" ends in a combining virama (Unicode category Mn), which
-#: `\w` does not match, so `\b` never finds a word/non-word transition there
-#: and the greeting silently fails to match. The lookahead instead asserts the
-#: next character (if any) is neither a `\w` character nor anywhere in the
-#: Tamil Unicode block, which is boundary enough for both scripts.
+#: Anchored at *both* ends, modulo trailing whitespace/punctuation: the whole
+#: message has to be the greeting, not merely start with one. A prefix-only
+#: match let "hi, how many voters are there?" match on "hi" and return
+#: smalltalk for what is really a data question with a courtesy opener —
+#: exactly the failure mode this router exists to avoid, since it would
+#: answer a real question from the canned offline guide with no sign to the
+#: operator that it happened. Requiring the full message (sans trailing
+#: punctuation) keeps "hi"/"hi!"/"who are you?" matching while "hi, how many
+#: voters are there?" falls through to the data-cue scan below.
 #:
-#: "help" is deliberately its own alternative, anchored to the end of the
-#: message rather than sharing the lookahead above: "help", "help me", and
-#: "help please" are a bare request for what the assistant can do, but "help
-#: me export to excel" names an application action and must fall through to
-#: the how-to cues instead of being swallowed here.
+#: This also replaces the old `\b`-based boundary, which never worked for
+#: Tamil in the first place: a word like "வணக்கம்" ends in a combining virama
+#: (Unicode category Mn), which `\w` does not match, so `\b` never found a
+#: word/non-word transition there and the Tamil alternatives silently never
+#: matched. End-anchoring against literal trailing punctuation/whitespace
+#: sidesteps that; it never needs to ask whether a character is "a word
+#: character".
+#:
+#: "help" is its own alternative for the same reason it always was: "help",
+#: "help me", and "help please" are a bare request for what the assistant can
+#: do, but "help me export to excel" names an application action and must
+#: fall through to the how-to cues instead of being swallowed here.
 _SMALLTALK = re.compile(
     r"^\s*(hi|hey|hello|yo|thanks|thank you|ok|okay|cool|bye|good (morning|evening)|"
-    r"who are you|what are you|what can you do|வணக்கம்|நன்றி)(?![\w஀-௿])"
+    r"who are you|what are you|what can you do|வணக்கம்|நன்றி)[\s,.!?]*$"
     r"|^\s*help\s*(me)?\s*(please)?\s*[!.?]*\s*$",
     re.IGNORECASE,
 )

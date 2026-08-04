@@ -92,11 +92,53 @@ def test_help_naming_an_application_action_is_not_smalltalk():
     assert router.classify("help me export to excel") != "smalltalk"
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        # A courtesy greeting in front of a real question is routine, and a
+        # prefix-only smalltalk match let "hi" swallow the rest of the
+        # message -- these all have to reach the data-cue scan, not stop at
+        # the greeting.
+        "hi, how many voters are there?",
+        "hello, how many voters are there?",
+        "hey how many parts are covered",
+        "thanks, now show me duplicate records",
+        "ok list low confidence records",
+        "வணக்கம், எத்தனை வாக்காளர்கள் உள்ளனர்?",
+    ],
+)
+def test_greeting_prefixed_data_questions_still_enter_the_agent_loop(message):
+    assert router.classify(message) == "data"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "எக்செல் ஏற்றுமதி செய்வது எப்படி",  # how to export to excel
+        "பதிவை சரிபார்க்கப்பட்டதாக குறிக்க எப்படி",  # how to mark a record verified
+        "பட்டன் எங்கே இருக்கிறது",  # where is the button
+    ],
+)
+def test_tamil_application_questions_take_the_fast_path(message):
+    assert router.classify(message) == "howto"
+
+
 def test_roll_profile_reports_the_shape_of_the_corpus():
     with session_scope() as s:
         profile = context.roll_profile(s)
     for key in ("voters", "files", "parts", "constituencies"):
         assert key in profile
+
+
+def test_roll_profile_cache_hits_do_not_share_a_mutable_object():
+    # Task 11 will annotate/build on top of this dict; if two calls inside
+    # the same 60s window returned the identical object, a caller mutating
+    # its copy would corrupt what every other concurrent request sees.
+    with session_scope() as s:
+        first = context.roll_profile(s)
+        first["voters"] = "tampered"
+        second = context.roll_profile(s)
+    assert second["voters"] != "tampered"
 
 
 def test_profile_sentence_is_prose_not_json():
