@@ -56,6 +56,16 @@ def test_stream_chat_ignores_frames_without_content(monkeypatch):
     assert "".join(svc.stream_chat([], CREDS, temperature=0.3, max_tokens=64)) == "ok"
 
 
+def test_stream_chat_reports_missing_credentials_without_calling_out(monkeypatch):
+    def fail_if_called(*a, **k):
+        raise AssertionError("urlopen should not be called without an API key")
+
+    monkeypatch.setattr(svc.urllib.request, "urlopen", fail_if_called)
+    unconfigured = AiCredentials(api_key="", base_url="https://example.invalid/v1", model="test-model")
+    out = "".join(svc.stream_chat([], unconfigured, temperature=0.3, max_tokens=64))
+    assert "No API key is configured" in out
+
+
 def test_chat_with_tools_parses_a_tool_call(monkeypatch):
     body = {
         "choices": [
@@ -124,7 +134,11 @@ def test_400_without_tools_sent_is_never_reported_unsupported(monkeypatch):
     assert outcome.unsupported is False
 
 
-def test_tool_support_is_remembered_per_model():
+def test_tool_support_is_remembered_per_model(monkeypatch):
+    # _TOOL_SUPPORT is module-level cache state; swap in a fresh dict so this
+    # test does not leak "model-a"/"model-b" entries into whatever else runs
+    # in the same process.
+    monkeypatch.setattr(svc, "_TOOL_SUPPORT", {})
     svc.remember_tool_support("model-a", False)
     svc.remember_tool_support("model-b", True)
     assert svc.supports_native_tools("model-a") is False

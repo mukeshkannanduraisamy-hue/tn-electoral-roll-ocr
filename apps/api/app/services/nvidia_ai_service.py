@@ -24,7 +24,7 @@ import socket
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from .app_settings import AiCredentials
 
@@ -628,7 +628,7 @@ def stream_chat(
     *,
     temperature: float,
     max_tokens: int,
-):
+) -> Iterator[str]:
     """Yield content deltas as the model writes them.
 
     A generator rather than a return value: the caller forwards each fragment to
@@ -636,6 +636,10 @@ def stream_chat(
     spinner. Errors are yielded as text — an exception mid-stream would leave a
     half-written bubble with no explanation in it.
     """
+    if not creds.configured:
+        yield "[No API key is configured.]"
+        return
+
     payload = {
         "model": creds.model,
         "messages": messages,
