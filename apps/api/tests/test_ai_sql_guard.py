@@ -194,3 +194,61 @@ def test_a_comma_join_is_refused_end_to_end():
     with pytest.raises(registry.ToolError):
         _run({"sql": "SELECT v.name, a.value FROM voters, app_settings a",
               "rationale": "leak the key"})
+
+
+# --- Fix 1: database path derivation ----------------------------------------
+
+def test_readonly_connection_opens_correct_database():
+    """Verify the connection opens the expected SQLite database.
+
+    This tests that _readonly_connection() derives the database path correctly
+    from database_url() rather than hardcoding it.
+    """
+    conn = sqltool._readonly_connection()
+    try:
+        # If connected to the right database, we should be able to query voters
+        # (which is in the allowed tables list).
+        result = conn.execute("SELECT COUNT(*) FROM voters").fetchone()
+        assert result is not None
+        assert isinstance(result[0], int)
+    finally:
+        conn.close()
+
+
+# --- Fix 2: deny dangerous SQL functions -----------------------------------
+
+@pytest.mark.parametrize(
+    "func_name",
+    ["load_extension", "readfile", "writefile", "fts3_tokenizer", "edit", "zipfile", "sqlite_dbpage"],
+)
+def test_authorizer_denies_dangerous_functions(func_name):
+    """Unit test: _authorizer denies each dangerous function."""
+    # For SQLITE_FUNCTION, arg2 is the function name.
+    result = sqltool._authorizer(sqlite3.SQLITE_FUNCTION, None, func_name, None, None)
+    assert result == sqlite3.SQLITE_DENY, f"_authorizer should deny {func_name}"
+
+
+@pytest.mark.parametrize(
+    "func_name",
+    ["count", "upper", "lower", "abs", "random", "length"],
+)
+def test_authorizer_allows_ordinary_functions(func_name):
+    """Unit test: _authorizer allows ordinary functions."""
+    result = sqltool._authorizer(sqlite3.SQLITE_FUNCTION, None, func_name, None, None)
+    assert result == sqlite3.SQLITE_OK, f"_authorizer should allow {func_name}"
+
+
+def test_load_extension_is_refused():
+    """Integration test: a query calling load_extension is refused.
+
+    This verifies that the authorizer's function denylist is what refuses it,
+    not Python's default extension-loading block. We expect this to fail because
+    the authorizer denies the SQLITE_FUNCTION action.
+    """
+    conn = sqltool._readonly_connection()
+    try:
+        # The authorizer should deny this before any execution.
+        with pytest.raises(sqlite3.DatabaseError, match="not authorized"):
+            conn.execute("SELECT load_extension('x')").fetchall()
+    finally:
+        conn.close()

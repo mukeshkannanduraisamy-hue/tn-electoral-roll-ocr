@@ -99,6 +99,16 @@ _CTE_NAME = re.compile(r"(?:\bwith\s+|,)\s*([A-Za-z_][A-Za-z0-9_]*)\s+as\s*\(", 
 #: cannot alias-shadow them (see `guard_sql`'s reserved-name check below).
 _FORBIDDEN_TABLES = frozenset({"app_settings", "users", "sessions"})
 
+#: SQLite functions that must not be callable. load_extension is obvious; the
+#: others read/write the filesystem or manipulate the database at dangerous
+#: levels: readfile and writefile do I/O; fts3_tokenizer, edit, and sqlite_dbpage
+#: expose internal APIs; zipfile performs archive manipulation. This is a
+#: targeted denylist layered inside _PERMITTED_ACTIONS, which is already
+#: restrictive.
+_DENIED_FUNCTIONS = frozenset(
+    {"load_extension", "readfile", "writefile", "fts3_tokenizer", "edit", "zipfile", "sqlite_dbpage"}
+)
+
 #: Where a FROM clause stops. Needed to find comma-separated table lists, which
 #: `_TABLE_REF` cannot see: it anchors on the FROM/JOIN keyword, so in
 #: `FROM voters, app_settings` it captures `voters` and stops. That gap was a
@@ -240,6 +250,13 @@ def _authorizer(action: int, arg1, arg2, _db, _trigger) -> int:
             )
             return sqlite3.SQLITE_DENY
 
+    if action == sqlite3.SQLITE_FUNCTION:
+        # arg2 is the function name. Deny dangerous functions case-insensitively.
+        func_name = (arg2 or "").lower()
+        if func_name in _DENIED_FUNCTIONS:
+            logger.warning("SQLite authorizer denied function call to %r", arg2)
+            return sqlite3.SQLITE_DENY
+
     return sqlite3.SQLITE_OK
 
 
@@ -249,14 +266,31 @@ def _readonly_connection() -> sqlite3.Connection:
     Belt and braces. If the parser above were ever bypassed, this is what still
     stands between a crafted statement and the database.
     """
-    if not database_url().startswith("sqlite"):
+    url = database_url()
+    if not url.startswith("sqlite"):
         raise SqlGuardError(
             "The SQL tool is available only on SQLite deployments. "
             "Use the typed tools instead."
         )
 
-    path = (settings.data_dir / "ocr.sqlite").as_posix()
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=TIMEOUT_SECONDS)
+    # Extract the path from the URL. The standard form is sqlite:///path,
+    # where /// is the prefix for an absolute path. Strip any query string.
+    if url.startswith("sqlite:///"):
+        # Remove the sqlite:// prefix, leaving /path (or drive:path on Windows).
+        path_with_query = url[10:]  # len("sqlite:///") == 10, but one slash stays
+    else:
+        raise SqlGuardError(
+            f"Could not parse the database URL: expected sqlite:/// prefix, got {url!r}"
+        )
+
+    # Strip query string if present.
+    path_str = path_with_query.split("?")[0]
+    if not path_str:
+        raise SqlGuardError(
+            f"Could not parse the database URL: no path after sqlite:/// prefix in {url!r}"
+        )
+
+    conn = sqlite3.connect(f"file:{path_str}?mode=ro", uri=True, timeout=TIMEOUT_SECONDS)
     conn.row_factory = sqlite3.Row
     conn.set_authorizer(_authorizer)
 
