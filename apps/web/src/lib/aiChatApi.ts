@@ -26,8 +26,9 @@ export interface StreamBody {
 
 /** Split an SSE buffer into complete frames, keeping the unfinished tail. */
 function parseFrames(buffer: string): { events: AgentStreamEvent[]; rest: string } {
+  const normalized = buffer.replace(/\r\n/g, "\n");
   const events: AgentStreamEvent[] = [];
-  const chunks = buffer.split("\n\n");
+  const chunks = normalized.split("\n\n");
   const rest = chunks.pop() ?? "";
 
   for (const chunk of chunks) {
