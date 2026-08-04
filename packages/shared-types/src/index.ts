@@ -740,6 +740,104 @@ export interface AiCopilotResponse {
   ai_configured?: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// The agentic assistant
+//
+// Blocks are built by the server from tool results, never by the model. That is
+// deliberate: asking a language model to emit a table is asking it to retype
+// data it was just given, and a retyped table is a table with a typo in it.
+// ---------------------------------------------------------------------------
+
+export interface ChatTableBlock {
+  kind: "table";
+  columns: string[];
+  rows: Record<string, unknown>[];
+  total?: number | null;
+  truncated?: boolean;
+}
+
+export interface ChatVoterCardBlock {
+  kind: "voter_card";
+  voter: Record<string, unknown>;
+  provenance: Record<string, unknown>;
+  ocr_fields: {
+    field_name: string;
+    raw_text: string;
+    corrected_text: string;
+    confidence: number;
+    bbox: number[];
+  }[];
+}
+
+export interface ChatChartBlock {
+  kind: "chart";
+  infographic: Infographic;
+}
+
+export interface ChatSqlBlock {
+  kind: "sql";
+  sql: string;
+  rationale: string;
+  returned: number;
+}
+
+export type ChatBlock =
+  | ChatTableBlock
+  | ChatVoterCardBlock
+  | ChatChartBlock
+  | ChatSqlBlock;
+
+/** An elector a tool actually returned. Anything else was stripped server-side. */
+export interface ChatCitation {
+  id: string;
+  epic: string | null;
+  name: string | null;
+  part_number: string | null;
+}
+
+export interface ChatToolStep {
+  tool: string;
+  args?: Record<string, unknown>;
+  ok: boolean;
+  returned?: number | null;
+  error?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  blocks: ChatBlock[];
+  citations: ChatCitation[];
+  tool_trace: ChatToolStep[];
+  created_at?: string | null;
+  /** Set locally while the reply is still streaming. */
+  pending?: boolean;
+  /** Set when the turn ended in an error rather than an answer. */
+  failed?: boolean;
+}
+
+export interface ChatThreadSummary {
+  id: string;
+  title: string;
+  updated_at: string | null;
+}
+
+export interface ChatThread extends ChatThreadSummary {
+  messages: ChatMessage[];
+}
+
+export type AgentStreamEvent =
+  | { type: "status"; data: { message?: string; thread_id?: string; intent?: string } }
+  | { type: "tool_call"; data: { id: string; name: string; label: string; args: Record<string, unknown> } }
+  | { type: "tool_result"; data: { id: string; name: string; ok: boolean; error?: string; summary?: ChatToolStep } }
+  | { type: "token"; data: { text: string } }
+  | { type: "blocks"; data: { blocks: ChatBlock[] } }
+  | { type: "citations"; data: { citations: ChatCitation[] } }
+  | { type: "done"; data: { content: string; blocks: ChatBlock[]; citations: ChatCitation[]; tool_trace: ChatToolStep[]; budget_exhausted?: boolean } }
+  | { type: "error"; data: { message: string } };
+
+
 /**
  * AI configuration as the server reports it. The API key is write-only over the
  * HTTP surface: it can be set, tested and cleared, but is never returned — only
