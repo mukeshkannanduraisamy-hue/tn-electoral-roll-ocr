@@ -36,6 +36,29 @@ _DATA_CUES = (
     "வாரியாக", "வாரியான", "அடிப்படையில்", "வாக்காளர்", "பகுதி",
 )
 
+#: A small, unambiguous set of cues that name a count or figure. Checked
+#: *before* the how-to scan below: a message asking "how many X" wants a
+#: number regardless of what else it mentions. This exists because phrase-
+#: narrowing `_HOWTO_CUES`' export cue (see its docstring) only ever chases
+#: the specific substring that happened to be reported broken -- "export to"
+#: still matches mid-sentence in "how many voters are there in the export to
+#: be reviewed", a count question that happens to say "export to", not a
+#: how-to question that happens to count. A precedence rule closes the whole
+#: class instead of the one substring: whatever _HOWTO_CUES grows to contain
+#: in the future, a strong count cue still wins.
+#:
+#: Kept deliberately small and separate from the full _DATA_CUES scan below:
+#: these are cues that essentially never appear in a genuine how-to question,
+#: unlike _DATA_CUES' ordinary nouns ("voter", "part", "job", ...), which a
+#: how-to phrasing could plausibly also use -- that is still why howto is
+#: checked before the *full* _DATA_CUES scan, just not before this narrower
+#: one.
+_COUNT_CUES = (
+    "how many", "count of", "total number",
+    # Tamil: "how many"
+    "எத்தனை",
+)
+
 #: Asking how to operate the workspace. Answered from the guide, not the data.
 #:
 #: "export" is deliberately a *phrase* here, not the bare word: "can i
@@ -46,7 +69,8 @@ _DATA_CUES = (
 #: the data-cue scan (this list is checked first) and sent all three of
 #: those count questions to the canned guide. The phrase form still catches
 #: "help me export to excel" (via "export to") without also catching a data
-#: question that happens to use the word.
+#: question that happens to use the word -- except mid-sentence, which is
+#: what _COUNT_CUES above now closes instead of a further phrase tweak.
 _HOWTO_CUES = (
     "how do i", "how to", "how can i", "where is", "where do i", "what does the",
     "can i export", "export to", "keyboard shortcut", "which button",
@@ -156,6 +180,14 @@ def _heuristic(message: str) -> Optional[Intent]:
     # to run before the cue scans rather than after.
     if _SMALLTALK_SELF.match(msg):
         return "smalltalk"
+
+    # A strong counting cue wins over the how-to scan below, unconditionally:
+    # "how many voters are there in the export to be reviewed" is a count
+    # question that happens to say "export to" (a howto cue), not a how-to
+    # question that happens to count. See _COUNT_CUES for why this is a
+    # separate, narrower check rather than another _HOWTO_CUES phrase tweak.
+    if any(cue in msg for cue in _COUNT_CUES):
+        return "data"
 
     # "how do I filter by gender" is about the application even though it names
     # a dimension, so a how-to phrasing is checked, and wins, before data cues.

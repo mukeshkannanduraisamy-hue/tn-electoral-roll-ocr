@@ -165,6 +165,25 @@ def test_tamil_application_questions_take_the_fast_path(message):
         ("hi, what's the story with part 289", "data"),
         ("hi, is everything ok with the OCR job?", "data"),
         ("hi, anything odd about part 289", "data"),
+        # --- data: round-4 finding -- "export to" (added in round 3 to fix
+        # the bare-"export" bug) is a substring test, so it still matched
+        # mid-sentence in a count question that happens to mention it. Fixed
+        # with a precedence rule (_COUNT_CUES, checked before the how-to
+        # scan) rather than narrowing the phrase again -- these two are the
+        # exact messages that failed before that rule existed.
+        ("how many voters are there in the export to be reviewed", "data"),
+        ("how many records are in the export to Excel", "data"),
+        # --- round-4 verification set from the coordinator, confirming the
+        # new _COUNT_CUES precedence doesn't disturb genuine how-to intent
+        # even when it's adjacent to an export phrase, and that a bare count
+        # question with no export wording still lands on data. ("help me
+        # export to excel" and "எத்தனை வாக்காளர்கள் உள்ளனர்" are already
+        # pinned above under round 2/round 0->1 respectively, so they are
+        # not repeated here.)
+        ("how do i export to excel", "howto"),
+        ("can i export the duplicates", "howto"),
+        ("how many verified records", "data"),
+        ("how many records would export", "data"),
         # --- smalltalk: the round-2 overshoot list -- a greeting or
         # acknowledgement with a tail must still land as smalltalk once the
         # pattern stopped being end-anchored. ---
