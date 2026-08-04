@@ -7,9 +7,21 @@ standing between the model and the database:
 2.  Reject comments outright — they are how keyword scans get defeated.
 3.  Require every referenced table to be on an allowlist. Not a denylist: a
     denylist is a list of the attacks someone thought of.
-4.  Execute on a connection opened read-only at the OS level, so a bypass of
-    1-3 still cannot write.
-5.  Cap rows and wall-clock time.
+4.  Install SQLite's own authorizer, which vetoes any read of a table outside
+    the allowlist. This is the real boundary. Layer 3 reads *text*, and text
+    can always be arranged to hide a table from a regex — `FROM voters,
+    app_settings` slipped past an earlier version of this file precisely that
+    way, because a pattern anchored on FROM/JOIN cannot enumerate a
+    comma-separated list. The authorizer fires on the compiled query plan
+    instead, so it sees every table SQLite actually resolved, whatever the
+    source text looked like.
+5.  Execute on a connection opened read-only at the OS level, so a bypass of
+    1-4 still cannot write.
+6.  Cap rows and wall-clock time.
+
+Layer 3 is kept even though layer 4 subsumes it: it refuses a bad statement
+before the database is opened, and it can say *which* table was refused and
+what the alternatives are, which a bare authorizer denial cannot.
 
 `app_settings` is excluded because it stores the NVIDIA API key. An assistant
 able to select its own credentials out of the database is one prompt away from
@@ -59,9 +71,77 @@ _FORBIDDEN_KEYWORD = re.compile(
 )
 _COMMENT = re.compile(r"(--|/\*|\*/|#)")
 #: Every position a table name can appear in a SELECT we accept.
-_TABLE_REF = re.compile(r"\b(?:from|join)\s+[\"'`\[]?([A-Za-z_][A-Za-z0-9_]*)", re.IGNORECASE)
+#:
+#: `(?:\s|\()*` (not `\s+`) between the keyword and an optional quote/bracket:
+#: SQLite's tokenizer needs neither whitespace nor a bare identifier there --
+#: `FROM[app_settings]`, `FROM"app_settings"`, `` FROM`x` `` and even a bare
+#: name wrapped in redundant parens, `FROM(app_settings)` / `FROM (( x ))`, all
+#: parse and execute. Requiring `\s+` and no parens let that whole class slip
+#: past this check while still running. The trailing `\b` on the keyword
+#: itself stops "FROMx" (one fused identifier, not actually a FROM clause at
+#: all) from being misread as a match. Whitespace is deliberately NOT allowed
+#: between a quote/bracket and the identifier: for a quoted or bracketed name
+#: that space is part of the literal identifier, so `FROM[ app_settings ]`
+#: does not resolve to the real table anyway -- SQLite raises "no such table"
+#: for it -- and is safely left uncaptured here.
+_TABLE_REF = re.compile(
+    r"\b(?:from|join)\b(?:\s|\()*[\"'`\[]?([A-Za-z_][A-Za-z0-9_]*)", re.IGNORECASE
+)
+#: A subquery hiding behind redundant parens -- `FROM ((SELECT ...))` -- makes
+#: the pattern above capture the leading keyword of the subquery itself
+#: ("select"/"with") as if it were a table name. Neither is ever a legal bare
+#: table name, so dropping them from the referenced set is free of risk.
+_NOT_A_TABLE = frozenset({"select", "with"})
 #: Names introduced by a CTE are not real tables and must not be allowlisted.
 _CTE_NAME = re.compile(r"(?:\bwith\s+|,)\s*([A-Za-z_][A-Za-z0-9_]*)\s+as\s*\(", re.IGNORECASE)
+
+#: Tables that exist but must never be reachable, named explicitly so a CTE
+#: cannot alias-shadow them (see `guard_sql`'s reserved-name check below).
+_FORBIDDEN_TABLES = frozenset({"app_settings", "users", "sessions"})
+
+#: Where a FROM clause stops. Needed to find comma-separated table lists, which
+#: `_TABLE_REF` cannot see: it anchors on the FROM/JOIN keyword, so in
+#: `FROM voters, app_settings` it captures `voters` and stops. That gap was a
+#: live bypass to the API key table before the authorizer was added.
+_CLAUSE_END = re.compile(
+    r"\b(where|group|order|limit|having|union|intersect|except|on|using|window)\b",
+    re.IGNORECASE,
+)
+_FROM_OR_JOIN = re.compile(r"\b(?:from|join)\b", re.IGNORECASE)
+#: Leading identifier of one comma-separated entry, past any parens or quoting.
+_LEADING_NAME = re.compile(r"^[\s(]*[\"'`\[]?([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def _comma_separated_tables(statement: str) -> set:
+    """Table names in a comma-separated FROM list, which `_TABLE_REF` misses."""
+    found = set()
+    for keyword in _FROM_OR_JOIN.finditer(statement):
+        tail = statement[keyword.end():]
+        stop = _CLAUSE_END.search(tail)
+        clause = tail[: stop.start()] if stop else tail
+
+        segments: List[str] = []
+        current: List[str] = []
+        depth = 0
+        for char in clause:
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                if depth == 0:
+                    break
+                depth -= 1
+            if char == "," and depth == 0:
+                segments.append("".join(current))
+                current = []
+            else:
+                current.append(char)
+        segments.append("".join(current))
+
+        for segment in segments:
+            name = _LEADING_NAME.match(segment)
+            if name:
+                found.add(name.group(1).lower())
+    return found
 
 
 class SqlGuardError(ToolError):
@@ -96,7 +176,24 @@ def guard_sql(raw: str) -> str:
         )
 
     cte_names = {name.lower() for name in _CTE_NAME.findall(statement)}
-    referenced = {name.lower() for name in _TABLE_REF.findall(statement)}
+    shadowed = cte_names & (ALLOWED_TABLES | _FORBIDDEN_TABLES)
+    if shadowed:
+        # A CTE named exactly like a real table is excluded, by name, from the
+        # allowlist check below -- for *every* occurrence of that name in the
+        # statement, not just the CTE's own reference to itself. That would
+        # normally still be safe (SQL scoping means a CTE's name shadows the
+        # real table for the rest of the statement, so it cannot actually
+        # launder a read of the real one), but it depends on engine behaviour
+        # this guard has no business relying on. Simplest fix: never allow it.
+        raise SqlGuardError(
+            f"A WITH name may not reuse a real table name ({', '.join(sorted(shadowed))!r}); "
+            "pick a different alias."
+        )
+
+    referenced = (
+        {name.lower() for name in _TABLE_REF.findall(statement)}
+        | _comma_separated_tables(statement)
+    ) - _NOT_A_TABLE
     for table in sorted(referenced - cte_names):
         if table not in ALLOWED_TABLES:
             raise SqlGuardError(
@@ -105,6 +202,45 @@ def guard_sql(raw: str) -> str:
             )
 
     return f"SELECT * FROM (\n{statement}\n) LIMIT {ROW_LIMIT}"
+
+
+#: Actions the assistant's connection may perform at all. Everything else —
+#: attaching a database, reading a pragma, opening a transaction, creating a
+#: temp table — is denied outright, so the authorizer is an allowlist in the
+#: same spirit as ALLOWED_TABLES.
+_PERMITTED_ACTIONS = frozenset(
+    {
+        sqlite3.SQLITE_SELECT,
+        sqlite3.SQLITE_READ,
+        sqlite3.SQLITE_FUNCTION,
+        sqlite3.SQLITE_RECURSIVE,
+    }
+)
+
+
+def _authorizer(action: int, arg1, arg2, _db, _trigger) -> int:
+    """SQLite's own veto, consulted while the statement is compiled.
+
+    This is what makes the table allowlist real. `guard_sql` reads the query as
+    text and can be out-argued by it; this sees the resolved query plan. Every
+    table SQLite intends to read arrives here by name, whether it was written
+    after FROM, after a comma, inside a subquery, behind an alias, or reached
+    through a view.
+    """
+    if action not in _PERMITTED_ACTIONS:
+        return sqlite3.SQLITE_DENY
+
+    if action == sqlite3.SQLITE_READ:
+        # arg1 is the table; arg2 the column. A subquery's synthesised name
+        # arrives with arg1 empty, which is not a real table and is fine.
+        table = (arg1 or "").lower()
+        if table and table not in ALLOWED_TABLES:
+            logger.warning(
+                "SQLite authorizer denied a read of %r (column %r)", arg1, arg2
+            )
+            return sqlite3.SQLITE_DENY
+
+    return sqlite3.SQLITE_OK
 
 
 def _readonly_connection() -> sqlite3.Connection:
@@ -122,6 +258,7 @@ def _readonly_connection() -> sqlite3.Connection:
     path = (settings.data_dir / "ocr.sqlite").as_posix()
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=TIMEOUT_SECONDS)
     conn.row_factory = sqlite3.Row
+    conn.set_authorizer(_authorizer)
 
     deadline = time.monotonic() + TIMEOUT_SECONDS
 
@@ -162,7 +299,16 @@ def run_readonly_sql(_session: Session, args: RunSqlArgs) -> Dict[str, Any]:
         cursor = conn.execute(guarded)
         fetched = cursor.fetchall()
         columns: List[str] = [d[0] for d in (cursor.description or [])]
-    except sqlite3.OperationalError as exc:
+    except sqlite3.DatabaseError as exc:
+        # An authorizer veto arrives here too. Report it as a refusal rather
+        # than a malfunction: the statement was understood and declined, and
+        # the operator should see which table the assistant reached for.
+        if "not authorized" in str(exc) or "prohibited" in str(exc):
+            logger.warning("Authorizer refused an assistant query: %s", exc)
+            raise SqlGuardError(
+                f"The query was refused: {exc}. Readable tables: "
+                f"{', '.join(sorted(ALLOWED_TABLES))}."
+            ) from exc
         raise SqlGuardError(f"The query could not run: {exc}") from exc
     finally:
         conn.close()

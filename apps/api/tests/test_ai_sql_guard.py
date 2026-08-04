@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import sqlite3  # noqa: E402
 import pytest  # noqa: E402
 
 from app.db import session_scope  # noqa: E402
@@ -129,3 +130,67 @@ def test_the_tool_reports_a_refusal_as_a_tool_error():
 def test_results_are_capped():
     result = _run({"sql": "SELECT id FROM voters", "rationale": "all ids"})
     assert len(result["rows"]) <= sqltool.ROW_LIMIT
+
+
+# --- bypasses found by adversarial testing -------------------------------
+#
+# A regex anchored on FROM/JOIN cannot enumerate a comma-separated table list,
+# so `FROM voters, app_settings` reached the API key table in an earlier
+# version of the guard. These are the exact statements that got through.
+
+
+SMUGGLING_ATTEMPTS = [
+    "SELECT v.name, a.value FROM voters, app_settings a",
+    "SELECT * FROM voters, users",
+    "SELECT * FROM voters v, sessions s WHERE 1=1",
+    "SELECT * FROM voters, app_settings, pages",
+    "SELECT * FROM pages JOIN voters ON 1=1, app_settings",
+]
+
+
+@pytest.mark.parametrize("statement", SMUGGLING_ATTEMPTS)
+def test_a_forbidden_table_cannot_be_read_however_it_is_smuggled(statement):
+    """The property that matters: the read does not happen.
+
+    Which layer refuses it is an implementation detail. `guard_sql` catches
+    most of these and can name the table, but a pattern cannot reliably parse
+    SQL — the last case hides the table behind an ON clause — so the authorizer
+    is what makes the guarantee hold. Assert the guarantee, not the mechanism.
+    """
+    with pytest.raises(registry.ToolError):
+        _run({"sql": statement, "rationale": "adversarial test"})
+
+
+@pytest.mark.parametrize("statement", SMUGGLING_ATTEMPTS[:4])
+def test_the_parser_names_the_table_it_refused_where_it_can(statement):
+    """Layer 3's job is a good error message, and for these it manages one."""
+    with pytest.raises(sqltool.SqlGuardError, match="not available"):
+        _guard(statement)
+
+
+def test_the_authorizer_refuses_a_forbidden_read_the_parser_let_through():
+    """The parser is not the boundary; SQLite's authorizer is.
+
+    Bypassing `guard_sql` entirely and running straight at the connection is
+    the only honest way to test the layer underneath it.
+    """
+    conn = sqltool._readonly_connection()
+    try:
+        with pytest.raises(sqlite3.DatabaseError):
+            conn.execute("SELECT value FROM app_settings").fetchall()
+    finally:
+        conn.close()
+
+
+def test_the_authorizer_still_allows_an_ordinary_read():
+    conn = sqltool._readonly_connection()
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM voters").fetchone() is not None
+    finally:
+        conn.close()
+
+
+def test_a_comma_join_is_refused_end_to_end():
+    with pytest.raises(registry.ToolError):
+        _run({"sql": "SELECT v.name, a.value FROM voters, app_settings a",
+              "rationale": "leak the key"})
