@@ -345,3 +345,56 @@ def test_an_unknown_tool_name_from_the_planner_path_is_also_reported(monkeypatch
     result = next(e for e in events if e.type == "tool_result")
     assert "Unknown tool" in result.data["error"]
     assert "done" in _types(events)
+
+
+def test_native_tool_calls_are_preceded_by_a_declaring_assistant_message(monkeypatch):
+    """OpenAI-compatible transports reject a `role: "tool"` message that does
+    not follow an assistant message declaring the matching `tool_call_id` --
+    the loop must build that assistant turn itself, since nothing else does.
+
+    Every other test here only inspects the loop's *events*; none of them
+    would notice if the `messages` list handed to the transport were
+    malformed. This test scripts `chat_with_tools` to record the actual
+    `messages` argument on each call and asserts the wire-format invariant
+    directly, across two rounds of tool calls.
+    """
+    captured: list[list[dict]] = []
+    outcomes = [
+        ToolCallOutcome(tool_calls=[{"id": "c1", "name": "roll_overview", "arguments": {}}]),
+        ToolCallOutcome(tool_calls=[{"id": "c2", "name": "file_status", "arguments": {}}]),
+        ToolCallOutcome(content=""),
+    ]
+
+    def fake_tools(messages, creds, tools, **_k):
+        captured.append(list(messages))
+        return outcomes.pop(0)
+
+    monkeypatch.setattr(loop, "chat_with_tools", fake_tools)
+    monkeypatch.setattr(loop, "stream_chat", lambda *a, **k: iter(["Done."]))
+    monkeypatch.setattr(loop, "supports_native_tools", lambda _m: True)
+
+    events = _drain("what does the roll cover, twice")
+    assert "done" in _types(events)
+
+    # The last call carries the fullest history -- both rounds' messages.
+    final_messages = captured[-1]
+
+    assistant_msgs = [m for m in final_messages if m.get("role") == "assistant"]
+    tool_msgs = [m for m in final_messages if m.get("role") == "tool"]
+
+    # Exactly one assistant message per round, not one per call.
+    assert len(assistant_msgs) == 2
+    assert [tc["id"] for tc in assistant_msgs[0]["tool_calls"]] == ["c1"]
+    assert [tc["id"] for tc in assistant_msgs[1]["tool_calls"]] == ["c2"]
+
+    assert len(tool_msgs) == 2
+    for i, msg in enumerate(final_messages):
+        if msg.get("role") != "tool":
+            continue
+        call_id = msg["tool_call_id"]
+        preceding = final_messages[:i]
+        assert any(
+            m.get("role") == "assistant"
+            and any(tc["id"] == call_id for tc in m.get("tool_calls", []))
+            for m in preceding
+        ), f"role:tool message for {call_id!r} has no preceding assistant message declaring it"

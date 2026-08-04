@@ -39,7 +39,7 @@ from .guards import (
     permitted_percentages,
     strip_unverified_numbers,
 )
-from .registry import REGISTRY, ToolError, describe_tools, execute, label_for, openai_tools
+from .registry import ToolError, describe_tools, execute, label_for, openai_tools
 
 logger = logging.getLogger(__name__)
 
@@ -194,6 +194,13 @@ def run_agent(
     deadline = time.monotonic() + DEADLINE_SECONDS
     native = supports_native_tools(creds.model)
 
+    # `context.invalidate()` is deliberately not called from here. This loop is
+    # a per-message read path: it never observes a file finishing processing
+    # (that event happens elsewhere, in whatever pipeline step ingests a
+    # roll), so it has nothing to invalidate the cache *on*. Ownership of
+    # calling `invalidate()` belongs to that ingestion step, not to a reader.
+    # Until it is wired up there, `roll_profile`'s 60-second TTL is the only
+    # staleness bound a caller here gets -- accepted, not overlooked.
     try:
         profile = profile_sentence(roll_profile(session))
     except Exception:
@@ -268,6 +275,40 @@ def run_agent(
 
         if not outcome.tool_calls:
             break
+
+        if native is not False:
+            # OpenAI-compatible transports require every `role: "tool"`
+            # message to follow an assistant message that declared the
+            # matching `tool_call_id` -- otherwise the conversation is
+            # malformed and a real provider will reject the next request.
+            # This is that assistant turn: one per round, listing every call
+            # the model asked for this round, appended before any of that
+            # round's `tool` results below. (The planner path does not need
+            # this -- it feeds results back as plain `user` messages, not
+            # `role: "tool"`, so there is no `tool_call_id` contract to
+            # satisfy.)
+            assistant_turn: Dict[str, Any] = {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": call["id"],
+                        "type": "function",
+                        "function": {
+                            "name": call["name"],
+                            "arguments": json.dumps(call["arguments"]),
+                        },
+                    }
+                    for call in outcome.tool_calls
+                ],
+            }
+            # Only set when the model actually wrote prose alongside its tool
+            # calls. Omitted rather than set to `None`: the key is not part
+            # of every provider's accepted schema for an assistant message,
+            # while omitting it entirely is unambiguous and matches what we
+            # send when there was nothing to say.
+            if outcome.content:
+                assistant_turn["content"] = outcome.content
+            messages.append(assistant_turn)
 
         for call in outcome.tool_calls:
             if calls_made >= MAX_TOOL_CALLS or time.monotonic() > deadline:
