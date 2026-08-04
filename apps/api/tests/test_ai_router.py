@@ -154,6 +154,17 @@ def test_tamil_application_questions_take_the_fast_path(message):
         ("how many verified records would export?", "data"),
         ("how many records are ready to export", "data"),
         ("how many voters are there in the export", "data"),
+        # --- data: control group for the round-3 pure-pleasantry fix -- each
+        # of these carries a greeting prefix but also a cue word (family,
+        # part , job, part ), so they already routed correctly at review
+        # time. Pinned here anyway: they prove the cue-scan path still works
+        # for a greeting-prefixed message, so a future change that broke cue
+        # matching in that position would be caught here, not just in the
+        # "not smalltalk" list below.
+        ("hey, what's going on with the Muthu family?", "data"),
+        ("hi, what's the story with part 289", "data"),
+        ("hi, is everything ok with the OCR job?", "data"),
+        ("hi, anything odd about part 289", "data"),
         # --- smalltalk: the round-2 overshoot list -- a greeting or
         # acknowledgement with a tail must still land as smalltalk once the
         # pattern stopped being end-anchored. ---
@@ -222,6 +233,12 @@ def test_router_precedence_handles_both_directions_at_once(message, expected):
         "hi, tell me about the roll",
         "hi, can you check on Muthu for me",
         "hi, is 289 done yet",
+        # These three arrived after the coordinator noticed their message
+        # said "10 of 14" but only pasted 7 rows -- same failure mode as the
+        # rows above (a real question, no cue word, greeting prefix).
+        "hello, what's in this workspace",
+        "hey what's wrong with the last file",
+        "hello there, what's new",
     ],
 )
 def test_courtesy_prefixed_real_questions_are_not_smalltalk(message):
