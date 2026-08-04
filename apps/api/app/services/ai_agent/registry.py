@@ -103,6 +103,17 @@ def label_for(name: str) -> str:
     return tool.label if tool else name
 
 
+def _clean_args(raw_args: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(raw_args, dict):
+        return {}
+    cleaned = {}
+    for k, v in raw_args.items():
+        if v is None or v == "null" or v == "None" or v == "NULL":
+            continue
+        cleaned[k] = v
+    return cleaned
+
+
 def execute(
     session: Optional[Session], name: str, raw_args: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -122,8 +133,9 @@ def execute(
             f"Unknown tool {name!r}. Available: {', '.join(sorted(REGISTRY))}"
         )
 
+    cleaned = _clean_args(raw_args)
     try:
-        args = tool.args_model.model_validate(raw_args or {})
+        args = tool.args_model.model_validate(cleaned)
     except ValidationError as exc:
         problems = "; ".join(
             f"{'.'.join(str(p) for p in e['loc']) or 'args'}: {e['msg']}"
