@@ -533,6 +533,7 @@ export function VoterProfilePage({ voterId, onBack, onNavigateVoter }: VoterProf
                   <Field icon={Home}   label="House Number" value={voter.house_number} onCopy={voter.house_number} />
                   <Field icon={Users}  label="Relation"     value={`${voter.relation_type || "Relative"}: ${voter.relation_name || "—"}`} />
                   <Field icon={MapPin} label="Constituency"  value={voter.constituency} />
+                  <Field icon={MapPin} label="Section Name"  value={voter.section_name} />
                   <Field icon={Hash}   label="Part Number"   value={voter.part_number} />
                 </div>
               </div>
@@ -654,6 +655,7 @@ export function VoterProfilePage({ voterId, onBack, onNavigateVoter }: VoterProf
               <h3 className="text-sm font-bold mb-4">Polling Information</h3>
               <Field icon={Hash}    label="Part Number"   value={voter.part_number} />
               <Field icon={MapPin}  label="Constituency"  value={voter.constituency} />
+              <Field icon={MapPin}  label="Section Name"  value={voter.section_name} />
               <Field icon={FileText}label="Source File"   value={voter.source_file_name} />
               <Field icon={Hash}    label="Source Page"   value={voter.page_number?.toString()} />
             </div>

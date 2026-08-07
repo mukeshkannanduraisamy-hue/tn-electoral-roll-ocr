@@ -515,6 +515,7 @@ export interface Voter {
   gender: Gender | '';
   part_number: string;
   constituency: string;
+  section_name?: string;
   notes: string;
   verified: boolean;
   polling_station_id: string | null;

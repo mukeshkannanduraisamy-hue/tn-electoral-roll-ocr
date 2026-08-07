@@ -241,6 +241,7 @@ class VoterRow(Base):
     # Page furniture, denormalised so a voter row stands alone in an export.
     part_number: Mapped[str] = mapped_column(String(32), default="", index=True)
     constituency: Mapped[str] = mapped_column(String(255), default="")
+    section_name: Mapped[str] = mapped_column(String(512), default="")
 
     # --- provenance ------------------------------------------------------
     source_record_id: Mapped[str | None] = mapped_column(String(32), nullable=True)

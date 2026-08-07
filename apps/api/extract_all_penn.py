@@ -204,6 +204,7 @@ def save_to_db(all_rows: list[dict]):
                 constituency=CONSTITUENCY,
                 page_number=r.get("Page_No"),
                 source_file_name=r.get("Source_File", ""),
+                section_name=r.get("Section_Name", ""),
                 notes=f"Is_Deleted: {r.get('Is_Deleted','No')} | Deletion_Reason: {r.get('Deletion_Reason','')} | District: {DISTRICT}",
                 search_text=search_str,
             )

@@ -23,7 +23,7 @@ import { AnalyticsView } from "@/components/AnalyticsView";
 import { PollingStationsView } from "@/components/PollingStationsView";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
 import { FloatingAiChatbot } from "@/components/FloatingAiChatbot";
-import { WorkflowStepper } from "@/components/WorkflowStepper";
+
 
 export default function Home() {
   const { loadFiles, activeTab, setActiveTab, setIsShortcutsOpen, isShortcutsOpen } = useOcrStore();
@@ -130,7 +130,6 @@ export default function Home() {
 
         {/* Main content area */}
         <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-          <WorkflowStepper />
           <div className="flex-1 flex overflow-hidden min-w-0">
             {activeTab === "dashboard"        && <DashboardView />}
             {activeTab === "voters"           && <VotersView />}

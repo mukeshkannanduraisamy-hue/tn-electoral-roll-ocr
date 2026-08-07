@@ -47,6 +47,7 @@ class VoterBase(BaseModel):
     gender: Gender | Literal[""] = ""
     part_number: str = Field(default="", max_length=32)
     constituency: str = Field(default="", max_length=255)
+    section_name: str | None = Field(default="", max_length=512)
     notes: str = Field(default="", max_length=2000)
     verified: bool = False
 

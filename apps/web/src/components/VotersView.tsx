@@ -15,6 +15,7 @@ import {
   FileSpreadsheet,
   FileText,
   Filter,
+  Flag,
   Image as ImageIcon,
   Loader2,
   Pencil,
@@ -77,6 +78,7 @@ const CATEGORIZED_COLUMNS: ColumnCategory[] = [
     category: "Polling & Location",
     columns: [
       { key: "part_number", label: "Part No." },
+      { key: "section_name", label: "Section Name" },
       { key: "constituency", label: "Constituency" },
       { key: "polling_station_id", label: "Polling Station ID" },
       { key: "is_supplement", label: "Roll Type (Supplement)" },
@@ -108,7 +110,7 @@ const CATEGORIZED_COLUMNS: ColumnCategory[] = [
 
 const DEFAULT_VISIBLE_COLUMNS = [
   "serial", "epic", "name", "relation_type", "relation_name",
-  "house_number", "age", "gender", "part_number", "is_supplement",
+  "house_number", "age", "gender", "part_number", "section_name", "is_supplement",
   "verified", "actions",
 ];
 
@@ -1032,6 +1034,7 @@ export const VotersView: React.FC = () => {
                     {visibleCols.has("polling_station_id") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Polling St. ID</th>}
                     {visibleCols.has("is_supplement") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 text-center">Roll Type</th>}
                     {visibleCols.has("source_file_name") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Source File</th>}
+                    {visibleCols.has("section_name") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Section Name</th>}
                     {visibleCols.has("page_number") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 text-center">Page No</th>}
                     {visibleCols.has("source_file_id") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 font-mono">File ID</th>}
                     {visibleCols.has("source_page_id") && <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 font-mono">Page ID</th>}
@@ -1056,6 +1059,8 @@ export const VotersView: React.FC = () => {
                         className={`group cursor-pointer transition-colors ${
                           isSelected
                             ? "bg-indigo-50/50 dark:bg-indigo-950/30"
+                            : voter.is_deleted
+                            ? "bg-rose-50/40 hover:bg-rose-100/50 dark:bg-rose-950/20 dark:hover:bg-rose-900/30"
                             : "hover:bg-slate-50/80 dark:hover:bg-slate-800/50"
                         }`}
                       >
@@ -1115,6 +1120,7 @@ export const VotersView: React.FC = () => {
                                     title={voter.deletion_reason ? `Deleted — reason: ${voter.deletion_reason}` : "Struck off the roll"}
                                     className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30 cursor-pointer"
                                   >
+                                    <Flag className="w-2.5 h-2.5" />
                                     Deleted{voter.deletion_reason ? ` · ${voter.deletion_reason}` : ""}
                                   </span>
                                 )}
@@ -1186,6 +1192,17 @@ export const VotersView: React.FC = () => {
                               className="font-mono font-semibold text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition-colors cursor-pointer"
                             >
                               {voter.part_number || "—"}
+                            </span>
+                          </td>
+                        )}
+
+                        {visibleCols.has("section_name") && (
+                          <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300 max-w-[200px] truncate" title={voter.section_name || ""}>
+                            <span
+                              onClick={(e) => { e.stopPropagation(); filterByCellValue("section_name", voter.section_name); }}
+                              className="hover:underline cursor-pointer"
+                            >
+                              {voter.section_name || "—"}
                             </span>
                           </td>
                         )}
