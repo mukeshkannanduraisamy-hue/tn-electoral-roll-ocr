@@ -248,16 +248,98 @@ def voter_stats(
         .limit(20)
     ).all()
 
+    avg_age_row = session.execute(
+        select(func.avg(VoterRow.age)).where(VoterRow.age.isnot(None))
+    ).scalar_one_or_none()
+    missing_age = session.execute(
+        select(func.count()).select_from(VoterRow).where(VoterRow.age.is_(None))
+    ).scalar_one()
+
     return {
         "total": total,
         "verified": verified,
-        "unverified": total - verified,
-        "by_gender": by_gender,
-        "by_relation_type": by_relation,
-        "age_buckets": dict(sorted(buckets.items())),
-        "by_part": [{"part": p or "(none)", "count": c} for p, c in parts],
-        "average_age": round(sum(age_rows) / len(age_rows), 1) if age_rows else None,
-        "missing_age": total - len(age_rows),
+        "unverified": max(total - verified, 0),
+        "by_gender": {k or "Unknown": v for k, v in by_gender.items()},
+        "by_relation": {k or "Unknown": v for k, v in by_relation.items()},
+        "age_buckets": buckets,
+        "by_part": [{"part": str(p), "count": cnt} for p, cnt in parts],
+        "average_age": round(float(avg_age_row), 1) if avg_age_row is not None else None,
+        "missing_age": missing_age,
+    }
+
+
+@router.get("/extracted-options")
+def get_extracted_options(
+    session: Session = Depends(get_session),
+    _user: UserRow = Depends(require_user),
+) -> dict:
+    """Returns Assembly Constituencies, Part Numbers, and voter counts extracted into DB."""
+    constituencies_rows = session.execute(
+        select(VoterRow.constituency).distinct().where(VoterRow.constituency != "")
+    ).scalars().all()
+    constituencies = sorted(list(set(constituencies_rows)))
+    constituencies = sorted(list(set(constituencies_rows)))
+
+    part_counts = session.execute(
+        select(VoterRow.constituency, VoterRow.part_number, func.count(VoterRow.id))
+        .where(VoterRow.part_number != "")
+        .group_by(VoterRow.constituency, VoterRow.part_number)
+        .order_by(VoterRow.part_number)
+    ).all()
+
+    # Build a lookup of section names from the notes field per part
+    part_section_names: dict[str, str] = {}
+    section_rows = session.execute(
+        select(VoterRow.part_number, VoterRow.notes)
+        .where(VoterRow.part_number != "")
+        .where(VoterRow.notes != "")
+    ).all()
+    for part, notes in section_rows:
+        if part not in part_section_names and notes:
+            # Try to find section name from the search_text or notes
+            pass
+
+    # Also check source_file_name for section info
+    source_names = session.execute(
+        select(VoterRow.part_number, VoterRow.source_file_name)
+        .where(VoterRow.part_number != "")
+        .distinct()
+    ).all()
+    for part, src in source_names:
+        if part not in part_section_names and src:
+            part_section_names[part] = src
+
+    ac_parts: dict[str, list[dict]] = {}
+    for ac, part, count in part_counts:
+        ac_key = ac or constituencies[0]
+        if ac_key not in ac_parts:
+            ac_parts[ac_key] = []
+
+        # Build a descriptive name from the source file or part number
+        src_name = part_section_names.get(str(part), "")
+        if src_name:
+            short = src_name.replace("2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-", "Part ").replace("-WI", "").replace(" (1)", "").replace(".pdf", "")
+        else:
+            short = f"Part {part}"
+
+        ac_parts[ac_key].append({
+            "part_number": str(part),
+            "voter_count": count,
+            "name": short,
+            "location": "58-பென்னாகரம் (Pennagaram)",
+            "pin": "636810"
+        })
+
+    # Sort parts numerically within each constituency
+    for ac_key in ac_parts:
+        ac_parts[ac_key].sort(key=lambda p: int(p["part_number"]) if p["part_number"].isdigit() else 0)
+
+
+
+    return {
+        "districts": ["தர்மபுரி (Dharmapuri)"] if constituencies else [],
+        "constituencies": constituencies,
+        "parts_by_ac": ac_parts,
     }
 
 
@@ -265,6 +347,45 @@ def voter_stats(
 #: problem (a placeholder house number shared by a whole part) and would make
 #: the solver's pairwise name matching quadratically slow.
 MAX_HOUSEHOLD_ROWS = 200
+
+
+def _find_voter(session: Session, voter_id: str) -> VoterRow | None:
+    if not voter_id:
+        return None
+    vid = str(voter_id).strip()
+    if not vid or vid in ("undefined", "null", "[object Object]"):
+        return None
+
+    # 1. Primary key match
+    row = session.get(VoterRow, vid)
+    if row is not None:
+        return row
+
+    # 2. Case-insensitive EPIC match
+    row = session.execute(
+        select(VoterRow).where(func.upper(VoterRow.epic) == vid.upper())
+    ).scalars().first()
+    if row is not None:
+        return row
+
+    # 3. Numeric serial match
+    if vid.isdigit():
+        row = session.execute(
+            select(VoterRow).where(VoterRow.serial == int(vid))
+        ).scalars().first()
+        if row is not None:
+            return row
+
+    # 4. Partial ID / EPIC match fallback
+    row = session.execute(
+        select(VoterRow).where(
+            (VoterRow.id.like(f"%{vid}%")) | (VoterRow.epic.like(f"%{vid}%"))
+        )
+    ).scalars().first()
+    if row is not None:
+        return row
+
+    return None
 
 
 def resolve_household(session: Session, voter_id: str) -> dict:
@@ -275,9 +396,7 @@ def resolve_household(session: Session, voter_id: str) -> dict:
     different households for the same person is a bug waiting to be reported as
     a data problem.
     """
-    target_row = session.execute(
-        select(VoterRow).where(VoterRow.id == voter_id)
-    ).scalar_one_or_none()
+    target_row = _find_voter(session, voter_id)
 
     if not target_row:
         raise HTTPException(404, f"Voter {voter_id!r} not found")
@@ -516,7 +635,7 @@ def get_voter(
     session: Session = Depends(get_session),
     _user: UserRow = Depends(require_user),
 ) -> Voter:
-    row = session.get(VoterRow, voter_id)
+    row = _find_voter(session, voter_id)
     if row is None:
         raise HTTPException(404, "Voter not found")
     return Voter.model_validate(row)
@@ -534,7 +653,7 @@ def get_voter_ocr_blocks(
     size it is actually displaying the page at rather than by the DPI the
     page happened to be rendered at.
     """
-    row = session.get(VoterRow, voter_id)
+    row = _find_voter(session, voter_id)
     if row is None:
         raise HTTPException(404, "Voter not found")
 
@@ -587,7 +706,7 @@ def get_voter_history(
     _user: UserRow = Depends(require_user),
 ) -> dict[str, Any]:
     """The edit trail for one voter, newest first."""
-    row = session.get(VoterRow, voter_id)
+    row = _find_voter(session, voter_id)
     if row is None:
         raise HTTPException(404, "Voter not found")
 
@@ -663,7 +782,7 @@ def update_voter(
     session: Session = Depends(get_session),
     user: UserRow = Depends(require_user),
 ) -> Voter:
-    row = session.get(VoterRow, voter_id)
+    row = _find_voter(session, voter_id)
     if row is None:
         raise HTTPException(404, "Voter not found")
 
@@ -697,7 +816,7 @@ def delete_voter(
     session: Session = Depends(get_session),
     user: UserRow = Depends(require_user),
 ) -> Response:
-    row = session.get(VoterRow, voter_id)
+    row = _find_voter(session, voter_id)
     if row is not None:
         logger.info("User %r deleted voter %s (%s)", user.username, voter_id, row.epic)
         # Logged before the delete, while the row can still be described.

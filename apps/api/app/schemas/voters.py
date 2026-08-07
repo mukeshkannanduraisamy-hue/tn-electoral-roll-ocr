@@ -37,8 +37,8 @@ def normalise_epic(value: str) -> str:
 
 
 class VoterBase(BaseModel):
-    epic: str = Field(description="Elector Photo Identity Card number; unique")
-    name: str = Field(min_length=1, max_length=255)
+    epic: str = Field(default="", description="Elector Photo Identity Card number; unique")
+    name: str = Field(default="", max_length=255)
     serial: int | None = Field(default=None, ge=1, le=100_000)
     relation_type: RelationType | Literal[""] = ""
     relation_name: str = Field(default="", max_length=255)
@@ -54,13 +54,16 @@ class VoterBase(BaseModel):
     @classmethod
     def _check_epic(cls, v: str) -> str:
         cleaned = normalise_epic(v)
+        if not cleaned or not EPIC_RE.match(cleaned):
+            raise ValueError(f"Malformed EPIC number: {v}")
+        return cleaned
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        cleaned = (v or "").strip()
         if not cleaned:
-            raise ValueError("EPIC is required")
-        if not EPIC_RE.match(cleaned):
-            raise ValueError(
-                f"'{v}' is not a valid EPIC number "
-                "(expected 2-4 letters followed by 6-9 digits, e.g. ZHT0308742)"
-            )
+            raise ValueError("Name cannot be empty")
         return cleaned
 
     @field_validator("age")
@@ -69,12 +72,10 @@ class VoterBase(BaseModel):
         if v is None:
             return None
         if not MIN_AGE <= v <= MAX_AGE:
-            raise ValueError(
-                f"Age {v} is outside the plausible range {MIN_AGE}-{MAX_AGE}"
-            )
+            raise ValueError(f"Age {v} is outside the plausible range {MIN_AGE}-{MAX_AGE}")
         return v
 
-    @field_validator("name", "relation_name", "house_number", "part_number",
+    @field_validator("relation_name", "house_number", "part_number",
                      "constituency", "notes")
     @classmethod
     def _strip(cls, v: str) -> str:
@@ -82,12 +83,8 @@ class VoterBase(BaseModel):
 
     @model_validator(mode="after")
     def _relation_pair(self):
-        # A relation name without its type (or the reverse) is a half-filled
-        # field that reads as complete in an export.
         if self.relation_name and not self.relation_type:
-            raise ValueError(
-                "relation_type is required when relation_name is given"
-            )
+            raise ValueError("relation_name requires relation_type")
         return self
 
 
