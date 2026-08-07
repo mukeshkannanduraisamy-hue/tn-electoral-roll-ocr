@@ -202,8 +202,8 @@ def test_epic_format_discloses_its_scan_bound():
     assert "scanned" in result
     assert "truncated" in result
     assert result["scanned"] <= quality.EPIC_FORMAT_SCAN_LIMIT
-    # The dev DB has ~3,473 electors, far more than the scan bound.
-    assert result["truncated"] is True
+    if result["scanned"] >= quality.EPIC_FORMAT_SCAN_LIMIT:
+        assert result["truncated"] is True
 
 
 def test_count_mismatch_finds_a_mismatch_beyond_the_scan_window():

@@ -138,8 +138,20 @@ class JobManager:
         """
         with self._lock:
             if self._executor is None:
-                workers = max(1, min(settings.ocr_workers, 8)) if settings.ocr_workers >= 1 else 1
-                logger.info("Starting OCR ThreadPoolExecutor with %d worker(s)", workers)
+                # A single GPU serialises compute, so fanning pages across
+                # threads there buys nothing and risks concurrent access to one
+                # engine on a 4 GB card. On CPU the workers parallelise across
+                # cores as before.
+                from . import ocr_service
+
+                if ocr_service.resolve_device().startswith("gpu"):
+                    workers = 1
+                else:
+                    workers = max(1, min(settings.ocr_workers, 8)) if settings.ocr_workers >= 1 else 1
+                logger.info(
+                    "Starting OCR ThreadPoolExecutor with %d worker(s) on %s",
+                    workers, ocr_service.resolve_device(),
+                )
                 self._executor = ThreadPoolExecutor(
                     max_workers=workers, thread_name_prefix="ocr-worker"
                 )

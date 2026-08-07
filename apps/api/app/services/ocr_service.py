@@ -16,6 +16,7 @@ can't silently break extraction.
 from __future__ import annotations
 
 import os
+import functools
 import logging
 import threading
 import time
@@ -88,6 +89,38 @@ class OcrError(Exception):
 _INIT_LOCK = threading.Lock()
 
 
+@functools.lru_cache(maxsize=1)
+def _cuda_available() -> bool:
+    """Whether this PaddlePaddle build can actually run on a CUDA GPU.
+
+    Both halves matter: the CPU-only wheel returns False from
+    ``is_compiled_with_cuda`` even on a machine that has a GPU, and a GPU wheel
+    on a machine with no card has a device_count of zero. Guarded because a
+    probe must never be the thing that takes OCR down.
+    """
+    try:
+        import paddle
+
+        return paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0
+    except Exception:  # pragma: no cover - environment-dependent
+        return False
+
+
+def resolve_device(device: str | None = None) -> str:
+    """The device OCR will actually run on.
+
+    ``auto_gpu`` is what the config has always advertised but never did: with
+    it on and a usable GPU present, prefer it over the ``cpu`` default. An
+    explicit device argument, or ``auto_gpu`` off, still wins — that is the
+    escape hatch for forcing CPU on a machine that has a card.
+    """
+    if device:
+        return device
+    if settings.auto_gpu and _cuda_available():
+        return "gpu:0"
+    return settings.ocr_device
+
+
 def get_engine(
     lang: str | None = None,
     version: str | None = None,
@@ -96,7 +129,7 @@ def get_engine(
     """Return a warm PaddleOCR instance, constructing it on first use."""
     lang = lang or settings.ocr_lang
     version = version or settings.ocr_version
-    device = device or settings.ocr_device
+    device = resolve_device(device)
 
     key: _InstanceKey = (
         lang, version, device,

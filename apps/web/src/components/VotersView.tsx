@@ -48,6 +48,7 @@ import {
 } from "@/lib/voterApi";
 import { VoterFormModal } from "./VoterFormModal";
 import { VoterProfilePage } from "./VoterProfilePage";
+import { ElectoralRollPreFilter, FilterSelection } from "./ElectoralRollPreFilter";
 
 const PAGE_SIZES = [25, 50, 100, 200];
 
@@ -200,12 +201,25 @@ export const VotersView: React.FC = () => {
   // Polling Details & Comprehensive Filters
   const [pollingStationId, setPollingStationId] = useState("");
   const [isSupplement, setIsSupplement] = useState<"" | "true" | "false">("");
+  const [isDeleted, setIsDeleted] = useState<"" | "true" | "false">("");
   const [minSerial, setMinSerial] = useState("");
   const [maxSerial, setMaxSerial] = useState("");
   const [minPage, setMinPage] = useState("");
   const [maxPage, setMaxPage] = useState("");
   const [constituency, setConstituency] = useState("");
   const [sourceFileName, setSourceFileName] = useState("");
+
+  // Pre-Filter Portal State
+  const [showPreFilter, setShowPreFilter] = useState(true);
+  const [activePreFilter, setActivePreFilter] = useState<FilterSelection | null>(null);
+
+  const handleApplyPortalFilters = (selection: FilterSelection) => {
+    setActivePreFilter(selection);
+    setConstituency(selection.constituency);
+    setPartNumber(selection.selectedParts.join(", "));
+    setShowPreFilter(false);
+    setOffset(0);
+  };
 
   // All 23 Database Columns Visibility Chooser
   const [visibleCols, setVisibleCols] = useState<Set<string>>(() => {
@@ -343,6 +357,7 @@ export const VotersView: React.FC = () => {
         has_photo: hasPhoto === "" ? undefined : hasPhoto === "true",
         polling_station_id: pollingStationId || undefined,
         is_supplement: isSupplement === "" ? undefined : isSupplement === "true",
+        is_deleted: isDeleted === "" ? undefined : isDeleted === "true",
         min_serial: minSerial ? Number(minSerial) : undefined,
         max_serial: maxSerial ? Number(maxSerial) : undefined,
         min_page: minPage ? Number(minPage) : undefined,
@@ -364,7 +379,7 @@ export const VotersView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [search, gender, relationType, partNumber, constituency, houseNumber, hasPhoto, pollingStationId, isSupplement, minSerial, maxSerial, minPage, maxPage, sourceFileName, verified, minAge, maxAge, sort, order, offset, limit]);
+  }, [search, gender, relationType, partNumber, constituency, houseNumber, hasPhoto, pollingStationId, isSupplement, isDeleted, minSerial, maxSerial, minPage, maxPage, sourceFileName, verified, minAge, maxAge, sort, order, offset, limit]);
 
   useEffect(() => { void loadData(); }, [loadData]);
 
@@ -500,13 +515,13 @@ export const VotersView: React.FC = () => {
 
   const pages = Math.max(1, Math.ceil(total / limit));
   const currentPage = Math.floor(offset / limit) + 1;
-  const hasFilters = !!(search || gender || relationType || partNumber || constituency || houseNumber || hasPhoto || pollingStationId || isSupplement || minSerial || maxSerial || minPage || maxPage || sourceFileName || minAge || maxAge || verified || agePreset);
+  const hasFilters = !!(search || gender || relationType || partNumber || constituency || houseNumber || hasPhoto || pollingStationId || isSupplement || isDeleted || minSerial || maxSerial || minPage || maxPage || sourceFileName || minAge || maxAge || verified || agePreset);
 
   const clearFilters = () => {
     setSearchInput(""); setSearch(""); setGender(""); setRelationType("");
     setPartNumber(""); setConstituency(""); setHouseNumber(""); setHasPhoto(""); setPollingStationId("");
     setIsSupplement(""); setMinSerial(""); setMaxSerial(""); setMinPage(""); setMaxPage("");
-    setSourceFileName(""); setMinAge(""); setMaxAge(""); setVerified(""); setAgePreset("");
+    setSourceFileName(""); setMinAge(""); setMaxAge(""); setVerified(""); setAgePreset(""); setIsDeleted("");
     setOffset(0);
   };
 
@@ -533,9 +548,46 @@ export const VotersView: React.FC = () => {
     );
   }
 
+  // Pre-Filter Portal View
+  if (showPreFilter) {
+    return (
+      <div className="flex-1 overflow-y-auto bg-slate-50/50 dark:bg-slate-950/50 p-4 md:p-6">
+        <ElectoralRollPreFilter
+          onApplyFilters={handleApplyPortalFilters}
+          initialSelection={activePreFilter || undefined}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-slate-50/50 dark:bg-slate-950/50">
       
+      {/* Active Portal Filter Badge Bar */}
+      {activePreFilter && (
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 text-white px-6 py-3 shadow-md flex flex-wrap items-center justify-between gap-3 border-b border-white/10 shrink-0">
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            <span className="font-bold text-indigo-300 uppercase tracking-wide flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              Active Database Filter:
+            </span>
+            <span className="bg-white/10 px-3 py-1 rounded-md border border-white/15">AC: <strong>{activePreFilter.constituency}</strong></span>
+            <span className="bg-white/10 px-3 py-1 rounded-md border border-white/15">
+              Part: <strong>{activePreFilter.selectedPartName || `Part ${activePreFilter.selectedParts.join(", ")}`}</strong>
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowPreFilter(true)}
+            className="px-3.5 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-semibold backdrop-blur-md transition-all border border-white/20 flex items-center gap-1.5 shadow-sm shrink-0"
+          >
+            <Filter className="w-3.5 h-3.5 text-indigo-300" />
+            <span>Select Different Part</span>
+          </button>
+        </div>
+      )}
+
       {/* Header & Metric Cards */}
       <div className="shrink-0 px-6 py-5 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -797,6 +849,19 @@ export const VotersView: React.FC = () => {
             </div>
 
             <div>
+              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Deletion Status</label>
+              <select
+                value={isDeleted}
+                onChange={(e) => { setIsDeleted(e.target.value as any); setOffset(0); }}
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+              >
+                <option value="">Active &amp; Deleted</option>
+                <option value="false">Active Only</option>
+                <option value="true">Deleted Only</option>
+              </select>
+            </div>
+
+            <div>
               <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">House Number</label>
               <input
                 type="text"
@@ -1036,10 +1101,23 @@ export const VotersView: React.FC = () => {
                                 <span
                                   onClick={(e) => { e.stopPropagation(); filterByCellValue("name", voter.name); }}
                                   title={`Click to search for "${voter.name}"`}
-                                  className="font-bold text-slate-900 dark:text-slate-100 hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition-colors block text-xs"
+                                  className={`font-bold hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition-colors block text-xs ${
+                                    voter.is_deleted
+                                      ? "text-rose-600 dark:text-rose-400 line-through decoration-rose-500/60"
+                                      : "text-slate-900 dark:text-slate-100"
+                                  }`}
                                 >
                                   {voter.name || "—"}
                                 </span>
+                                {voter.is_deleted && (
+                                  <span
+                                    onClick={(e) => { e.stopPropagation(); setIsDeleted("true"); setOffset(0); }}
+                                    title={voter.deletion_reason ? `Deleted — reason: ${voter.deletion_reason}` : "Struck off the roll"}
+                                    className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30 cursor-pointer"
+                                  >
+                                    Deleted{voter.deletion_reason ? ` · ${voter.deletion_reason}` : ""}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </td>

@@ -174,7 +174,7 @@ def process_page(
 
     # ------------------------------------------------------------ 7. parse
     try:
-        records = template.parse(page.lines, layout, page.id, page_size)
+        records = template.parse(page.lines, layout, page.id, page_size, image=display)
     except Exception as exc:  # noqa: BLE001 - never let one page kill a batch
         logger.exception("Template %s failed to parse page %s", template.id, page_id)
         page.status = PageStatus.ERROR

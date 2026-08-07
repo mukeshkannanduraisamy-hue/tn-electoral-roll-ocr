@@ -66,6 +66,29 @@ class Variant:
         return self.confidence_sum / self.count if self.count else 0.0
 
 
+_SHORT_VOWELS = frozenset("ெொ")
+_LONG_VOWELS = frozenset("ேோாீூ")
+
+
+def _is_short_to_long_correction(candidate: str, competitor: str) -> bool:
+    """True if candidate replaces short vowel signs (ெ, ொ) with long counterparts (ே, ோ, ா, ீ, ூ)."""
+    has_short_in_competitor = any(c in competitor for c in _SHORT_VOWELS)
+    has_long_in_candidate = any(c in candidate for c in _LONG_VOWELS)
+    return has_short_in_competitor and has_long_in_candidate
+
+
+def _variant_score(v: Variant) -> tuple[float, int, float]:
+    """Score a variant considering count, confidence, and long vowel signs.
+
+    PaddleOCR's Tamil model systematically under-reads long vowel signs (ே, ோ),
+    emitting short counterparts (ெ, ொ). Weighting long-vowel occurrences corrects
+    this systematic model bias.
+    """
+    long_count = sum(1 for ch in v.value if ch in _LONG_VOWELS)
+    weighted_count = v.count * (1.0 + 0.25 * long_count)
+    return (weighted_count, v.count, v.confidence_sum)
+
+
 @dataclass
 class ConsensusGroup:
     skeleton: str
@@ -81,10 +104,10 @@ class ConsensusGroup:
         return sum(v.count for v in self.variants.values())
 
     def ranked(self) -> list[Variant]:
-        """Most likely spelling first: count, then summed confidence."""
+        """Most likely spelling first: weighted count, count, then summed confidence."""
         return sorted(
             self.variants.values(),
-            key=lambda v: (v.count, v.confidence_sum),
+            key=_variant_score,
             reverse=True,
         )
 
@@ -96,11 +119,13 @@ class ConsensusGroup:
         best, runner_up = ranked[0], ranked[1]
         if self.total < settings.consensus_min_group:
             return None
-        # Require a strict majority. A tie means we genuinely cannot tell
-        # which reading is right, and guessing would corrupt good data.
-        if best.count <= runner_up.count:
+
+        is_vowel_repair = _is_short_to_long_correction(best.value, runner_up.value)
+        if best.count <= runner_up.count and not is_vowel_repair:
             return None
-        if best.count < runner_up.count * settings.consensus_min_ratio:
+
+        min_ratio = 0.8 if is_vowel_repair else settings.consensus_min_ratio
+        if best.count < runner_up.count * min_ratio:
             return None
         return best
 

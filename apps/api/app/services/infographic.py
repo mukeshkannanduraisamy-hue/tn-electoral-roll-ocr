@@ -99,6 +99,11 @@ METRICS: Dict[str, MetricDef] = {
         lambda: func.sum(func.cast(VoterRow.is_supplement, Integer)),
         "Electors added by a supplement rather than the base roll.",
     ),
+    "deleted_count": MetricDef(
+        "deleted_count", "Deleted electors", "count",
+        lambda: func.sum(func.cast(VoterRow.is_deleted, Integer)),
+        "Electors struck off the roll by the Special Intensive Revision.",
+    ),
 }
 
 
@@ -154,6 +159,11 @@ DIMENSIONS: Dict[str, DimensionDef] = {
         lambda: case((VoterRow.is_supplement.is_(True), "Supplement"), else_="Main roll"),
         order=("Main roll", "Supplement"),
     ),
+    "deleted": DimensionDef(
+        "deleted", "Deletion status",
+        lambda: case((VoterRow.is_deleted.is_(True), "Deleted"), else_="Active"),
+        order=("Active", "Deleted"),
+    ),
 }
 
 
@@ -169,6 +179,7 @@ FILTERS: Dict[str, Callable[[Any], Any]] = {
     "house_number": lambda v: VoterRow.house_number.like(f"%{str(v).strip()}%"),
     "verified": lambda v: VoterRow.verified.is_(_as_bool(v)),
     "is_supplement": lambda v: VoterRow.is_supplement.is_(_as_bool(v)),
+    "is_deleted": lambda v: VoterRow.is_deleted.is_(_as_bool(v)),
     "min_age": lambda v: VoterRow.age >= int(v),
     "max_age": lambda v: VoterRow.age <= int(v),
 }
@@ -181,6 +192,7 @@ FILTER_LABELS: Dict[str, str] = {
     "house_number": "House number",
     "verified": "Verified",
     "is_supplement": "Supplement",
+    "is_deleted": "Deleted",
     "min_age": "Age from",
     "max_age": "Age to",
 }

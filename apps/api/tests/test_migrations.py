@@ -189,7 +189,7 @@ def test_a_column_rename_keeps_its_data_and_can_be_rolled_back(workspace: Path):
             from alembic import op
 
             revision = "ztest0001rename"
-            down_revision = "a46b568717b8"
+            down_revision = "59f6a10e6e33"
             branch_labels = None
             depends_on = None
 

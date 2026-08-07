@@ -50,9 +50,9 @@ class Settings(BaseSettings):
     ocr_performance_mode: str = "turbo"
     """`turbo` (fastest), `balanced`, or `max_accuracy`."""
 
-    upscale_factor: float = 1.5
-    """Bicubic upscale applied before OCR. Source scans are ~144 DPI; 1.5x provides
-    ample resolution for Tamil glyphs while maintaining low pixel volume."""
+    upscale_factor: float = 2.0
+    """Bicubic upscale applied before OCR. Source scans are ~144 DPI; 2.0x provides
+    high resolution for Tamil glyphs and DELETED cell recovery."""
 
     denoise_enabled: bool = True
     denoise_strength: int = 7
@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     BEFORE CLAHE so contrast enhancement doesn't amplify paper grain."""
 
     clahe_enabled: bool = True
-    clahe_clip_limit: float = 2.0
+    clahe_clip_limit: float = 3.0
     clahe_tile_grid: int = 8
 
     unsharp_enabled: bool = True
@@ -85,8 +85,9 @@ class Settings(BaseSettings):
     """`cpu` or `gpu:0`. CPU is the default: it needs no CUDA toolchain and the
     mobile models are fast enough. See README for the GPU path."""
 
-    ocr_det_limit_side_len: int = 1536
-    """Detection input is resized so its long side is at most this."""
+    ocr_det_limit_side_len: int = 2048
+    """Detection input is resized so its long side is at most this. Higher value
+    catches smaller text in cells and improves field detection accuracy."""
 
     ocr_text_score_thresh: float = 0.30
     """Drop recognitions below this. Deliberately low: for a review-driven
@@ -130,9 +131,10 @@ class Settings(BaseSettings):
     """A record cell occupies roughly 1/30th (~3.3%) of the page body."""
 
     # ------------------------------------------------- template / matching
-    label_fuzzy_threshold: int = 62
+    label_fuzzy_threshold: int = 55
     """rapidfuzz score (0-100) for matching an OCR'd Tamil label. Low on
-    purpose -- Tamil labels get mangled and a missed label loses the field."""
+    purpose -- Tamil labels get mangled and a missed label loses the field.
+    55 catches more OCR-corrupted variants across different scan qualities."""
 
     default_template: str = "auto"
     """`auto` detects per page; or force `electoral_roll_ta` / `generic`."""

@@ -252,6 +252,14 @@ class VoterRow(Base):
     polling_station_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     is_supplement: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
+    # A Special Intensive Revision roll marks removed electors with a DELETED
+    # stamp and a reason code (S-shifted, E-expired, R-repeated, M-missing,
+    # Q-disqualified). The extractor reads both; without these columns that
+    # status was computed and then dropped on the way to storage, so the app
+    # could not tell a struck-off elector from an active one.
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    deletion_reason: Mapped[str] = mapped_column(String(64), default="")
+
     notes: Mapped[str] = mapped_column(Text, default="")
     verified: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 

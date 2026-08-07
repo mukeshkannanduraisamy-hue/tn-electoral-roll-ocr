@@ -24,6 +24,10 @@ from __future__ import annotations
 
 import re
 import uuid
+from typing import Any
+
+import cv2
+import numpy as np
 
 from ..config import settings
 from ..schemas.core import (
@@ -39,6 +43,7 @@ from ..schemas.core import (
     Record,
 )
 from ..services.layout_service import assign_lines_to_cells
+from ..services.ocr_service import run_ocr
 from .text_utils import (
     best_enum_match,
     clean_identifier,
@@ -58,16 +63,21 @@ LABELS: dict[str, list[str]] = {
     "relation_husband": [
         "கணவர் பெயர்", "கணவரின் பெயர்", "கணவர்பெயர்", "கணவர்",
         "கணவா பெயர்", "கணவா் பெயர்", "கணவர் பெயர்:", "கணவரின் பெயா",
+        "கணவா்பெயர்", "கணவா் பெயா", "கணவா்", "கனவர் பெயர்",
+        "கனவர்பெயர்", "கனவர்", "கணவா பெயா", "கணவர்பெயா",
         "Husband", "Husband Name", "Husband's Name", "Husband:"
     ],
     "relation_father": [
         "தந்தையின் பெயர்", "தந்தை பெயர்", "தந்தையின்பெயர்", "தந்தையின்",
         "தநதையின் பெயர்", "தந்தையின் பெயா", "தந்தை பெயா", "தந்தையின் பெயர்:",
+        "தநதையின்பெயர்", "தந்தை பெயர்:", "தநதை பெயர்", "தநதையின்",
+        "தந்தையன் பெயர்", "தந்தையின் பெயா்", "தந்தையிள் பெயர்",
         "Father", "Father Name", "Father's Name", "Father:"
     ],
     "relation_mother": [
         "தாயின் பெயர்", "தாய் பெயர்", "தாயின்பெயர்", "தாயின்",
         "தாயின் பெயா", "தாய் பெயா", "தாயின் பெயர்:",
+        "தாயிள் பெயர்", "தாயின்பெயா", "தாய்பெயர்", "தாய்",
         "Mother", "Mother Name", "Mother's Name", "Mother:"
     ],
     "relation_other": [
@@ -82,13 +92,18 @@ LABELS: dict[str, list[str]] = {
     "house_number": [
         "வீட்டு எண்", "வீட்டுஎண்", "வீடு எண்", "வீட்டு எஸ்",
         "வீட்டு என", "வீட்டு எண", "வீட்டு எண்:", "வீட்டுஎண",
+        "வீட்டுஎண்:", "வீட்டு எண் :", "வீட்டுஎன்", "வீட்டு எள்",
+        "வீட்டு என்", "வீட்டு எண்.", "வீட்டு எர்",
         "House No", "House No.", "House Number", "House:"
     ],
     "age": [
-        "வயது", "வயது:", "வயது -", "வயது :", "Age", "Age:"
+        "வயது", "வயது:", "வயது -", "வயது :", "வயது.", "வய து",
+        "வயதூ", "வயதி", "வயத", "Age", "Age:"
     ],
     "gender": [
-        "பாலினம்", "பாலினம", "பாலினம்:", "பாலினம:", "Gender", "Gender:"
+        "பாலினம்", "பாலினம", "பாலினம்:", "பாலினம:", "பாலிளம்",
+        "பாலினம் :", "பாலிணம்", "பாலனம்", "பாலினம் -",
+        "Gender", "Gender:"
     ],
     # Generic name label MUST be matched last -- it is a substring of every
     # relation label above. `RELATION_KEYS` is passed as the priority set so
@@ -168,6 +183,16 @@ class ElectoralRollTamilTemplate:
             ColumnDef(key="age", label="வயது (Age)", type=ColumnType.NUMBER, width=80, required=True),
             ColumnDef(key="gender", label="பாலினம் (Gender)", type=ColumnType.ENUM, width=100,
                       required=True, enum_values=list(GENDER_OPTIONS.keys())),
+            ColumnDef(key="is_deleted", label="நீக்கப்பட்டது (Deleted)", type=ColumnType.TEXT, width=110,
+                      description="Whether elector record is deleted or shifted"),
+            ColumnDef(key="deletion_reason", label="நீக்க காரணம் (Deletion Reason)", type=ColumnType.TEXT, width=180,
+                      description="Reason code: S - Shifted, E - Expired, R - Repeated, M - Missing, Q - Disqualified, DELETED"),
+            ColumnDef(key="section_name", label="பிரிவு பெயர் (Section Name)", type=ColumnType.TEXT, width=240,
+                      description="Section number and name"),
+            ColumnDef(key="part_number", label="பாகம் எண் (Part No)", type=ColumnType.NUMBER, width=90,
+                      description="Part number"),
+            ColumnDef(key="list_type", label="பட்டியல் வகை (List Type)", type=ColumnType.TEXT, width=140,
+                      description="Main Roll / Additions / Deletions / Modifications"),
         ]
 
     def expected_grid(self) -> tuple[int, int] | None:
@@ -215,6 +240,41 @@ class ElectoralRollTamilTemplate:
 
         return min(1.0, signals)
 
+    @staticmethod
+    def _extract_header_metadata(lines: list[OcrLine]) -> dict[str, Any]:
+        meta = {
+            "part_number": "",
+            "section_name": "",
+            "list_type": "",
+            "is_deletions_page": False,
+        }
+        full_text = " ".join(ln.text for ln in lines)
+
+        # 1. Part Number
+        m_part = re.search(r"பாகம்\s*எண்\s*[:\-]?\s*(\d+)", full_text, re.IGNORECASE)
+        if not m_part:
+            m_part = re.search(r"Part\s*No\.?\s*[:\-]?\s*(\d+)", full_text, re.IGNORECASE)
+        if m_part:
+            meta["part_number"] = m_part.group(1)
+
+        # 2. Section Name
+        m_sec = re.search(r"பிரிவு\s*எண்\s*(?:மற்றும்\s*பெயர்)?\s*[:\-]?\s*([^\n\r]+)", full_text)
+        if m_sec:
+            sec_val = m_sec.group(1).strip()
+            sec_val = re.sub(r"\s*பாகம்.*$", "", sec_val)
+            meta["section_name"] = sec_val.strip()
+
+        # 3. List Type / Supplement Title
+        if "நீக்கல் பட்டியல்" in full_text or "நீக்கல்" in full_text[:400]:
+            meta["list_type"] = "Deletions List (நீக்கல் பட்டியல்)"
+            meta["is_deletions_page"] = True
+        elif "சேர்த்தல் பட்டியல்" in full_text or "சேர்த்தல்" in full_text[:400]:
+            meta["list_type"] = "Additions List (சேர்த்தல் பட்டியல்)"
+        elif "திருத்தப் பட்டியல்" in full_text or "திருத்தப்" in full_text[:400]:
+            meta["list_type"] = "Modifications List (திருத்தப் பட்டியல்)"
+
+        return meta
+
     # ---------------------------------------------------------------- parse
 
     def parse(
@@ -223,11 +283,11 @@ class ElectoralRollTamilTemplate:
         layout: LayoutInfo,
         page_id: str,
         page_size: tuple[int, int],
+        image: np.ndarray | None = None,
     ) -> list[Record]:
         cells = layout.cells or []
-        # Pass the layout's own geometry: a part-full page (the last sheet of
-        # a roll, or a supplement) has fewer rows than the template's nominal
-        # 10, and the banded assignment only works on the real dimensions.
+        header_meta = self._extract_header_metadata(lines)
+
         buckets = assign_lines_to_cells(
             lines,
             cells,
@@ -242,26 +302,56 @@ class ElectoralRollTamilTemplate:
                 key=lambda ln: (round(ln.bbox.cy / 8), ln.bbox.cx),
             )
 
-            # A cell with no ink is genuinely empty, not a failed read. The
-            # last page of a section is routinely part-full (10_16.pdf has
-            # two voters on a 30-slot page), and emitting 28 blank records
-            # for it would bury the real ones under phantom errors.
-            if not cell_lines:
+            if not cell_lines and image is None:
                 continue
 
-            record = self._parse_cell(cell_lines, cell, index, page_id)
+            record = self._parse_cell(cell_lines, cell, index, page_id, header_meta)
 
-            # Lines were present but nothing parsed out of them -- e.g. only
-            # the "Photo is / available" placeholder. Also not a record.
-            if not any(f.original_value.strip() for f in record.fields.values()):
+            has_name = bool(record.fields.get("name") and record.fields["name"].original_value.strip())
+            has_house = bool(record.fields.get("house_number") and record.fields["house_number"].original_value.strip())
+            has_rel = bool(record.fields.get("relation_name") and record.fields["relation_name"].original_value.strip())
+            is_deleted_cell = bool(record.fields.get("is_deleted") and record.fields["is_deleted"].original_value == "Yes")
+
+            # Crop OCR Recovery pass when fields are missing or cell is marked deleted/shifted
+            if image is not None and (not has_name or not has_house or not has_rel or is_deleted_cell):
+                try:
+                    x1, y1 = max(0, int(cell.x)), max(0, int(cell.y))
+                    x2, y2 = min(image.shape[1], int(cell.x + cell.w)), min(image.shape[0], int(cell.y + cell.h))
+                    if x2 - x1 > 20 and y2 - y1 > 20:
+                        cell_crop = image[y1:y2, x1:x2].copy()
+                        gray = cv2.cvtColor(cell_crop, cv2.COLOR_BGR2GRAY) if cell_crop.ndim == 3 else cell_crop
+                        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+                        enhanced = clahe.apply(gray)
+                        enhanced_bgr = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
+                        resized_crop = cv2.resize(enhanced_bgr, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+
+                        ocr_res = run_ocr(resized_crop)
+                        if ocr_res and ocr_res.lines:
+                            recovered_record = self._parse_cell(ocr_res.lines, cell, index, page_id, header_meta)
+                            for f_key in ("name", "relation_type", "relation_name", "house_number", "age", "gender", "epic", "is_deleted", "deletion_reason"):
+                                rec_val = recovered_record.fields.get(f_key)
+                                orig_val = record.fields.get(f_key)
+                                if rec_val and rec_val.original_value and (not orig_val or not orig_val.original_value or f_key in ("name", "house_number", "relation_name")):
+                                    record.fields[f_key] = rec_val
+                except Exception:
+                    pass
+
+            voter_keys = ("serial", "epic", "name", "relation_name", "house_number", "age", "gender")
+            if not any(record.fields.get(k) and record.fields[k].original_value.strip() for k in voter_keys):
                 continue
 
             records.append(record)
         return records
 
     def _parse_cell(
-        self, lines: list[OcrLine], cell: BBox, index: int, page_id: str
+        self,
+        lines: list[OcrLine],
+        cell: BBox,
+        index: int,
+        page_id: str,
+        header_meta: dict[str, Any] | None = None,
     ) -> Record:
+        header_meta = header_meta or {}
         record = Record(
             id=uuid.uuid4().hex[:12],
             page_id=page_id,
@@ -285,6 +375,23 @@ class ElectoralRollTamilTemplate:
         consumed: set[str] = set()
         values: dict[str, tuple[str, float, BBox | None, list[str]]] = {}
 
+        # Deletion tracking
+        is_deleted = "No"
+        deletion_reason = ""
+
+        if header_meta.get("is_deletions_page"):
+            is_deleted = "Yes"
+            deletion_reason = "நீக்கல் பட்டியல் (Deletions List)"
+
+        # Check for watermark / overlay text inside cell
+        for ln in lines:
+            t_upper = ln.text.upper()
+            if any(term in t_upper for term in ("DELETED", "நீக்கப்பட்டது", "CANCELLED")):
+                is_deleted = "Yes"
+                if not deletion_reason or deletion_reason == "நீக்கல் பட்டியல் (Deletions List)":
+                    deletion_reason = "DELETED"
+                break
+
         def put(key: str, value: str, line: OcrLine) -> None:
             """Record a field value, keeping the first (topmost) hit."""
             if not value or key in values:
@@ -292,24 +399,58 @@ class ElectoralRollTamilTemplate:
             values[key] = (value, line.confidence, line.bbox, [line.id])
 
         # --- pass 1: serial + EPIC, identified by shape and position -------
-        top_band = cell.y + cell.h * 0.35
-        for line in lines:
+        top_band = cell.y + cell.h * 0.45
+        for idx_line, line in enumerate(lines):
             text = normalize(line.text)
             if line.bbox.cy > top_band:
                 continue
+
+            code_prefix = ""
+            if idx_line > 0:
+                prev_text = normalize(lines[idx_line - 1].text).strip().upper()
+                if prev_text in ("S", "E", "R", "M", "Q", "W"):
+                    code_prefix = prev_text
 
             ident = clean_identifier(text)
             if EPIC_PERMISSIVE_RE.match(ident) and "epic" not in values:
                 put("epic", ident, line)
                 consumed.add(line.id)
+                if "serial" not in values:
+                    m_ser = re.match(r"^\s*\[?\s*([SERMQWsermqw])?\s*[\.\-:\s]*(\d{1,4})\s*\]?\s*", text)
+                    if m_ser:
+                        code_prefix = m_ser.group(1).upper() if m_ser.group(1) else code_prefix
+                        put("serial", m_ser.group(2), line)
+                        if code_prefix:
+                            is_deleted = "Yes"
+                            reason_map = {
+                                "S": "S - Shifted (இடம் மாறியவர்)",
+                                "E": "E - Expired (இறந்தவர்)",
+                                "R": "R - Repeated (இரட்டைப் பதிவு)",
+                                "M": "M - Missing (காணாமல் போனவர்)",
+                                "Q": "Q - Disqualified (தகுதியின்மை)",
+                                "W": "W - Withdrawn (விலக்கப்பட்டவர்)",
+                            }
+                            deletion_reason = reason_map.get(code_prefix, f"{code_prefix} - Deleted")
                 continue
 
-            digits = extract_digits(text)
-            # A bare 1-4 digit number in the top band is the serial.
-            if digits and digits == re.sub(r"\D", "", text) and 1 <= len(digits) <= 4:
+            m_ser_bare = re.match(r"^\s*\[?\s*([SERMQWsermqw])?\s*[\.\-:\s]*(\d{1,4})\s*\]?\s*$", text)
+            if m_ser_bare:
+                code_prefix = m_ser_bare.group(1).upper() if m_ser_bare.group(1) else code_prefix
+                digits = m_ser_bare.group(2)
                 if "serial" not in values:
                     put("serial", digits, line)
                     consumed.add(line.id)
+                    if code_prefix:
+                        is_deleted = "Yes"
+                        reason_map = {
+                            "S": "S - Shifted (இடம் மாறியவர்)",
+                            "E": "E - Expired (இறந்தவர்)",
+                            "R": "R - Repeated (இரட்டைப் பதிவு)",
+                            "M": "M - Missing (காணாமல் போனவர்)",
+                            "Q": "Q - Disqualified (தகுதியின்மை)",
+                            "W": "W - Withdrawn (விலக்கப்பட்டவர்)",
+                        }
+                        deletion_reason = reason_map.get(code_prefix, f"{code_prefix} - Deleted")
 
         def _is_noise(text: str) -> bool:
             lowered = text.lower()
@@ -415,6 +556,18 @@ class ElectoralRollTamilTemplate:
             if ln.id not in consumed
             and not any(noise in normalize(ln.text).lower() for noise in PHOTO_NOISE)
         ]
+
+        # --- populate metadata & deletion status ---
+        if is_deleted == "Yes":
+            values["is_deleted"] = ("Yes", 1.0, None, [])
+        if deletion_reason:
+            values["deletion_reason"] = (deletion_reason, 1.0, None, [])
+        if header_meta.get("section_name"):
+            values["section_name"] = (header_meta.get("section_name"), 1.0, None, [])
+        if header_meta.get("part_number"):
+            values["part_number"] = (header_meta.get("part_number"), 1.0, None, [])
+        if header_meta.get("list_type"):
+            values["list_type"] = (header_meta.get("list_type"), 1.0, None, [])
 
         # --- assemble -------------------------------------------------------
         for col in self.columns():

@@ -61,7 +61,7 @@ def _search_text(row: VoterRow) -> str:
 AUDITED_FIELDS = (
     "epic", "serial", "name", "relation_type", "relation_name",
     "house_number", "age", "gender", "part_number", "constituency",
-    "verified", "notes",
+    "verified", "notes", "is_deleted", "deletion_reason",
 )
 
 
@@ -124,6 +124,7 @@ def list_voters(
     has_photo: bool | None = Query(None),
     polling_station_id: str | None = Query(None),
     is_supplement: bool | None = Query(None),
+    is_deleted: bool | None = Query(None, description="True: only struck-off electors; False: only active"),
     min_serial: int | None = Query(None, ge=0),
     max_serial: int | None = Query(None, ge=0),
     min_page: int | None = Query(None, ge=1),
@@ -167,6 +168,8 @@ def list_voters(
             stmt = stmt.where(VoterRow.polling_station_id == polling_station_id)
         if is_supplement is not None:
             stmt = stmt.where(VoterRow.is_supplement.is_(is_supplement))
+        if is_deleted is not None:
+            stmt = stmt.where(VoterRow.is_deleted.is_(is_deleted))
         if min_serial is not None:
             stmt = stmt.where(VoterRow.serial >= min_serial)
         if max_serial is not None:
@@ -995,6 +998,11 @@ def promote_records(
             "constituency": constituency,
             "polling_station_id": station.id if station else None,
             "is_supplement": is_supplement,
+            # Carry the extractor's deletion verdict through to storage. "Yes"
+            # is the template's marker for a struck-off cell; anything else,
+            # including an unread cell, is treated as active.
+            "is_deleted": _field_value(record, "is_deleted") == "Yes",
+            "deletion_reason": _field_value(record, "deletion_reason"),
             "source_record_id": row.id,
             "source_page_id": row.page_id,
             "source_file_id": row.file_id,

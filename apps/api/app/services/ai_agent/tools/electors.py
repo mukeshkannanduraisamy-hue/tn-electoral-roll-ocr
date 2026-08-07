@@ -34,6 +34,7 @@ class SearchVotersArgs(BaseModel):
     max_age: Optional[int] = None
     verified: Optional[bool] = None
     is_supplement: Optional[bool] = None
+    is_deleted: Optional[bool] = Field(None, description="True: only struck-off electors; False: only active")
     source_file_id: Optional[str] = None
     limit: int = Field(20, ge=1, le=MAX_ROWS)
     offset: int = Field(0, ge=0)
@@ -53,6 +54,8 @@ def _row(voter: VoterRow) -> Dict[str, Any]:
         "constituency": voter.constituency,
         "verified": bool(voter.verified),
         "is_supplement": bool(voter.is_supplement),
+        "is_deleted": bool(voter.is_deleted),
+        "deletion_reason": voter.deletion_reason,
     }
 
 
@@ -79,6 +82,8 @@ def _apply(stmt, args: SearchVotersArgs):
         stmt = stmt.where(VoterRow.verified.is_(args.verified))
     if args.is_supplement is not None:
         stmt = stmt.where(VoterRow.is_supplement.is_(args.is_supplement))
+    if args.is_deleted is not None:
+        stmt = stmt.where(VoterRow.is_deleted.is_(args.is_deleted))
     if args.source_file_id:
         stmt = stmt.where(VoterRow.source_file_id == args.source_file_id.strip())
     return stmt
@@ -88,7 +93,8 @@ def _apply(stmt, args: SearchVotersArgs):
     name="search_voters",
     description=(
         "Find electors on the curated roll by name, EPIC, part, constituency, "
-        "gender, age range, house number, verification state or source file. "
+        "gender, age range, house number, verification state, deletion status "
+        "(is_deleted) or source file. "
         "Returns matching rows and the total number matched."
     ),
     args_model=SearchVotersArgs,

@@ -39,8 +39,13 @@ def parse_cell(texts: list[str]):
     return records[0] if records else None
 
 
+BASE_KEYS = {"serial", "epic", "name", "relation_type", "relation_name", "house_number", "age", "gender"}
+
+
 def values(record) -> dict[str, str]:
-    return {k: f.value for k, f in record.fields.items()}
+    if record is None:
+        return {}
+    return {k: f.value for k, f in record.fields.items() if k in BASE_KEYS}
 
 
 # ---------------------------------------------------------------------------

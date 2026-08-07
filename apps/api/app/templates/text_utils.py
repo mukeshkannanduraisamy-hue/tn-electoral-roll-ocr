@@ -66,6 +66,12 @@ _TAMIL_COMPOSE = {
     ("ெ", "ா"): "ொ",  # e  + aa -> o
     ("ே", "ா"): "ோ",  # ee + aa -> oo
     ("ெ", "ௗ"): "ௌ",  # e  + au length mark -> au
+    ("ெ", "ெ"): "ே",  # double short e -> long ee
+    ("ெ", "ே"): "ே",  # short e + long ee -> long ee
+    ("ெ", "ொ"): "ொ",  # spurious short e + o -> o
+    ("ெ", "ோ"): "ோ",  # spurious short e + oo -> oo
+    ("ி", "ி"): "ீ",  # double short i -> long ii
+    ("ு", "ு"): "ூ",  # double short u -> long uu
 }
 
 
@@ -330,10 +336,14 @@ def extract_digits(text: str) -> str:
     return "".join(ch for ch in fixed if ch.isdigit())
 
 
-_LETTER_CORRECTIONS = {"0": "O", "1": "I", "5": "S", "8": "B", "2": "Z"}
+_LETTER_CORRECTIONS = {
+    "0": "O", "1": "I", "5": "S", "8": "B", "2": "Z",
+    "6": "G", "7": "T", "4": "A", "9": "P"
+}
 _DIGIT_CORRECTIONS = {
     "O": "0", "o": "0", "Q": "0", "I": "1", "l": "1", "|": "1",
-    "S": "5", "B": "8", "Z": "2"
+    "S": "5", "B": "8", "Z": "2", "G": "6", "T": "7", "J": "1",
+    "A": "4", "P": "9", "D": "0"
 }
 
 
@@ -342,14 +352,32 @@ def clean_identifier(text: str) -> str:
     if not text:
         return ""
     raw = "".join(ch for ch in text.upper() if ch.isalnum())
-    if len(raw) == 10:
-        prefix = raw[:3]
-        suffix = raw[3:]
+    
+    def _try_fix_10(s: str) -> str | None:
+        if len(s) != 10:
+            return None
+        prefix = s[:3]
+        suffix = s[3:]
         fixed_prefix = "".join(_LETTER_CORRECTIONS.get(ch, ch) for ch in prefix)
         fixed_suffix = "".join(_DIGIT_CORRECTIONS.get(ch, ch) for ch in suffix)
         candidate = fixed_prefix + fixed_suffix
         if re.match(r"^[A-Z]{3}\d{7}$", candidate):
             return candidate
+        return None
+
+    res = _try_fix_10(raw)
+    if res:
+        return res
+
+    # If raw is 11 chars due to leading/trailing noise, check substrings
+    if len(raw) == 11:
+        res1 = _try_fix_10(raw[:10])
+        if res1:
+            return res1
+        res2 = _try_fix_10(raw[1:])
+        if res2:
+            return res2
+
     return raw
 
 

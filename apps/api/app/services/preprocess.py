@@ -190,11 +190,24 @@ class PreprocessResult:
         return x / self.scale, y / self.scale
 
 
+def is_blank_page(image: np.ndarray, threshold: float = 252.0) -> bool:
+    """Detect if a page is effectively blank (white/empty).
+
+    Pages from corrupt PDFs (e.g. Part 37) render as pure white. Skipping
+    them early saves OCR time and prevents phantom records.
+    """
+    gray = to_gray(image)
+    return float(gray.mean()) > threshold
+
+
 def preprocess(image: np.ndarray, upscale_factor: float | None = None) -> PreprocessResult:
     """Run the full chain. Input RGB or gray; output is 3-channel RGB.
 
     PaddleOCR expects a 3-channel image, so the grayscale working copy is
     expanded back to RGB at the end.
+
+    Includes adaptive contrast: very faded pages (mean_intensity > 240)
+    get stronger CLAHE to recover text from low-contrast scans.
     """
     original_h, original_w = image.shape[:2]
 
@@ -209,7 +222,19 @@ def preprocess(image: np.ndarray, upscale_factor: float | None = None) -> Prepro
     scaled = upscale(gray, factor)
     actual_scale = scaled.shape[1] / original_w if original_w else 1.0
 
-    enhanced = apply_clahe(scaled)
+    # Adaptive CLAHE: faded/low-contrast pages get stronger enhancement
+    page_mean = float(scaled.mean())
+    if settings.clahe_enabled and page_mean > 240:
+        # Very faded page — boost CLAHE clip limit for better text recovery
+        clahe_obj = cv2.createCLAHE(
+            clipLimit=max(settings.clahe_clip_limit, 4.0),
+            tileGridSize=(settings.clahe_tile_grid, settings.clahe_tile_grid),
+        )
+        enhanced = clahe_obj.apply(scaled)
+        logger.debug("Adaptive CLAHE applied (page_mean=%.1f, clip=4.0)", page_mean)
+    else:
+        enhanced = apply_clahe(scaled)
+
     enhanced = unsharp(enhanced)
 
     rgb = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2RGB)

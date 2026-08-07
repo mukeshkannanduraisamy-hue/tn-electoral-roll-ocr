@@ -40,6 +40,8 @@ EXTRA_COLUMNS: list[tuple[str, str]] = [
     ("source_file_name", "Source File"),
     ("page_number", "Page"),
     ("verified", "Verified"),
+    ("is_deleted", "Deleted"),
+    ("deletion_reason", "Deletion Reason"),
     ("notes", "Notes"),
     ("created_at", "Created"),
     ("updated_by", "Updated By"),

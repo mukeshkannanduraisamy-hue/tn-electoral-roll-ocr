@@ -137,6 +137,13 @@ class Voter(VoterBase):
     joined the roll after the base list was published, and a report that
     cannot separate the two misstates the revision.
     """
+    is_deleted: bool = False
+    """Struck off the roll by the Special Intensive Revision.
+
+    Surfaced so a deleted elector is never silently counted as active; the
+    reason code sits alongside it.
+    """
+    deletion_reason: str = ""
     source_record_id: str | None = None
     source_page_id: str | None = None
     source_file_id: str | None = None

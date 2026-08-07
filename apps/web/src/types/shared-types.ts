@@ -524,6 +524,14 @@ export interface Voter {
    * published, and a report that conflates the two misstates the revision.
    */
   is_supplement: boolean;
+  /**
+   * Struck off the roll by the Special Intensive Revision. Surfaced so a
+   * deleted elector is never silently counted as active; `deletion_reason`
+   * carries the code (S-shifted, E-expired, R-repeated, M-missing,
+   * Q-disqualified).
+   */
+  is_deleted: boolean;
+  deletion_reason: string;
   source_record_id: string | null;
   source_page_id: string | null;
   source_file_id: string | null;
@@ -905,6 +913,7 @@ export interface VoterQuery {
   has_photo?: boolean;
   polling_station_id?: string;
   is_supplement?: boolean;
+  is_deleted?: boolean;
   min_serial?: number;
   max_serial?: number;
   min_page?: number;
