@@ -95,7 +95,7 @@ function AgeBar({ label, count, max }: { label: string; count: number; max: numb
 }
 
 export function DashboardView() {
-  const { files, recordStats, setActiveTab, deleteFile, setConfirmModal } = useOcrStore();
+  const { files, setActiveTab, deleteFile, setConfirmModal } = useOcrStore();
   const [stats, setStats] = useState<VoterStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -117,11 +117,6 @@ export function DashboardView() {
   const byPart = stats?.by_part ?? [];
   const ageBuckets = stats?.age_buckets ?? {};
   const maxAge = Math.max(...Object.values(ageBuckets), 1);
-
-  const accuracyPct =
-    (recordStats?.total ?? 0) > 0
-      ? Math.round(((recordStats?.clean ?? 0) / (recordStats?.total ?? 1)) * 100)
-      : 100;
 
   return (
     <div className="flex-1 overflow-y-auto bg-[hsl(var(--background))]">
@@ -181,14 +176,13 @@ export function DashboardView() {
             </button>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <KpiCard icon={Users}    label="Total Voters"    value={loading ? "—" : totalVoters.toLocaleString()} tone="blue"   onClick={() => setActiveTab("voters" as any)} />
-            <KpiCard icon={FileText} label="Documents"       value={totalDocs}   sub={`${totalPages} pages`}  tone="violet" onClick={() => setActiveTab("table" as any)} />
-            <KpiCard icon={UserCheck}label="Verified"        value={loading ? "—" : verifiedVoters.toLocaleString()}  sub={`${totalVoters > 0 ? Math.round(verifiedVoters/totalVoters*100) : 0}% of total`} tone="green" />
-            <KpiCard icon={Activity} label="OCR Accuracy"    value={`${accuracyPct}%`} sub="Clean records rate" tone="teal" />
+            <KpiCard icon={Users} label="Total Voters" value={loading ? "—" : totalVoters.toLocaleString()} sub="Registered in database" tone="indigo" />
+            <KpiCard icon={BadgeCheck} label="Verified" value={loading ? "—" : verifiedVoters.toLocaleString()} sub={`${totalVoters > 0 ? Math.round((verifiedVoters / totalVoters) * 100) : 0}% of total`} tone="emerald" />
+            <KpiCard icon={FileText} label="PDF Sources" value={totalDocs.toLocaleString()} sub={`${totalPages.toLocaleString()} total pages`} tone="violet" />
+            <KpiCard icon={Users}    label="Male Voters"     value={loading ? "—" : maleCount.toLocaleString()}   sub={totalVoters > 0 ? `${Math.round(maleCount/totalVoters*100)}%` : ""}  tone="blue" />
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-            <KpiCard icon={Users}    label="Male Voters"     value={loading ? "—" : maleCount.toLocaleString()}   sub={totalVoters > 0 ? `${Math.round(maleCount/totalVoters*100)}%` : ""}  tone="blue" />
             <KpiCard icon={Users}    label="Female Voters"   value={loading ? "—" : femaleCount.toLocaleString()} sub={totalVoters > 0 ? `${Math.round(femaleCount/totalVoters*100)}%` : ""} tone="rose" />
             <KpiCard icon={TrendingUp} label="Average Age"   value={loading ? "—" : avgAge ? `${avgAge}y` : "—"} sub="Among registered voters" tone="amber" />
             <KpiCard icon={Database} label="Data Health"     value="Excellent"    sub="All records indexed"        tone="green" />

@@ -45,7 +45,6 @@ interface OcrState {
   activeFileId: string | null;
   activePageId: string | null;
   activeTab: ViewTab;
-  recordStats: RecordStats | null;
 
   // Record selection & hover sync between table and canvas
   hoveredRecordId: string | null;
@@ -60,6 +59,7 @@ interface OcrState {
   fileJobProgress: Record<string, FileJobProgress>;
 
   // Per-page refresh tracking (pageId -> isLoading boolean)
+  refreshStats: (fileId?: string) => Promise<void>;
   pageRefreshing: Record<string, boolean>;
 
   // Filters & Engine Settings
@@ -97,7 +97,6 @@ interface OcrState {
   setIsUploading: (val: boolean) => void;
   setIsShortcutsOpen: (val: boolean) => void;
 
-  refreshStats: (fileId?: string) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
   setActiveJob: (jobId: string | null, status?: string | null) => void;
   updateJobProgress: (progress: number, status?: string) => void;
@@ -199,7 +198,6 @@ function attachJobSSE(
 
     set({ activeJobId: null, activeJobStatus: isFailed ? "failed" : "completed", activeJobProgress: 100, pagesPerSec: 0, etaSeconds: 0 });
     get().loadFiles();
-    get().refreshStats(get().activeFileId || undefined);
 
     if (isFailed) {
       toast.error("OCR job processing failed");
@@ -253,7 +251,6 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   activeFileId: null,
   activePageId: null,
   activeTab: "dashboard",
-  recordStats: null,
 
   hoveredRecordId: null,
   selectedRecordId: null,
@@ -316,12 +313,7 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   setIsShortcutsOpen: (isShortcutsOpen) => set({ isShortcutsOpen }),
 
   refreshStats: async (fileId) => {
-    try {
-      const stats = await fetchRecordStats(fileId);
-      set({ recordStats: stats });
-    } catch (e) {
-      console.error("Failed to refresh record stats", e);
-    }
+    // No-op since OCR pipeline UI is removed.
   },
 
   deleteFile: async (fileId) => {
