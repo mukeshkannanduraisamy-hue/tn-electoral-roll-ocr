@@ -7,6 +7,7 @@ a typo in it. The model writes the prose; the rows come straight from the tool.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
 #: Column order for elector tables. Anything not listed is dropped, so a tool
@@ -15,6 +16,29 @@ _VOTER_COLUMNS = (
     "name", "epic", "age", "gender", "relation_name",
     "house_number", "part_number", "verified",
 )
+
+_DIGITS = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _scrub_rationale(text: str) -> str:
+    """Strip every figure out of the model's one-line reason for a query.
+
+    `rationale` (`RunSqlArgs.rationale`) is free prose the model wrote, not a
+    tool result -- unlike the `sql` string rendered beside it, where showing
+    the operator the exact query *is* the point and it stays verbatim. A
+    caption like "Counting the 4,120 electors in part 289" puts an
+    unguarded, possibly fabricated figure next to an answer the operator has
+    otherwise been told is fully verified.
+
+    Not routed through `guards.strip_unverified_numbers`: that check drops a
+    *sentence* whole when it quotes a figure no tool produced, calibrated for
+    the model's prose answer. A rationale is a caption, not the answer -- and
+    even a figure that happens to be real is still unverified *at this call
+    site* (nothing here checks it against `tool_results`), so every digit run
+    goes, not just the ones that would fail the sentence-level guard.
+    """
+    scrubbed = _DIGITS.sub("#", text or "")
+    return re.sub(r"\s{2,}", " ", scrubbed).strip()
 
 
 def _table(rows: List[Dict[str, Any]], columns: List[str], **extra: Any) -> Dict[str, Any]:
@@ -49,7 +73,7 @@ def blocks_for(tool_name: str, result: Dict[str, Any]) -> List[Dict[str, Any]]:
             {
                 "kind": "sql",
                 "sql": result.get("sql", ""),
-                "rationale": result.get("rationale", ""),
+                "rationale": _scrub_rationale(result.get("rationale", "")),
                 "returned": result.get("returned", len(rows)),
             }
         ]

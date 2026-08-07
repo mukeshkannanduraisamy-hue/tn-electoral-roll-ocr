@@ -347,6 +347,80 @@ def test_an_unknown_tool_name_from_the_planner_path_is_also_reported(monkeypatch
     assert "done" in _types(events)
 
 
+def test_sentences_do_not_split_inside_a_decimal_figure():
+    """CRITICAL 1: `_sentences` split on any '.', '!', '?' or '\\n' with no
+    lookahead, so "0.412" broke into "0." and "412" as two fragments -- a
+    false sentence boundary inside a single number. `guards._SENTENCE`
+    already gets this right (it requires whitespace after the terminator);
+    this pins `_sentences` to the same rule.
+    """
+    buffer = "Mean OCR confidence across the corpus is 89.7%. Confidence bottoms out at 0.412."
+    complete, tail = loop._sentences(buffer)
+    assert complete == ["Mean OCR confidence across the corpus is 89.7%."]
+    assert tail.strip() == "Confidence bottoms out at 0.412."
+    # Neither fragment may contain a lone digit-dot split.
+    for piece in complete:
+        assert "89." not in piece or "89.7" in piece
+
+
+def test_a_sentence_with_two_decimal_figures_survives_the_full_pipeline(monkeypatch):
+    """End-to-end reproduction of CRITICAL 1 through the real `run_agent`: a
+    model answer quoting two decimal figures, both grounded in a real tool
+    result, must reach the operator intact. Before the fix, the false
+    sentence boundary inside "0.412" corrupted the answer -- either the
+    correct figure was dropped (neither half of a split number is
+    independently permitted) or a wrong fragment survived by coincidence.
+    """
+    _script(
+        monkeypatch,
+        [
+            ToolCallOutcome(tool_calls=[{"id": "c1", "name": "ocr_quality", "arguments": {}}]),
+            ToolCallOutcome(content=""),
+        ],
+        answer="Mean confidence is 89.7%. It bottoms out at 0.412.",
+    )
+    monkeypatch.setattr(
+        loop, "execute",
+        lambda session, name, args: {"mean_confidence": 0.897, "worst_case": 0.412},
+    )
+    events = _drain("how confident is the OCR")
+    done = events[-1]
+    assert done.type == "done"
+    assert done.data["dropped_sentences"] == 0
+    assert "89.7%" in done.data["content"]
+    assert "0.412" in done.data["content"]
+
+
+def test_a_profile_figure_the_backend_itself_injected_survives_the_guard(monkeypatch):
+    """IMPORTANT 3: `context.profile_sentence` puts real counts straight into
+    the system prompt to save a round trip -- those counts never pass
+    through `tool_results`. Before the fix, a model faithfully echoing a
+    figure it was just handed got that correct sentence destroyed by its own
+    guard and replaced with "I could not produce an answer I can stand
+    behind," which is a true answer overwritten by a false one.
+    """
+    _script(
+        monkeypatch,
+        [ToolCallOutcome(content="")],
+        answer="This workspace holds 1,093 curated electors from 0 files.",
+    )
+    monkeypatch.setattr(
+        loop, "roll_profile",
+        lambda session: {
+            "voters": 1093, "files": 0, "pages": 12, "records": 1093,
+            "parts": [], "part_count": 0, "constituencies": [], "constituency_count": 0,
+        },
+    )
+    events = _drain("how big is this workspace")
+    done = events[-1]
+    assert done.type == "done"
+    assert done.data["dropped_sentences"] == 0
+    assert "1,093" in done.data["content"]
+    assert (
+        "I could not produce an answer" not in done.data["content"]
+    )
+
+
 def test_native_tool_calls_are_preceded_by_a_declaring_assistant_message(monkeypatch):
     """OpenAI-compatible transports reject a `role: "tool"` message that does
     not follow an assistant message declaring the matching `tool_call_id` --

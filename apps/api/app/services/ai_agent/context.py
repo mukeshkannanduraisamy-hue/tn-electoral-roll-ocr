@@ -11,9 +11,11 @@ processed.
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Set, Tuple
 
 from sqlalchemy.orm import Session
+
+from .guards import permitted_numbers, permitted_percentages
 
 #: Long enough to save the repeated queries, short enough that a finished import
 #: shows up while the operator is still looking at the screen.
@@ -49,6 +51,26 @@ def invalidate() -> None:
     """Drop the cache. Call after a file finishes processing."""
     global _cached
     _cached = None
+
+
+def permitted_from_profile(profile: Dict[str, Any]) -> Tuple[Set[str], Set[str]]:
+    """The numeric guard's seed for figures the backend itself injected.
+
+    `profile_sentence` puts real counts (electors, files, pages, records,
+    part numbers) into the system prompt to save a round trip -- but those
+    counts never pass through a tool call, so `permitted_numbers`/
+    `permitted_percentages` over `tool_results` alone would not contain them.
+    Without this, a model that faithfully echoes the figure it was handed in
+    its own system prompt gets that correct sentence discarded by the guard,
+    which is worse than not injecting the profile at all: it is a true
+    answer replaced by "I could not produce an answer I can stand behind."
+
+    Deliberately not folded into `tool_results` itself: that list also drives
+    the tool trace and citation collection, and the profile was not returned
+    by a tool call the operator can see reflected in the trace. This is a
+    parallel seed, unioned in by the caller, not a fake tool result.
+    """
+    return permitted_numbers([profile]), permitted_percentages([profile])
 
 
 def profile_sentence(profile: Dict[str, Any]) -> str:

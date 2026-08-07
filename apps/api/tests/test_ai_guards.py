@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services.ai_agent import blocks, guards  # noqa: E402
+from app.services.ai_agent import blocks, context, guards  # noqa: E402
 
 TOOL_RESULTS = [
     {
@@ -206,6 +206,47 @@ def test_duplicate_epic_rows_keep_their_evidence_columns():
     assert made[0]["columns"] == ["epic", "occurrences", "record_ids", "reason"]
     assert made[0]["rows"][0]["occurrences"] == 2
     assert made[0]["rows"][0]["record_ids"] == ["a1", "a2"]
+
+
+def test_sql_block_rationale_has_its_figures_stripped():
+    # IMPORTANT 5: `rationale` is free prose the model wrote (RunSqlArgs),
+    # not a tool result -- unlike `sql`, which renders verbatim because
+    # showing the exact query is the point. A caption like "Counting the
+    # 4,120 electors in part 289" must not carry an unguarded figure next to
+    # an answer the operator has been told is fully verified.
+    made = blocks.blocks_for(
+        "run_readonly_sql",
+        {
+            "sql": "SELECT COUNT(*) FROM voters WHERE part_number = '289'",
+            "columns": ["n"],
+            "rows": [{"n": 4120}],
+            "rationale": "Counting the 4,120 electors in part 289",
+        },
+    )
+    sql_block = next(b for b in made if b["kind"] == "sql")
+    assert "4,120" not in sql_block["rationale"]
+    assert "4120" not in sql_block["rationale"]
+    assert "289" not in sql_block["rationale"]
+    assert sql_block["rationale"] == "Counting the #,# electors in part #"
+    # The SQL itself stays verbatim -- showing the exact query is the point.
+    assert sql_block["sql"] == "SELECT COUNT(*) FROM voters WHERE part_number = '289'"
+
+
+def test_permitted_from_profile_seeds_the_guard_with_the_roll_profiles_own_figures():
+    # IMPORTANT 3: `profile_sentence` puts real counts straight into the
+    # system prompt, bypassing tool_results entirely -- without this seed a
+    # model that echoes those exact figures back gets its correct sentence
+    # discarded, because `permitted_numbers(tool_results)` alone never saw
+    # them.
+    profile = {
+        "voters": 1093, "files": 0, "pages": 12, "records": 1093,
+        "parts": ["11", "12"], "part_count": 2,
+        "constituencies": [], "constituency_count": 0,
+    }
+    allowed, percentages = context.permitted_from_profile(profile)
+    assert "1093" in allowed
+    assert "0" in allowed
+    assert "12" in allowed
 
 
 def test_deeply_nested_results_do_not_crash():

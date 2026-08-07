@@ -31,7 +31,7 @@ from ..nvidia_ai_service import (
 )
 from . import tools as _tools  # noqa: F401  (registers every tool)
 from .blocks import blocks_for
-from .context import profile_sentence, roll_profile
+from .context import permitted_from_profile, profile_sentence, roll_profile
 from .guards import (
     bind_citations,
     collect_citations,
@@ -98,15 +98,42 @@ class AgentEvent:
 
 
 def _sentences(buffer: str) -> tuple[List[str], str]:
-    """Split off the complete sentences, keeping the unfinished tail."""
+    """Split off the complete sentences, keeping the unfinished tail.
+
+    A terminator (`.!?`) only ends a sentence when it is followed by
+    whitespace or the end of the buffer -- the same rule `guards._SENTENCE`
+    applies. Without that lookahead, a decimal figure like "89.7" or "0.412"
+    is itself a false sentence boundary: the digits before and after the dot
+    get scanned as two separate fragments by `strip_unverified_numbers`, so
+    a real figure fails the guard (neither half is independently permitted)
+    or a fabricated one slips through (whichever half's digits happen to
+    coincide with something permitted). Since the buffer is streamed
+    token-by-token, a terminator at the very end of what has arrived so far
+    is genuinely ambiguous -- "0.4" could still become "0.412" on the next
+    delta -- so it is treated as unfinished and left in the tail rather than
+    guessed at; it flushes once more text (or the stream's end) confirms it.
+    A newline always ends a sentence outright, matching `guards._SENTENCE`'s
+    `\\n+` alternative.
+    """
     out: List[str] = []
     start = 0
+    n = len(buffer)
     for i, ch in enumerate(buffer):
-        if ch in ".!?\n":
+        if ch == "\n":
             piece = buffer[start : i + 1].strip()
             if piece:
                 out.append(piece)
             start = i + 1
+        elif ch in ".!?":
+            j = i + 1
+            if j >= n:
+                # Could still be a decimal point mid-figure; wait for more.
+                continue
+            if buffer[j].isspace():
+                piece = buffer[start:j].strip()
+                if piece:
+                    out.append(piece)
+                start = j
     return out, buffer[start:]
 
 
@@ -202,10 +229,12 @@ def run_agent(
     # Until it is wired up there, `roll_profile`'s 60-second TTL is the only
     # staleness bound a caller here gets -- accepted, not overlooked.
     try:
-        profile = profile_sentence(roll_profile(session))
+        profile_dict = roll_profile(session)
     except Exception:
         logger.exception("Could not build the roll profile")
-        profile = ""
+        profile_dict = {}
+    profile = profile_sentence(profile_dict)
+    profile_allowed, profile_percentages = permitted_from_profile(profile_dict)
 
     system = _SYSTEM.format(profile=profile)
     if native is False:
@@ -401,8 +430,13 @@ def run_agent(
     # --- write the answer ---------------------------------------------------
     yield AgentEvent("status", {"message": "Writing"})
 
-    allowed = permitted_numbers(tool_results)
-    percentages = permitted_percentages(tool_results)
+    # Unioned with the roll-profile seed built above: those counts were
+    # injected into the system prompt directly, never passed through a tool
+    # call, so `tool_results` alone would not contain them -- see
+    # `context.permitted_from_profile` for why a model correctly echoing a
+    # figure it was handed would otherwise fail its own answer's guard.
+    allowed = permitted_numbers(tool_results) | profile_allowed
+    percentages = permitted_percentages(tool_results) | profile_percentages
     known = collect_citations(tool_results)
 
     messages.append(

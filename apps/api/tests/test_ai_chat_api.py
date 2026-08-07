@@ -220,6 +220,70 @@ def test_budget_exhausted_and_provider_notice_are_streamed_and_persisted(
     client.delete(f"/api/ai/threads/{newest['id']}")
 
 
+def test_the_fast_path_strips_fabricated_figures_and_ghost_citations(client_as, monkeypatch):
+    """CRITICAL 2: `_fast_path` used to yield `query_nvidia_copilot`'s content
+    verbatim -- no `strip_unverified_numbers`, no `bind_citations`. A
+    fabricated figure or an invented `[[v:...]]` marker reached the wire and
+    was persisted unchanged. This reproduces the finding's own probe: a
+    stubbed model producing a fabricated part count, a fabricated percentage,
+    and a citation to a record no tool ever returned.
+    """
+    import json as json_mod
+
+    from app.routers import ai_chat
+
+    monkeypatch.setattr(ai_chat, "classify", lambda *a, **k: "howto")
+    monkeypatch.setattr(
+        ai_chat,
+        "query_nvidia_copilot",
+        lambda *a, **k: {
+            "reply": (
+                "Part 289 has about 412 electors, roughly 87% of them verified. "
+                "[[v:ghost-elector-1]] is one of them."
+            )
+        },
+    )
+    monkeypatch.setattr(
+        ai_chat, "roll_profile",
+        lambda session: {"voters": 0, "files": 0, "pages": 0, "records": 0},
+        raising=False,
+    )
+
+    client = client_as("owner")
+    with client.stream(
+        "POST", "/api/ai/chat", json={"message": "how do i see the total voters in part 289?"}
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    # Parse the `done` frame's own `content` rather than substring-matching the
+    # whole SSE body: the body also carries a random-hex `thread_id`, which can
+    # coincidentally contain a run like "87" or "289" and make a raw substring
+    # check flaky in a way that has nothing to do with the guard under test.
+    done_data = None
+    for frame in body.replace("\r\n", "\n").split("\n\n"):
+        if frame.startswith("event: done"):
+            data_line = next(line for line in frame.splitlines() if line.startswith("data: "))
+            done_data = json_mod.loads(data_line[len("data: "):])
+    assert done_data is not None, f"no done frame in SSE body: {body!r}"
+    content = done_data["content"]
+
+    assert "412" not in content
+    assert "289" not in content
+    assert "87" not in content
+    assert "ghost-elector-1" not in content
+    assert "[[v:" not in content
+
+    threads = client.get("/api/ai/threads").json()["threads"]
+    newest = threads[0]
+    replay = client.get(f"/api/ai/threads/{newest['id']}").json()
+    assistant_content = replay["messages"][1]["content"]
+    assert "412" not in assistant_content
+    assert "ghost-elector-1" not in assistant_content
+
+    client.delete(f"/api/ai/threads/{newest['id']}")
+
+
 def test_a_client_disconnecting_right_after_done_does_not_lose_the_reply(client_as, monkeypatch):
     """Regression: persistence used to happen *after* the `done` frame was
     handed to Starlette for sending. A well-behaved client is entitled to

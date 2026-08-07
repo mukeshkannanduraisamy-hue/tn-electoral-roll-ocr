@@ -26,6 +26,8 @@ from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 from ..auth import require_user
 from ..db import ChatMessageRow, ChatThreadRow, UserRow, get_session
 from ..services import app_settings
+from ..services.ai_agent.context import permitted_from_profile, roll_profile
+from ..services.ai_agent.guards import bind_citations, strip_unverified_numbers
 from ..services.ai_agent.loop import AgentEvent, run_agent
 from ..services.ai_agent.router import classify
 from ..services.nvidia_ai_service import query_nvidia_copilot
@@ -143,18 +145,49 @@ def _history(session: Session, thread_id: str) -> List[Dict[str, str]]:
     return [{"role": m.role, "content": m.content} for m in reversed(rows)]
 
 
-def _fast_path(message: str, creds, context: Optional[Dict[str, Any]]) -> Iterator[AgentEvent]:
+def _fast_path(
+    session: Session, message: str, creds, context: Optional[Dict[str, Any]]
+) -> Iterator[AgentEvent]:
     """Conversational and how-to messages, answered as they always were.
 
     This is the 0.44s path from commit 1784600. It does not touch the database
-    and does not enter the loop, so it never runs out of tool-call budget and
-    never emits a provider notice.
+    for tool calls and does not enter the agent loop, so it never runs out of
+    tool-call budget and never emits a provider notice.
+
+    It still runs the same two guards the agent loop runs before a reply
+    leaves the server: `query_nvidia_copilot` is an ungrounded model call, not
+    a tool call, so its `reply` can contain a fabricated figure or an invented
+    `[[v:...]]` citation exactly as easily as the loop's own draft answer can.
+    Reachability is not theoretical -- the router sends a data question here
+    whenever it merely resembles a how-to phrasing (e.g. "how do i see the
+    total voters in part 289?" matches the "how do i" cue). The panel's own
+    copy claims every figure came from SQL and is enforced server-side; that
+    was false for this path until now.
+
+    The numeric guard is seeded from the roll profile alone, via
+    `context.permitted_from_profile` -- the same seed the agent loop unions
+    into its own tool-result numbers (see IMPORTANT 3). No tool ran on this
+    path, so that seed is *all* this path can point to; it is not itself
+    fetched via a "tool call" the operator would see reflected anywhere, so
+    a citation marker is never legitimate here -- `bind_citations` is called
+    with an empty known-set, which strips every marker unconditionally.
     """
     result = query_nvidia_copilot(message, creds, context)
     reply = str(result.get("reply") or "")
-    yield AgentEvent("token", {"text": reply})
+
+    try:
+        profile = roll_profile(session)
+    except Exception:
+        logger.exception("Could not build the roll profile for the fast-path guard")
+        profile = {}
+    allowed, percentages = permitted_from_profile(profile)
+
+    guarded, _dropped = strip_unverified_numbers(reply, allowed, percentages)
+    guarded, _cited = bind_citations(guarded, {})
+
+    yield AgentEvent("token", {"text": guarded})
     yield AgentEvent(
-        "done", {"content": reply, "blocks": [], "citations": [], "tool_trace": []}
+        "done", {"content": guarded, "blocks": [], "citations": [], "tool_trace": []}
     )
 
 
@@ -210,7 +243,7 @@ async def chat(
         yield {"event": "status", "data": json.dumps({"thread_id": thread_id, "intent": intent})}
 
         events = (
-            _fast_path(message, creds, payload.context)
+            _fast_path(session, message, creds, payload.context)
             if intent in ("smalltalk", "howto")
             else run_agent(
                 session,
