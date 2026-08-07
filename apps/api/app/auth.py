@@ -197,7 +197,7 @@ def require_user(
     imply the credentials were understood but insufficient.
     """
     if not settings.auth_enabled:
-        return _anonymous_user()
+        return _anonymous_user(session)
 
     user = _lookup_user(session, ocr_session)
     if user is None:
@@ -209,15 +209,32 @@ def require_user(
     return user
 
 
-def _anonymous_user() -> UserRow:
-    """Stand-in used only when auth is deliberately disabled for local dev."""
-    return UserRow(
+def _anonymous_user(session: Session) -> UserRow:
+    """Stand-in used only when auth is deliberately disabled for local dev.
+
+    Persisted rather than fabricated in memory. Most routes only read through
+    this user, and a detached row served those fine — but a row that records
+    who owns something needs a real foreign key to point at. The assistant's
+    `chat_threads.user_id` references `users.id`, foreign keys are enforced
+    (see `db._configure_sqlite`), and an unsaved stand-in made every chat
+    request fail with "FOREIGN KEY constraint failed". Creating it once here
+    keeps auth-disabled mode usable without any caller having to know it is a
+    special case.
+    """
+    existing = session.get(UserRow, "anonymous")
+    if existing is not None:
+        return existing
+
+    user = UserRow(
         id="anonymous",
         username="anonymous",
         password_hash="",
         display_name="Anonymous (auth disabled)",
         is_active=True,
     )
+    session.add(user)
+    session.commit()
+    return user
 
 
 # ---------------------------------------------------------------------------
