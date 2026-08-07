@@ -21,6 +21,7 @@ import {
   Home,
   UserCheck,
   Trash2,
+  Sparkles,
 } from "lucide-react";
 
 interface VoterStats {
@@ -164,6 +165,131 @@ export function DashboardView() {
                 Import PDF
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* Interactive End-to-End Workflow Pipeline Diagram */}
+        <div className="rounded-2xl border border-indigo-500/30 bg-slate-900/80 dark:bg-slate-950/80 backdrop-blur-md p-5 shadow-xl">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-sm font-extrabold text-white flex items-center gap-2">
+                <Layers className="w-4 h-4 text-indigo-400" />
+                <span>Interactive OCR & Electoral Workflow Pipeline</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Click any workflow node to jump directly to that stage in the extraction and intelligence pipeline.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-[10px] font-bold text-indigo-300 bg-indigo-500/10 px-2.5 py-1 rounded-lg border border-indigo-500/20">
+              <Activity className="w-3 h-3 text-indigo-400 animate-pulse" />
+              <span>Pipeline Active</span>
+            </div>
+          </div>
+
+          {/* Pipeline Nodes Flow */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 relative">
+            {/* Step 1 Node */}
+            <button
+              type="button"
+              onClick={() => setActiveTab("table" as any)}
+              className="group text-left p-3.5 rounded-xl border border-indigo-500/30 bg-slate-800/60 hover:bg-indigo-900/40 hover:border-indigo-400 transition-all shadow-md relative overflow-hidden"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center font-bold text-xs group-hover:scale-110 transition-transform">
+                  01
+                </div>
+                <FileText className="w-4 h-4 text-indigo-400" />
+              </div>
+              <div className="text-xs font-bold text-white group-hover:text-indigo-200">1. PDF Storage</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{totalDocs} File{totalDocs === 1 ? "" : "s"} uploaded</div>
+              <div className="mt-2.5 text-[10px] font-semibold text-indigo-300 flex items-center gap-1">
+                <span>Manage files</span>
+                <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+            </button>
+
+            {/* Step 2 Node */}
+            <button
+              type="button"
+              onClick={() => setActiveTab("page" as any)}
+              className="group text-left p-3.5 rounded-xl border border-violet-500/30 bg-slate-800/60 hover:bg-violet-900/40 hover:border-violet-400 transition-all shadow-md relative overflow-hidden"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-8 h-8 rounded-lg bg-violet-500/20 text-violet-300 flex items-center justify-center font-bold text-xs group-hover:scale-110 transition-transform">
+                  02
+                </div>
+                <Zap className="w-4 h-4 text-violet-400" />
+              </div>
+              <div className="text-xs font-bold text-white group-hover:text-violet-200">2. OCR Engine</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{totalPages} Pages extracted</div>
+              <div className="mt-2.5 text-[10px] font-semibold text-violet-300 flex items-center gap-1">
+                <span>Inspect BBoxes</span>
+                <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+            </button>
+
+            {/* Step 3 Node */}
+            <button
+              type="button"
+              onClick={() => setActiveTab("review" as any)}
+              className="group text-left p-3.5 rounded-xl border border-rose-500/30 bg-slate-800/60 hover:bg-rose-900/40 hover:border-rose-400 transition-all shadow-md relative overflow-hidden"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-8 h-8 rounded-lg bg-rose-500/20 text-rose-300 flex items-center justify-center font-bold text-xs group-hover:scale-110 transition-transform">
+                  03
+                </div>
+                <AlertTriangle className="w-4 h-4 text-rose-400" />
+              </div>
+              <div className="text-xs font-bold text-white group-hover:text-rose-200">3. Review Queue</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Confidence anomalies</div>
+              <div className="mt-2.5 text-[10px] font-semibold text-rose-300 flex items-center gap-1">
+                <span>Fix anomalies</span>
+                <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+            </button>
+
+            {/* Step 4 Node */}
+            <button
+              type="button"
+              onClick={() => setActiveTab("voters" as any)}
+              className="group text-left p-3.5 rounded-xl border border-emerald-500/30 bg-slate-800/60 hover:bg-emerald-900/40 hover:border-emerald-400 transition-all shadow-md relative overflow-hidden"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center font-bold text-xs group-hover:scale-110 transition-transform">
+                  04
+                </div>
+                <Users className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div className="text-xs font-bold text-white group-hover:text-emerald-200">4. Voter Database</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{totalVoters.toLocaleString()} Curated roll</div>
+              <div className="mt-2.5 text-[10px] font-semibold text-emerald-300 flex items-center gap-1">
+                <span>Browse Voters</span>
+                <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+            </button>
+
+            {/* Step 5 Node */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("analytics" as any);
+                window.dispatchEvent(new CustomEvent("vi-mc:open-ai-assistant"));
+              }}
+              className="group text-left p-3.5 rounded-xl border border-amber-500/30 bg-slate-800/60 hover:bg-amber-900/40 hover:border-amber-400 transition-all shadow-md relative overflow-hidden"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center font-bold text-xs group-hover:scale-110 transition-transform">
+                  05
+                </div>
+                <Sparkles className="w-4 h-4 text-amber-400" />
+              </div>
+              <div className="text-xs font-bold text-white group-hover:text-amber-200">5. AI Analyst</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">SQL tools & Analytics</div>
+              <div className="mt-2.5 text-[10px] font-semibold text-amber-300 flex items-center gap-1">
+                <span>Query AI</span>
+                <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+            </button>
           </div>
         </div>
 

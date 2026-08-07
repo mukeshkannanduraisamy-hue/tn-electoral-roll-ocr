@@ -19,6 +19,7 @@ import { useOcrStore } from "@/store/useOcrStore";
 
 interface NavItem {
   id: string;
+  stepNum: string;
   label: string;
   icon: React.ElementType;
   badge?: number | string;
@@ -26,21 +27,21 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, group: "main" },
-  { id: "voters", label: "Voters", icon: Users, group: "main" },
-  { id: "polling_stations", label: "Polling Stations", icon: Building2, group: "main" },
-  { id: "table", label: "Documents", icon: FileText, group: "main" },
-  { id: "analytics", label: "Analytics", icon: BarChart3, group: "insights" },
-  { id: "page", label: "Page Viewer", icon: Eye, group: "tools" },
-  { id: "review", label: "Review Queue", icon: ClipboardCheck, group: "tools" },
-  { id: "settings", label: "Settings", icon: Settings, group: "system" },
+  { id: "dashboard", stepNum: "01", label: "Dashboard", icon: LayoutDashboard, group: "stage1" },
+  { id: "table", stepNum: "02", label: "Documents", icon: FileText, group: "stage2" },
+  { id: "page", stepNum: "03", label: "Page Viewer", icon: Eye, group: "stage2" },
+  { id: "review", stepNum: "04", label: "Review Queue", icon: ClipboardCheck, group: "stage2" },
+  { id: "voters", stepNum: "05", label: "Voter Roll", icon: Users, group: "stage3" },
+  { id: "polling_stations", stepNum: "06", label: "Polling Stations", icon: Building2, group: "stage3" },
+  { id: "analytics", stepNum: "07", label: "Analytics", icon: BarChart3, group: "stage4" },
+  { id: "settings", stepNum: "08", label: "Settings", icon: Settings, group: "stage4" },
 ];
 
 const GROUP_LABELS: Record<string, string> = {
-  main: "Intelligence",
-  insights: "Insights",
-  tools: "Tools",
-  system: "System",
+  stage1: "1. Overview",
+  stage2: "2. PDF & OCR Extraction",
+  stage3: "3. Electoral Database",
+  stage4: "4. Intelligence & Config",
 };
 
 interface SidebarProps {
@@ -51,7 +52,6 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => {
   const { activeTab, setActiveTab, files } = useOcrStore();
 
-  const voterCount = files.reduce((acc, f) => acc + (f.page_count || 0), 0);
   const docCount = files.length;
 
   const getBadge = (id: string) => {
@@ -64,7 +64,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
     onClose?.();
   };
 
-  const groups = ["main", "insights", "tools", "system"];
+  const groups = ["stage1", "stage2", "stage3", "stage4"];
 
   return (
     <aside
@@ -104,6 +104,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
                     onClick={() => handleNav(item.id)}
                     className={`vimc-sidebar-item w-full text-left ${isActive ? "active" : ""}`}
                   >
+                    <span className="text-[9px] font-mono font-bold text-white/30 group-hover:text-white/60 shrink-0 w-4">
+                      {item.stepNum}
+                    </span>
                     <Icon className="w-4 h-4 shrink-0" />
                     <span className="flex-1 truncate">{item.label}</span>
                     {badge !== undefined && (

@@ -23,6 +23,7 @@ import { AnalyticsView } from "@/components/AnalyticsView";
 import { PollingStationsView } from "@/components/PollingStationsView";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
 import { FloatingAiChatbot } from "@/components/FloatingAiChatbot";
+import { WorkflowStepper } from "@/components/WorkflowStepper";
 
 export default function Home() {
   const { loadFiles, activeTab, setActiveTab, setIsShortcutsOpen, isShortcutsOpen } = useOcrStore();
@@ -128,15 +129,18 @@ export default function Home() {
         </button>
 
         {/* Main content area */}
-        <main className="flex-1 flex overflow-hidden min-w-0">
-          {activeTab === "dashboard"        && <DashboardView />}
-          {activeTab === "voters"           && <VotersView />}
-          {activeTab === "polling_stations" && <PollingStationsView />}
-          {activeTab === "table"            && <DocumentView />}
-          {activeTab === "analytics"        && <AnalyticsView />}
-          {activeTab === "page"             && <PageView />}
-          {activeTab === "review"           && <ReviewQueue />}
-          {activeTab === "settings"         && <SettingsView />}
+        <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+          <WorkflowStepper />
+          <div className="flex-1 flex overflow-hidden min-w-0">
+            {activeTab === "dashboard"        && <DashboardView />}
+            {activeTab === "voters"           && <VotersView />}
+            {activeTab === "polling_stations" && <PollingStationsView />}
+            {activeTab === "table"            && <DocumentView />}
+            {activeTab === "analytics"        && <AnalyticsView />}
+            {activeTab === "page"             && <PageView />}
+            {activeTab === "review"           && <ReviewQueue />}
+            {activeTab === "settings"         && <SettingsView />}
+          </div>
         </main>
       </div>
 
