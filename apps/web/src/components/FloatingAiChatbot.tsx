@@ -14,7 +14,7 @@
  */
 
 import React, { useEffect, useRef, useState } from "react";
-import { Bot, ChevronDown, Send, Sparkles, Square, User } from "lucide-react";
+import { AlertTriangle, Bot, ChevronDown, Clock, Send, Sparkles, Square, User } from "lucide-react";
 import { getAiSettings } from "@/lib/voterApi";
 import { useAiChat } from "@/hooks/useAiChat";
 import { useOcrStore } from "@/store/useOcrStore";
@@ -163,6 +163,18 @@ export const FloatingAiChatbot: React.FC = () => {
                       <AnswerText text={msg.content} citations={msg.citations} />
                     ) : (
                       <p className="whitespace-pre-wrap">{msg.content}</p>
+                    )}
+                    {msg.role === "assistant" && msg.provider_notice && (
+                      <p className="mt-1.5 flex items-start gap-1 text-[10px] text-amber-400/90">
+                        <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                        <span>The provider stopped early: {msg.provider_notice}</span>
+                      </p>
+                    )}
+                    {msg.role === "assistant" && msg.budget_exhausted && (
+                      <p className="mt-1.5 flex items-center gap-1 text-[10px] text-slate-500">
+                        <Clock className="w-3 h-3 shrink-0" />
+                        <span>Ran out of steps before finishing — the answer may be incomplete.</span>
+                      </p>
                     )}
                     {msg.role === "assistant" && <ToolTrace steps={msg.tool_trace} />}
                   </div>

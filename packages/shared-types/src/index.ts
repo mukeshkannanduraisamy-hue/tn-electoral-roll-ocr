@@ -811,6 +811,13 @@ export interface ChatMessage {
   citations: ChatCitation[];
   tool_trace: ChatToolStep[];
   created_at?: string | null;
+  /** True when the turn hit MAX_ROUNDS/MAX_TOOL_CALLS/the deadline before finishing. */
+  budget_exhausted?: boolean;
+  /** Set when `stream_chat` failed outright (rate limit, timeout, ...) and the
+   *  turn's content is a bracketed provider notice rather than assistant prose.
+   *  Distinguishes "the provider stopped early" from "the figures didn't support
+   *  an answer" -- the two collapse to the same empty `verified` result server-side. */
+  provider_notice?: string | null;
   /** Set locally while the reply is still streaming. */
   pending?: boolean;
   /** Set when the turn ended in an error rather than an answer. */
@@ -834,7 +841,7 @@ export type AgentStreamEvent =
   | { type: "token"; data: { text: string } }
   | { type: "blocks"; data: { blocks: ChatBlock[] } }
   | { type: "citations"; data: { citations: ChatCitation[] } }
-  | { type: "done"; data: { content: string; blocks: ChatBlock[]; citations: ChatCitation[]; tool_trace: ChatToolStep[]; budget_exhausted?: boolean } }
+  | { type: "done"; data: { content: string; blocks: ChatBlock[]; citations: ChatCitation[]; tool_trace: ChatToolStep[]; budget_exhausted?: boolean; provider_notice?: string | null } }
   | { type: "error"; data: { message: string } };
 
 

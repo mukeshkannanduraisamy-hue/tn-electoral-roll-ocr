@@ -152,6 +152,8 @@ export function useAiChat() {
                   blocks: event.data.blocks,
                   citations: event.data.citations,
                   tool_trace: event.data.tool_trace,
+                  budget_exhausted: event.data.budget_exhausted,
+                  provider_notice: event.data.provider_notice,
                   pending: false,
                 });
                 void refreshThreads();
