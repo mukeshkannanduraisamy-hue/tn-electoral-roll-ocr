@@ -89,31 +89,33 @@ class PageDetailsArgs(BaseModel):
     page_id: Optional[str] = None
     file_id: Optional[str] = None
     page_number: Optional[int] = None
-    failed_only: bool = Field(False, description="With file_id, list only failed pages")
+    failed_only: bool = Field(
+        False, description="List only failed pages (works with or without file_id)"
+    )
 
 
 @register(
     name="page_details",
     description=(
-        "One page, or the pages of a file: page type, classification "
-        "confidence, OCR duration, error, and how many records it produced. "
-        "Set failed_only to list just the pages that failed. Errors if "
-        "file_id does not match a real file; an empty list means the file "
-        "exists but nothing matched page_number/failed_only. Lists at most "
-        f"{MAX_PAGES} pages at a time; the response's `total` and "
-        "`truncated` say whether more exist than were returned."
+        "One page, the pages of a file, or -- with no arguments -- pages "
+        "across the whole corpus: page type, classification confidence, OCR "
+        "duration, error, and how many records it produced. Set failed_only "
+        "to list just the pages that failed; this works with or without "
+        "file_id, so 'which pages failed OCR' can be asked with no "
+        "arguments at all. Errors if file_id is given but does not match a "
+        "real file; an empty list means nothing matched the filter. Lists "
+        f"at most {MAX_PAGES} pages at a time, ordered by file then page "
+        "number; the response's `total` and `truncated` say whether more "
+        "exist than were returned."
     ),
     args_model=PageDetailsArgs,
     label="Inspecting pages",
 )
 def page_details(session: Session, args: PageDetailsArgs) -> Dict[str, Any]:
-    if not args.page_id and not args.file_id:
-        raise ToolError("Provide page_id or file_id (optionally with page_number).")
-
     base_stmt = select(PageRow)
     if args.page_id:
         base_stmt = base_stmt.where(PageRow.id == args.page_id.strip())
-    else:
+    elif args.file_id:
         file_id = args.file_id.strip()
         # An unknown file and a real file with no matching pages are
         # different facts -- "no such file" vs. "that file has no failed
@@ -131,10 +133,19 @@ def page_details(session: Session, args: PageDetailsArgs) -> Dict[str, Any]:
             base_stmt = base_stmt.where(PageRow.page_number == args.page_number)
         if args.failed_only:
             base_stmt = base_stmt.where(PageRow.status == "failed")
+    else:
+        # Neither page_id nor file_id: survey the whole corpus. This is the
+        # only way "which pages failed OCR?" (a corpus-wide question) can be
+        # answered at all -- previously this branch raised, so a model asking
+        # the obvious question got the same refusal on every retry.
+        if args.page_number is not None:
+            base_stmt = base_stmt.where(PageRow.page_number == args.page_number)
+        if args.failed_only:
+            base_stmt = base_stmt.where(PageRow.status == "failed")
 
     total = _total(session, base_stmt)
     pages = session.execute(
-        base_stmt.order_by(PageRow.page_number).limit(MAX_PAGES)
+        base_stmt.order_by(PageRow.file_id, PageRow.page_number).limit(MAX_PAGES)
     ).scalars().all()
     if args.page_id and not pages:
         raise ToolError(f"No page with id {args.page_id!r}.")

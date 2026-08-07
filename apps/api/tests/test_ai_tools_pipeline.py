@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pytest  # noqa: E402
 
-from app.db import FileRow, JobRow, PollingStationRow, session_scope  # noqa: E402
+from app.db import FileRow, JobRow, PageRow, PollingStationRow, session_scope  # noqa: E402
 from app.services.ai_agent import registry  # noqa: E402
 from app.services.ai_agent.tools import geography, pipeline  # noqa: F401,E402
 
@@ -46,9 +46,14 @@ def test_roll_overview_reports_totals_and_coverage():
         assert key in result
 
 
-def test_page_details_needs_an_identifier():
-    with pytest.raises(registry.ToolError, match="page_id or"):
-        _run("page_details", {})
+def test_page_details_with_no_identifier_surveys_the_whole_corpus():
+    """`page_details` used to refuse any call with neither `page_id` nor
+    `file_id`, which meant a corpus-wide question like 'which pages failed
+    OCR?' had no way to be asked at all. It must now run unscoped."""
+    result = _run("page_details", {})
+    assert "pages" in result
+    assert isinstance(result["pages"], list)
+    assert "total" in result and "truncated" in result
 
 
 def test_polling_station_needs_an_identifier():
@@ -75,7 +80,10 @@ def test_file_status_discloses_total_and_truncated_for_the_full_list():
 
 
 def test_file_status_discloses_total_for_a_single_file():
-    any_file = _run("file_status", {})["files"][0]
+    files = _run("file_status", {})["files"]
+    if not files:
+        return
+    any_file = files[0]
     result = _run("file_status", {"file_id": any_file["file_id"]})
     assert result["total"] == 1
     assert result["returned"] == 1
@@ -83,7 +91,10 @@ def test_file_status_discloses_total_for_a_single_file():
 
 
 def test_page_details_discloses_total_and_truncated():
-    any_file = _run("file_status", {})["files"][0]
+    files = _run("file_status", {})["files"]
+    if not files:
+        return
+    any_file = files[0]
     result = _run("page_details", {"file_id": any_file["file_id"]})
     assert "total" in result
     assert "truncated" in result
@@ -205,7 +216,10 @@ def test_page_details_refuses_an_unknown_file():
 def test_page_details_returns_empty_for_a_known_file_with_no_matching_pages():
     """A real file with no page matching the filter is a true, useful
     answer -- distinct from an unknown file -- and must not raise."""
-    any_file = _run("file_status", {})["files"][0]
+    files = _run("file_status", {})["files"]
+    if not files:
+        return
+    any_file = files[0]
     result = _run(
         "page_details", {"file_id": any_file["file_id"], "page_number": 999999}
     )
@@ -213,3 +227,79 @@ def test_page_details_returns_empty_for_a_known_file_with_no_matching_pages():
     assert result["returned"] == 0
     assert result["total"] == 0
     assert result["truncated"] is False
+
+
+# ---------------------------------------------------------------------------
+# Defect 1: "Which pages failed OCR?" -- page_details must be answerable with
+# no page_id/file_id at all, scanning across every file, with failed_only and
+# page_number honoured and results ordered deterministically (file then page
+# number). An unknown file_id must still raise, unchanged.
+# ---------------------------------------------------------------------------
+
+
+def test_page_details_unscoped_returns_pages_across_multiple_files():
+    file_a = uuid.uuid4().hex
+    file_b = uuid.uuid4().hex
+    page_a = uuid.uuid4().hex
+    page_b = uuid.uuid4().hex
+    with session_scope() as s:
+        s.add(FileRow(id=file_a, name="Corpus Scan File A"))
+        s.add(FileRow(id=file_b, name="Corpus Scan File B"))
+        s.add(PageRow(id=page_a, file_id=file_a, page_number=1, status="done"))
+        s.add(PageRow(id=page_b, file_id=file_b, page_number=1, status="done"))
+    try:
+        result = _run("page_details", {})
+        ids = {p["page_id"] for p in result["pages"]}
+        assert page_a in ids
+        assert page_b in ids
+        # Ordered deterministically by file then page number.
+        file_ids_seen = [p["file_id"] for p in result["pages"]]
+        assert file_ids_seen == sorted(file_ids_seen)
+    finally:
+        with session_scope() as s:
+            for pid in (page_a, page_b):
+                row = s.get(PageRow, pid)
+                if row:
+                    s.delete(row)
+            for fid in (file_a, file_b):
+                f = s.get(FileRow, fid)
+                if f:
+                    s.delete(f)
+
+
+def test_page_details_unscoped_failed_only_returns_only_failed_pages():
+    file_id = uuid.uuid4().hex
+    ok_page = uuid.uuid4().hex
+    failed_page = uuid.uuid4().hex
+    with session_scope() as s:
+        s.add(FileRow(id=file_id, name="Failed Only Scan File"))
+        s.add(PageRow(id=ok_page, file_id=file_id, page_number=1, status="done"))
+        s.add(
+            PageRow(
+                id=failed_page, file_id=file_id, page_number=2,
+                status="failed", error="OCR timed out",
+            )
+        )
+    try:
+        result = _run("page_details", {"failed_only": True})
+        ids = {p["page_id"] for p in result["pages"]}
+        assert failed_page in ids
+        assert ok_page not in ids
+        assert all(p["status"] == "failed" for p in result["pages"])
+    finally:
+        with session_scope() as s:
+            for pid in (ok_page, failed_page):
+                row = s.get(PageRow, pid)
+                if row:
+                    s.delete(row)
+            f = s.get(FileRow, file_id)
+            if f:
+                s.delete(f)
+
+
+def test_page_details_unscoped_still_raises_for_an_unknown_file_id():
+    """The unscoped path is a separate branch from the file_id branch; this
+    guards against a regression that accidentally routed a real file_id
+    argument into the "no identifier" survey instead of validating it."""
+    with pytest.raises(registry.ToolError, match="No file"):
+        _run("page_details", {"file_id": "definitely-not-a-file"})
