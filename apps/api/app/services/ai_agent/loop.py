@@ -255,6 +255,16 @@ def run_agent(
     trace: List[Dict[str, Any]] = []
     calls_made = 0
     budget_hit = False
+    # Maps a failed call's (tool_name, canonical_args) to the error text it
+    # produced. `json.dumps(..., sort_keys=True, default=str)` canonicalises
+    # the arguments so key order alone cannot make two identical calls look
+    # different. A model that repeats a call verbatim after it already failed
+    # gains nothing by trying again -- the database state has not changed --
+    # so the repeat is not re-executed; it still costs a slot from
+    # MAX_TOOL_CALLS (a free retry loop is still a loop), but the feedback it
+    # gets is explicit about the repeat rather than the same error text a
+    # second time, which evidently read to the model as worth trying again.
+    failed_calls: Dict[tuple, str] = {}
 
     for _round in range(MAX_ROUNDS):
         if time.monotonic() > deadline:
@@ -352,21 +362,37 @@ def run_agent(
                 {"id": call.get("id"), "name": name, "label": label_for(name), "args": args},
             )
 
-            try:
-                result = execute(session, name, args)
-            except ToolError as exc:
-                error_text = str(exc)
-            except Exception as exc:
-                # `registry.execute` already wraps every exception a handler
-                # raises into `ToolError` -- this branch is a belt-and-braces
-                # net against a bug in `execute` itself or a future tool that
-                # forgets that contract. Either way, one broken tool must
-                # degrade to "this step failed" rather than take down the
-                # whole SSE turn the operator is watching.
-                logger.exception("Tool %s failed outside its ToolError contract", name)
-                error_text = f"{name} failed unexpectedly ({type(exc).__name__})."
+            call_key = (name, json.dumps(args, sort_keys=True, default=str))
+            prior_error = failed_calls.get(call_key)
+
+            if prior_error is not None:
+                # Already tried this exact call and it already failed -- do
+                # not spend a database round trip repeating it. The slot is
+                # still charged against the budget above (calls_made already
+                # incremented), so this cannot turn into a free retry loop.
+                error_text = (
+                    f"You already called {name} with these exact arguments and it "
+                    f"failed with: {prior_error} Repeating it will not change the "
+                    "result. Change the arguments or use a different tool."
+                )
             else:
-                error_text = None
+                try:
+                    result = execute(session, name, args)
+                except ToolError as exc:
+                    error_text = str(exc)
+                except Exception as exc:
+                    # `registry.execute` already wraps every exception a handler
+                    # raises into `ToolError` -- this branch is a belt-and-braces
+                    # net against a bug in `execute` itself or a future tool that
+                    # forgets that contract. Either way, one broken tool must
+                    # degrade to "this step failed" rather than take down the
+                    # whole SSE turn the operator is watching.
+                    logger.exception("Tool %s failed outside its ToolError contract", name)
+                    error_text = f"{name} failed unexpectedly ({type(exc).__name__})."
+                else:
+                    error_text = None
+                if error_text is not None:
+                    failed_calls[call_key] = error_text
 
             if error_text is not None:
                 trace.append({"tool": name, "args": args, "ok": False, "error": error_text})

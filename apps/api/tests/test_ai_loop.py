@@ -17,6 +17,7 @@ import pytest  # noqa: E402
 from app.db import session_scope  # noqa: E402
 from app.services.ai_agent import loop  # noqa: E402
 from app.services.app_settings import AiCredentials  # noqa: E402
+from app.services.ai_agent.registry import ToolError  # noqa: E402
 from app.services.nvidia_ai_service import ToolCallOutcome  # noqa: E402
 
 CREDS = AiCredentials(api_key="k", base_url="https://example.invalid/v1", model="test-model")
@@ -292,6 +293,116 @@ def test_every_tool_call_failing_still_yields_a_safe_answer(monkeypatch):
     done = events[-1]
     assert done.type == "done"
     assert done.data["content"]
+
+
+def test_a_repeated_identical_failing_call_is_executed_once_and_then_skipped(monkeypatch):
+    """Defect 2: the model repeating a call verbatim after it already failed
+    used to burn the whole turn -- each repeat cost a round trip and a slot
+    from MAX_TOOL_CALLS for no new information. `execute` must run at most
+    once for a given (tool, canonical args) pair; later identical requests
+    are recognised as repeats (visible in the trace) and skipped without
+    touching the database, but still count against the call budget.
+    """
+    calls = {"n": 0}
+
+    def counting_execute(session, name, args):
+        calls["n"] += 1
+        raise ToolError("No polling station for '289'.")
+
+    monkeypatch.setattr(loop, "execute", counting_execute)
+
+    repeat = [
+        ToolCallOutcome(
+            tool_calls=[
+                {"id": f"c{i}", "name": "polling_station", "arguments": {"part_number": "289"}}
+            ]
+        )
+        for i in range(4)
+    ] + [ToolCallOutcome(content="")]
+    _script(monkeypatch, repeat, answer="I could not find that polling station.")
+
+    events = _drain("which polling station is part 289")
+    results = [e for e in events if e.type == "tool_result"]
+
+    # The underlying tool only ever actually ran once.
+    assert calls["n"] == 1
+    # But every repeated request still shows up in the trace as a tool_result.
+    assert len(results) == 4
+    assert all(r.data["ok"] is False for r in results)
+    # The repeats after the first say plainly that this was already tried.
+    assert "No polling station" in results[0].data["error"]
+    for later in results[1:]:
+        assert "already called" in later.data["error"]
+    assert "done" in _types(events)
+
+
+def test_varying_the_arguments_after_a_failure_is_not_blocked(monkeypatch):
+    """The repeat guard must key on the exact arguments, not just the tool
+    name -- a model that changes its arguments after a failure (a different
+    part_number, say) is exploring, not looping, and must still reach the
+    database.
+    """
+    seen_args = []
+
+    def recording_execute(session, name, args):
+        seen_args.append(dict(args))
+        raise ToolError(f"No polling station for {args.get('part_number')!r}.")
+
+    monkeypatch.setattr(loop, "execute", recording_execute)
+
+    varied = [
+        ToolCallOutcome(
+            tool_calls=[
+                {"id": "c1", "name": "polling_station", "arguments": {"part_number": "289"}}
+            ]
+        ),
+        ToolCallOutcome(
+            tool_calls=[
+                {"id": "c2", "name": "polling_station", "arguments": {"part_number": "290"}}
+            ]
+        ),
+        ToolCallOutcome(content=""),
+    ]
+    _script(monkeypatch, varied, answer="Neither part number matched.")
+
+    events = _drain("which polling station is part 289 or 290")
+    results = [e for e in events if e.type == "tool_result"]
+
+    assert len(seen_args) == 2
+    assert {a["part_number"] for a in seen_args} == {"289", "290"}
+    assert len(results) == 2
+    assert all(r.data["ok"] is False for r in results)
+    assert all("already called" not in r.data["error"] for r in results)
+
+
+def test_the_repeat_guard_still_respects_the_call_budget(monkeypatch):
+    """Skipped repeats must not become a free way around MAX_TOOL_CALLS --
+    each repeat still consumes a slot, so a model that only ever repeats one
+    failing call still gets cut off at the same budget as any other loop.
+    """
+
+    def always_fails(session, name, args):
+        raise ToolError("No polling station for '289'.")
+
+    monkeypatch.setattr(loop, "execute", always_fails)
+
+    repeat = [
+        ToolCallOutcome(
+            tool_calls=[
+                {"id": f"c{i}", "name": "polling_station", "arguments": {"part_number": "289"}}
+            ]
+        )
+        for i in range(20)
+    ] + [ToolCallOutcome(content="")]
+    _script(monkeypatch, repeat, answer="Ran out.")
+
+    events = _drain("keep asking about part 289")
+    tool_calls = [e for e in events if e.type == "tool_call"]
+    tool_results = [e for e in events if e.type == "tool_result"]
+
+    assert len(tool_calls) <= loop.MAX_TOOL_CALLS
+    assert len(tool_results) <= loop.MAX_TOOL_CALLS
+    assert "done" in _types(events)
 
 
 def test_a_tool_that_raises_outside_toolerror_does_not_crash_the_turn(monkeypatch):
