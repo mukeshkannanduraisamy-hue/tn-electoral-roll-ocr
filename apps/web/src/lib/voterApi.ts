@@ -69,7 +69,7 @@ function describe(status: number, body: unknown): string {
 const API_BASE = (
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.NEXT_PUBLIC_API_BASE ||
-  (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") ? "http://localhost:8000" : "")
+  ""
 ).replace(/\/$/, "");
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -139,6 +139,24 @@ function toQuery(query: Record<string, unknown>): string {
   }
   const s = params.toString();
   return s ? `?${s}` : "";
+}
+
+export interface ExtractedOptionPart {
+  part_number: string;
+  voter_count: number;
+  name: string;
+  location: string;
+  pin: string;
+}
+
+export interface ExtractedOptionsResponse {
+  districts?: string[];
+  constituencies: string[];
+  parts_by_ac: Record<string, ExtractedOptionPart[]>;
+}
+
+export function fetchExtractedOptions(): Promise<ExtractedOptionsResponse> {
+  return request<ExtractedOptionsResponse>("/api/voters/extracted-options");
 }
 
 export function listVoters(query: VoterQuery = {}): Promise<VoterPage> {
