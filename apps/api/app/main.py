@@ -204,9 +204,9 @@ async def value_error_handler(_request, exc: ValueError):
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
-# If bundled static frontend exists, mount it at /ui
+# If bundled static frontend exists, mount it at root
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 _static_dir = Path(__file__).resolve().parent.parent / "static"
 if _static_dir.exists():
-    app.mount("/ui", StaticFiles(directory=str(_static_dir), html=True), name="static")
+    app.mount("/", StaticFiles(directory=str(_static_dir), html=True), name="static")
