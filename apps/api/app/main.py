@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 
 from .config import settings
 from .db import init_db, reconcile_interrupted_work
@@ -156,8 +156,11 @@ app.include_router(ai_chat.router, prefix="/api/ai", tags=["ai"], dependencies=P
 
 
 @app.get("/", tags=["meta"])
-def root() -> dict:
+def root():
     """Root endpoint welcoming visitors and providing system links."""
+    static_index = _static_dir / "index.html"
+    if static_index.exists():
+        return FileResponse(static_index)
     return {
         "service": "Tamil Nadu Electoral Roll OCR API",
         "status": "online",
