@@ -35,10 +35,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Dependencies first so the ~1 GB paddle layer is cached across code changes.
-COPY apps/api/requirements.txt ./requirements.txt
+COPY requirements.txt ./requirements.txt
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-COPY apps/api/ ./
+COPY . ./
 
 # Data (SQLite, uploads, rendered pages) and the model cache both belong on a
 # mounted volume; these are only sane defaults if none is provided.
