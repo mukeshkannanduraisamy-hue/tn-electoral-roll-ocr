@@ -36,6 +36,10 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
   onUnauthorized = handler;
 }
 
+export function notifyUnauthorized() {
+  onUnauthorized?.();
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
