@@ -538,13 +538,36 @@ def database_url() -> str:
 
 
 _is_sqlite = database_url().startswith("sqlite")
-_connect_args = {"check_same_thread": False, "timeout": 60} if _is_sqlite else {}
+
+if _is_sqlite:
+    _connect_args: dict = {"check_same_thread": False, "timeout": 60}
+    _engine_kwargs: dict = {}
+else:
+    # PostgreSQL / Supabase pooler: enable TCP keepalives so the connection
+    # is not silently dropped by the pooler or NAT during long promote
+    # operations, and pool_pre_ping so SQLAlchemy recycles stale connections
+    # before a request rather than failing mid-operation.
+    _connect_args = {
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5,
+        "connect_timeout": 30,
+    }
+    _engine_kwargs = {
+        "pool_pre_ping": True,
+        "pool_size": 5,
+        "max_overflow": 10,
+        "pool_timeout": 30,
+        "pool_recycle": 1800,
+    }
 
 engine = create_engine(
     database_url(),
     echo=False,
     future=True,
     connect_args=_connect_args,
+    **_engine_kwargs,
 )
 
 

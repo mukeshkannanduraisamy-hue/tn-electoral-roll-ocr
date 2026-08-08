@@ -199,3 +199,18 @@ def read_settings() -> dict:
 @app.exception_handler(ValueError)
 async def value_error_handler(_request, exc: ValueError):
     return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(_request, exc: Exception):
+    """Return a JSON 500 instead of dropping the TCP connection.
+
+    Without this, an unhandled exception in a synchronous endpoint causes
+    uvicorn to close the socket before sending a response, which the Next.js
+    proxy reports as ECONNRESET / 'socket hang up'.
+    """
+    logger.exception("Unhandled exception: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {type(exc).__name__}: {exc}"},
+    )
