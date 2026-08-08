@@ -18,8 +18,22 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import pytest  # noqa: E402
+
 from app.config import settings  # noqa: E402
 from app.services import ocr_service  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _drop_fake_engines_afterwards():
+    """Clear the cache on the way out, not just on the way in.
+
+    These tests seed the cache with a `FakeEngine`. `monkeypatch` restores
+    `sys.modules`, but the cached object outlives it, so without this any later
+    test doing real OCR silently gets the stub and reads nothing.
+    """
+    yield
+    ocr_service.reset()
 
 
 class FakeEngine:

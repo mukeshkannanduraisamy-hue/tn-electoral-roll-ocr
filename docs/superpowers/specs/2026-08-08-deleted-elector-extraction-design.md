@@ -90,9 +90,17 @@ Gender survived, because it sits at the right end of the line past the stamp.
 This is the likely origin of the implausible ages that commit `812ad57` had to
 coerce to unknown.
 
-**The corruption is high-confidence, so it is silent.** Those three broken age
-lines returned `0.936`, `0.962` and `0.944`. Confidence cannot be the trigger
-for recovery, because by that measure nothing is wrong.
+**The corruption is high-confidence.** Those three broken age lines returned
+`0.936`, `0.962` and `0.944`, against `0.710`-`0.837` for the deletion signal
+itself. Confidence cannot be the trigger for anything here: it would drop the
+signal and keep the damage.
+
+How silent the damage is differs by field, and an earlier draft of this document
+overstated it. A lost age digit leaves a single digit under `MIN_AGE`, so the
+existing range check does reject it -- the elector loses their age rather than
+holding a wrong one. The house number and relation name are the genuinely silent
+cases: `2-2` read as `22` is a valid house number, and `கூளியீப்பன்` is
+valid-looking Tamil. Nothing existing flags either.
 
 ## Design
 
@@ -127,30 +135,53 @@ function returns boxes and not just a count.
 
 ### 2. Validate fields by pattern, never by confidence
 
-The age/gender line gets a strict pattern check: `வயது` then 1–3 digits, then
-`பாலினம்` then a known gender word. All three corrupted lines above fail it;
-all three clean lines pass. House number gets a similar check for the shape
-these rolls actually use (digits, optional `-` or `/`, optional letter suffix).
+The age/gender line is intact when its digits are delimited before the gender
+label; damage shows as a digit run butted straight against Tamil script. All
+three corrupted lines above fail that; all three clean lines pass.
 
-This is the part that matters most, because it is the only thing that detects
-the silent corruption. It is also useful independently of deletions — a pattern
-failure on an unstamped card means something else went wrong.
+The house number check is the one that earns its keep, because it is the only
+thing that sees the silent corruption. `2-2` read as `22` is a valid house
+number, indistinguishable from a real `22` by inspection, so it is **not
+corrected** — it is reported as *not verifiable* and raises a warning against the
+field for a human to check. That only happens where a stamp actually crossed the
+cell; on an unstamped card a bare number is simply a house number.
 
-### 3. Recover only what failed
+Note what this deliberately does not do. It never rewrites a value it cannot
+confirm, and it does not use confidence, which on these cards points the wrong
+way.
 
-When a cell is stamped **and** a field fails its pattern check, subtract the
-stamp components from the cell image and re-OCR that crop. The re-OCR pass
-already exists at `electoral_roll_ta.py:313-331`; it has been unreachable
-because it is gated on `is_deleted == "Yes"`. Fixing detection switches it on,
-but re-OCR of unchanged pixels changes nothing, so removal must happen first.
+### 3. Recover by agreement across re-reads
 
-**This is the part expected to need iteration.** Where the stamp touches a glyph
-the two merge into a single connected component, so removing the stamp risks
-taking the glyph with it. Detection tolerates this because `DELETED` has seven
-letters and the untouched ones are enough; removal does not get that luxury.
-Recovery rate will be measured against a labelled set before any number is
-claimed, and a field that cannot be recovered must be marked unreadable rather
-than left holding a plausible wrong value — a silently wrong age is worse than a
+**Subtracting the stamp was tried first and abandoned.** It recovered one age of
+three, against three of three for what replaced it, and on two cards it left the
+reading worse than doing nothing. The cause is the one predicted above: where a
+stroke touches a glyph the two are one component, and removing the stroke takes
+glyph with it. That module was deleted rather than kept.
+
+What works needs no removal. Re-reading a narrower crop of the same cell recovers
+the digit — the stamp ink is still there, but the recognizer segments the line
+correctly:
+
+    full cell     வயது : 5ஆபீலினம் : ஆண்     ->  5
+    0.55 crop     வயது : 59ஆபிலினம் : ஆண்    -> 59
+
+**No crop width is chosen, because the behaviour is not monotonic.** Across seven
+fractions on three cards, 0.45 and 0.55 recovered every age while 0.50, 0.60 and
+0.65 recovered none. That is the recognizer's internal resizing, not a property
+of the card, so a fixed fraction would be fitted to three samples and would not
+survive a change of DPI or model build.
+
+So several fractions are read, readings that cannot be an age are discarded, and
+a value is accepted only when the survivors agree. The ordering matters: the
+damaged reading is the *majority* on these cards (`5` appears five times against
+two for `59`), so plausibility has to filter before agreement is counted. Reading
+stops as soon as two agree, costing 2-3 OCR passes and about 150 ms per damaged
+cell.
+
+Agreement is not proof — two variants could agree on a wrong-but-plausible age
+and nothing here would catch it. What it rules out is trusting a single lucky
+read. A field that cannot be recovered is left unreadable, and the damaged
+remnant is cleared either way, because a silently wrong age is worse than a
 missing one.
 
 ### 4. Fix the four defects
@@ -185,6 +216,19 @@ both are right, but every disagreement is a genuine defect in one of them.
 
 `score_ground_truth.py` and `build_ground_truth_sheet.py` already exist and
 should carry these fields rather than growing a parallel harness.
+
+**The rolls stay out of the repo.** `PDF/` is gitignored and the cards carry live
+elector names, EPIC numbers and ages, so no fixture copies them in. Tests needing
+real pages skip when the PDF is absent; the always-run tests use synthetic cards
+that reproduce the geometry — a border, a photo box, and large thin-stroked
+rotated text — which is enough to pin the shape logic but not to prove it right.
+Both kinds are needed, and the synthetic ones must never be mistaken for
+validation.
+
+One defect this work exposed: `test_ocr_thread_safety.py` seeded the engine cache
+with a stub and reset it only on entry, so the stub outlived the test. Nothing
+noticed until a test did real OCR after it and silently read nothing. It now
+resets on exit.
 
 ## Open questions
 
