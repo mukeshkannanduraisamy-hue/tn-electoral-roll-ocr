@@ -5,16 +5,10 @@ const backendUrl =
   "http://localhost:8000";
 
 const nextConfig = {
+  output: "export",
   reactStrictMode: true,
   productionBrowserSourceMaps: false,
-  async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${backendUrl.replace(/\/$/, "")}/api/:path*`,
-      },
-    ];
-  },
+  images: { unoptimized: true },
 };
 
 module.exports = nextConfig;
