@@ -553,13 +553,14 @@ else:
         "keepalives_interval": 10,
         "keepalives_count": 5,
         "connect_timeout": 30,
+        "prepare_threshold": None,
     }
     _engine_kwargs = {
         "pool_pre_ping": True,
-        "pool_size": 5,
-        "max_overflow": 10,
+        "pool_size": 10,
+        "max_overflow": 20,
         "pool_timeout": 30,
-        "pool_recycle": 1800,
+        "pool_recycle": 300,
     }
 
 engine = create_engine(

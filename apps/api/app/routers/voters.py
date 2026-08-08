@@ -227,17 +227,22 @@ def voter_stats(
         ).all()
     )
 
-    # Age histogram in decade buckets, computed in SQL rather than by pulling
-    # every row into Python.
-    age_rows = session.execute(
-        select(VoterRow.age).where(VoterRow.age.isnot(None))
-    ).scalars().all()
-    buckets: dict[str, int] = {}
-    for age in age_rows:
-        low = min(int(age) // 10 * 10, 90)
-        buckets[f"{low}-{low + 9}" if low < 90 else "90+"] = (
-            buckets.get(f"{low}-{low + 9}" if low < 90 else "90+", 0) + 1
+    age_counts = session.execute(
+        select(
+            func.floor(VoterRow.age / 10).label("decade"),
+            func.count()
         )
+        .where(VoterRow.age.isnot(None))
+        .group_by("decade")
+    ).all()
+    buckets: dict[str, int] = {}
+    for decade, count in age_counts:
+        if decade is None:
+            continue
+        d = int(decade)
+        low = min(d * 10, 90)
+        label = f"{low}-{low + 9}" if low < 90 else "90+"
+        buckets[label] = buckets.get(label, 0) + count
 
     verified = session.execute(
         select(func.count()).select_from(VoterRow).where(VoterRow.verified.is_(True))
