@@ -461,7 +461,7 @@ def run_agent(
     # call, so `tool_results` alone would not contain them -- see
     # `context.permitted_from_profile` for why a model correctly echoing a
     # figure it was handed would otherwise fail its own answer's guard.
-    allowed = permitted_numbers(tool_results) | profile_allowed
+    allowed = permitted_numbers(tool_results, user_prompt=message) | profile_allowed
     percentages = permitted_percentages(tool_results) | profile_percentages
     known = collect_citations(tool_results)
 

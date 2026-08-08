@@ -72,22 +72,20 @@ def _walk(value: Any, _depth: int = 0) -> Iterable[Any]:
         yield value
 
 
-def permitted_numbers(tool_results: List[Dict[str, Any]]) -> Set[str]:
+def permitted_numbers(
+    tool_results: List[Dict[str, Any]], user_prompt: str | None = None
+) -> Set[str]:
     """Every plain numeric string the model is allowed to echo back.
 
     Generous within the results and closed outside them: a count may legitimately
     be quoted rounded, and an identifier such as an EPIC or a part code contains
-    digits that are not claims about quantity.
-
-    Deliberately does *not* include the x100 rendering of confidence
-    fractions -- see `permitted_percentages`. Merging the two into one set
-    was tried and reverted: it let a fabricated bare count ("72 electors")
-    pass merely because some unrelated confidence score rounded to 72 out of
-    100, which is exactly the fabrication class this module exists to catch.
-    `strip_unverified_numbers` only consults `permitted_percentages` for a
-    digit run actually written with a trailing `%`.
+    digits that are not claims about quantity. Also permits numbers explicitly
+    provided in the user's prompt (e.g., part numbers, serial numbers, ages).
     """
     allowed: Set[str] = set()
+    if user_prompt:
+        for run in _DIGITS.findall(str(user_prompt)):
+            allowed.add(run)
     for scalar in _walk(tool_results):
         if scalar is None or isinstance(scalar, bool):
             continue
