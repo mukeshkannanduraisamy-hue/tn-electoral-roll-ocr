@@ -26,6 +26,7 @@ python-multipart>=0.0.20
 pydantic>=2.10.0
 pydantic-settings>=2.7.0
 sse-starlette>=2.2.0
+huggingface-hub<0.25.0
 
 # --- Persistence -----------------------------------------------------------
 SQLAlchemy>=2.0.0
