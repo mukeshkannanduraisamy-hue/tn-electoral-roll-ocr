@@ -69,7 +69,7 @@ function describe(status: number, body: unknown): string {
 const API_BASE = (
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.NEXT_PUBLIC_API_BASE ||
-  ""
+  "https://tn-electoral-ocr-api.onrender.com"
 ).replace(/\/$/, "");
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

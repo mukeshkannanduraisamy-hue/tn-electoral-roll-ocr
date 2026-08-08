@@ -11,7 +11,7 @@ import {
 const API_BASE = (
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.NEXT_PUBLIC_API_BASE ||
-  ""
+  "https://tn-electoral-ocr-api.onrender.com"
 ).replace(/\/$/, "");
 
 export interface RecordPageResponse {
