@@ -224,7 +224,7 @@ export function VoterProfilePage({ voterId, onBack, onNavigateVoter }: VoterProf
       setVoter(v);
       setEditForm(v);
     } catch {
-      toast.error("Failed to load voter");
+      setVoter(null);
     } finally {
       setLoading(false);
     }

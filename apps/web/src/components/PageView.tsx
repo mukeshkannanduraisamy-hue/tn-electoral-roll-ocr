@@ -84,13 +84,28 @@ export const PageView: React.FC = () => {
     );
   }
 
-  if (isLoading || !page) {
+  if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500 text-sm bg-white dark:bg-slate-950 animate-pulse">
         <div className="flex items-center gap-2">
           <RefreshCw className="w-4 h-4 animate-spin text-indigo-500" />
           <span>Loading page geometry & canvas...</span>
         </div>
+      </div>
+    );
+  }
+
+  if (!page) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-400 dark:text-slate-500 text-sm bg-white dark:bg-slate-950">
+        <Eye className="w-10 h-10 text-slate-400/40" />
+        <p>Page details not found. Select a page from Documents to inspect OCR geometry.</p>
+        <button
+          onClick={() => setActiveTab("table")}
+          className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-sm transition-colors"
+        >
+          View Documents
+        </button>
       </div>
     );
   }
