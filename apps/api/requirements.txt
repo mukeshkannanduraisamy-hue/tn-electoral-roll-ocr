@@ -34,6 +34,7 @@ SQLAlchemy>=2.0.0
 # a backfill -- has no way to reach a database that already exists.
 alembic>=1.14.0
 psycopg[binary]>=3.1.0
+psycopg2-binary>=2.9.0
 
 # --- Authentication --------------------------------------------------------
 bcrypt>=4.2.0,<5

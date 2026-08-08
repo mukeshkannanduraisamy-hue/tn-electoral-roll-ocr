@@ -527,8 +527,12 @@ def database_url() -> str:
     copy in `alembic.ini` is how a migration ends up applied to a different
     database than the one the app is using.
     """
-    if settings.database_url:
-        return settings.database_url
+    import os
+    url = settings.database_url or os.getenv("DATABASE_URL") or os.getenv("OCR_DATABASE_URL") or ""
+    if url:
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://"):]
+        return url
     settings.ensure_dirs()
     return f"sqlite:///{(settings.data_dir / 'ocr.sqlite').as_posix()}"
 
@@ -1206,6 +1210,7 @@ def job_to_schema(row: JobRow) -> Job:
     )
 
 
-@event.listens_for(engine, "begin")
-def _code_begin_immediate(conn):
-    conn.exec_driver_sql("BEGIN IMMEDIATE")
+if _is_sqlite:
+    @event.listens_for(engine, "begin")
+    def _code_begin_immediate(conn):
+        conn.exec_driver_sql("BEGIN IMMEDIATE")
