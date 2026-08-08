@@ -12,3 +12,5 @@ demo = gr.Interface(
 )
 
 app = gr.mount_gradio_app(fastapi_app, demo, path="/")
+
+demo.launch()
