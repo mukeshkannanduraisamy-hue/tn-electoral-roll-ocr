@@ -1,4 +1,5 @@
 import os
+import uvicorn
 import gradio as gr
 from app.main import app as fastapi_app
 
