@@ -11,4 +11,4 @@ demo = gr.Interface(
     description="FastAPI + React Web Application running on Hugging Face Spaces with Supabase PostgreSQL."
 )
 
-app = gr.mount_gradio_app(fastapi_app, demo, path="/status")
+app = gr.mount_gradio_app(fastapi_app, demo, path="/")
