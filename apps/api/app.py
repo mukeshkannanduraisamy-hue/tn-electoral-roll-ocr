@@ -11,7 +11,8 @@ demo = gr.Interface(
     description="FastAPI + React Web Application running on Hugging Face Spaces with Supabase PostgreSQL."
 )
 
-app = gr.mount_gradio_app(fastapi_app, demo, path="/")
+app = gr.mount_gradio_app(fastapi_app, demo, path="/status")
 
-port = int(os.environ.get("PORT", 7860))
-demo.launch(server_name="0.0.0.0", server_port=port)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 7860))
+    uvicorn.run(fastapi_app, host="0.0.0.0", port=port, workers=1)
