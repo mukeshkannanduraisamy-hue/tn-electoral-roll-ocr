@@ -12,3 +12,6 @@ demo = gr.Interface(
 )
 
 app = gr.mount_gradio_app(fastapi_app, demo, path="/")
+
+port = int(os.environ.get("PORT", 7860))
+demo.launch(server_name="0.0.0.0", server_port=port)
