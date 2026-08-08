@@ -202,6 +202,7 @@ async def value_error_handler(_request, exc: ValueError):
 
 
 # If bundled static frontend exists, mount it at root
+from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 _static_dir = Path(__file__).resolve().parent.parent / "static"
 if _static_dir.exists():
