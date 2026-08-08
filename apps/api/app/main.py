@@ -35,13 +35,16 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     settings.ensure_dirs()
-    init_db()
-    # Jobs cannot outlive the process that runs them, so anything still
-    # marked in-flight at boot was orphaned by a restart. Clear it before
-    # serving traffic, or the UI shows work that will never complete.
-    reconcile_interrupted_work()
-    # Creates the admin account on first boot and prunes expired sessions.
-    ensure_admin_user()
+    try:
+        init_db()
+        # Jobs cannot outlive the process that runs them, so anything still
+        # marked in-flight at boot was orphaned by a restart. Clear it before
+        # serving traffic, or the UI shows work that will never complete.
+        reconcile_interrupted_work()
+        # Creates the admin account on first boot and prunes expired sessions.
+        ensure_admin_user()
+    except Exception as e:
+        logger.error("Database connection/init warning: %s", e)
     logger.info("Data directory: %s", settings.data_dir)
     logger.info(
         "OCR: lang=%s version=%s device=%s workers=%d",
