@@ -1002,6 +1002,7 @@ def promote_records(
             # is the template's marker for a struck-off cell; anything else,
             # including an unread cell, is treated as active.
             "is_deleted": _field_value(record, "is_deleted") == "Yes",
+            "section_name": _field_value(record, "section_name") or ((page.payload or {}).get("section_name", "") if page else ""),
             "deletion_reason": _field_value(record, "deletion_reason"),
             "source_record_id": row.id,
             "source_page_id": row.page_id,

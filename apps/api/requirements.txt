@@ -20,14 +20,12 @@ Pillow>=10.3
 rapidfuzz>=3.0.0
 
 # --- Web API ---------------------------------------------------------------
-fastapi>=0.100.0,<0.110.0
-starlette<0.36.0
+fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 python-multipart>=0.0.20
 pydantic>=2.10.0
 pydantic-settings>=2.7.0
 sse-starlette>=2.2.0
-huggingface-hub<0.25.0
 
 # --- Persistence -----------------------------------------------------------
 SQLAlchemy>=2.0.0
@@ -36,7 +34,6 @@ SQLAlchemy>=2.0.0
 # a backfill -- has no way to reach a database that already exists.
 alembic>=1.14.0
 psycopg[binary]>=3.1.0
-psycopg2-binary>=2.9.0
 
 # --- Authentication --------------------------------------------------------
 bcrypt>=4.2.0,<5

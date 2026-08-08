@@ -1,0 +1,54 @@
+{
+  "elapsed_sec": 120.84,
+  "total_pages": 10,
+  "total_records": 295,
+  "clean_records_before": 294,
+  "clean_ratio_before": 0.9966,
+  "filled_fields": 2359,
+  "total_fields": 2360,
+  "fill_rate": 0.9996,
+  "issues": {
+    "missing_required": 1,
+    "unparsed_text": 6,
+    "non_sequential_serial": 2
+  },
+  "consensus": {
+    "groups_examined": 313,
+    "conflicts": 23,
+    "suggestions": 11,
+    "auto_applied": 11,
+    "clean_records_after": 294
+  },
+  "files": [
+    {
+      "file": "2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-1-WI.pdf",
+      "pages_processed": 2,
+      "records": 60,
+      "clean_records": 60
+    },
+    {
+      "file": "2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-11-WI (1).pdf",
+      "pages_processed": 2,
+      "records": 60,
+      "clean_records": 59
+    },
+    {
+      "file": "2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-12-WI (1).pdf",
+      "pages_processed": 2,
+      "records": 55,
+      "clean_records": 55
+    },
+    {
+      "file": "2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-13-WI (1).pdf",
+      "pages_processed": 2,
+      "records": 60,
+      "clean_records": 60
+    },
+    {
+      "file": "2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-14-WI (1).pdf",
+      "pages_processed": 2,
+      "records": 60,
+      "clean_records": 60
+    }
+  ]
+}

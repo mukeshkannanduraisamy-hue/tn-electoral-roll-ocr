@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse
 
 from .config import settings
 from .db import init_db, reconcile_interrupted_work
@@ -35,16 +35,13 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     settings.ensure_dirs()
-    try:
-        init_db()
-        # Jobs cannot outlive the process that runs them, so anything still
-        # marked in-flight at boot was orphaned by a restart. Clear it before
-        # serving traffic, or the UI shows work that will never complete.
-        reconcile_interrupted_work()
-        # Creates the admin account on first boot and prunes expired sessions.
-        ensure_admin_user()
-    except Exception as e:
-        logger.error("Database connection/init warning: %s", e)
+    init_db()
+    # Jobs cannot outlive the process that runs them, so anything still
+    # marked in-flight at boot was orphaned by a restart. Clear it before
+    # serving traffic, or the UI shows work that will never complete.
+    reconcile_interrupted_work()
+    # Creates the admin account on first boot and prunes expired sessions.
+    ensure_admin_user()
     logger.info("Data directory: %s", settings.data_dir)
     logger.info(
         "OCR: lang=%s version=%s device=%s workers=%d",
@@ -156,11 +153,8 @@ app.include_router(ai_chat.router, prefix="/api/ai", tags=["ai"], dependencies=P
 
 
 @app.get("/", tags=["meta"])
-def root():
+def root() -> dict:
     """Root endpoint welcoming visitors and providing system links."""
-    static_index = _static_dir / "index.html"
-    if static_index.exists():
-        return FileResponse(static_index)
     return {
         "service": "Tamil Nadu Electoral Roll OCR API",
         "status": "online",
@@ -205,11 +199,3 @@ def read_settings() -> dict:
 @app.exception_handler(ValueError)
 async def value_error_handler(_request, exc: ValueError):
     return JSONResponse(status_code=400, content={"detail": str(exc)})
-
-
-# If bundled static frontend exists, mount it at root
-from pathlib import Path
-from fastapi.staticfiles import StaticFiles
-_static_dir = Path(__file__).resolve().parent.parent / "static"
-if _static_dir.exists():
-    app.mount("/", StaticFiles(directory=str(_static_dir), html=True), name="static")

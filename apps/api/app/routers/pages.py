@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -35,7 +36,21 @@ def get_page_image(page_id: str, session: Session = Depends(get_session)):
     every overlay box slightly out of alignment.
     """
     row = session.get(PageRow, page_id)
-    if row is None or not row.image_path:
+    if row is None:
+        raise HTTPException(404, "Page image not found")
+
+    if row.image_data:
+        try:
+            raw = base64.b64decode(row.image_data)
+            return Response(
+                content=raw,
+                media_type="image/png",
+                headers={"Cache-Control": "public, max-age=31536000, immutable"},
+            )
+        except Exception:
+            pass
+
+    if not row.image_path:
         raise HTTPException(404, "Page image not found")
 
     path = settings.pages_dir / row.image_path

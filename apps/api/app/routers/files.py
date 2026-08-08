@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import uuid
 from pathlib import Path
@@ -124,6 +125,12 @@ async def upload(
             created.append(file_to_schema(row))
             continue
 
+        b64_pdf = ""
+        try:
+            b64_pdf = base64.b64encode(stored.read_bytes()).decode("utf-8")
+        except Exception:
+            pass
+
         row = FileRow(
             id=file_id,
             name=name,
@@ -131,6 +138,7 @@ async def upload(
             page_count=info.page_count,
             status=FileStatus.PENDING.value,
             stored_path=str(stored),
+            file_data=b64_pdf,
             languages=[settings.ocr_lang],
         )
         session.add(row)

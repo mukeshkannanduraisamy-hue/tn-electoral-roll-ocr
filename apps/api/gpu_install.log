@@ -1,0 +1,52 @@
+Rollback if this fails: .venv/Scripts/pip.exe install paddlepaddle==3.1.0
+Found existing installation: paddlepaddle 3.1.0
+Uninstalling paddlepaddle-3.1.0:
+  Successfully uninstalled paddlepaddle-3.1.0
+WARNING: Failed to remove contents in a temporary directory 'D:\OCR\apps\api\.venv\Lib\site-packages\~addle'.
+You can safely remove it manually.
+WARNING: Skipping paddlepaddle-gpu as it is not installed.
+Looking in indexes: https://www.paddlepaddle.org.cn/packages/stable/cu126/
+Collecting paddlepaddle-gpu==3.1.0
+  Downloading paddlepaddle_gpu-3.1.0-cp311-cp311-win_amd64.whl (453.5 MB)
+     ---------------------------------------- 453.5/453.5 MB 4.5 MB/s  0:02:05
+Requirement already satisfied: httpx in .\.venv\Lib\site-packages (from paddlepaddle-gpu==3.1.0) (0.28.1)
+Requirement already satisfied: numpy>=1.21 in .\.venv\Lib\site-packages (from paddlepaddle-gpu==3.1.0) (2.3.5)
+Requirement already satisfied: protobuf>=3.20.2 in .\.venv\Lib\site-packages (from paddlepaddle-gpu==3.1.0) (7.35.1)
+Requirement already satisfied: Pillow in .\.venv\Lib\site-packages (from paddlepaddle-gpu==3.1.0) (12.3.0)
+Requirement already satisfied: decorator in .\.venv\Lib\site-packages (from paddlepaddle-gpu==3.1.0) (5.3.1)
+Requirement already satisfied: opt-einsum==3.3.0 in .\.venv\Lib\site-packages (from paddlepaddle-gpu==3.1.0) (3.3.0)
+Requirement already satisfied: networkx in .\.venv\Lib\site-packages (from paddlepaddle-gpu==3.1.0) (3.6.1)
+Requirement already satisfied: typing-extensions in .\.venv\Lib\site-packages (from paddlepaddle-gpu==3.1.0) (4.16.0)
+Collecting nvidia-cuda-runtime-cu12==12.6.77 (from paddlepaddle-gpu==3.1.0)
+  Downloading nvidia_cuda_runtime_cu12-12.6.77-py3-none-win_amd64.whl (891 kB)
+     ---------------------------------------- 891.8/891.8 kB 13.4 MB/s  0:00:00
+Collecting nvidia-cudnn-cu12==9.5.1.17 (from paddlepaddle-gpu==3.1.0)
+  Downloading nvidia_cudnn_cu12-9.5.1.17-py3-none-win_amd64.whl (565.4 MB)
+     ---------------------------------------- 565.4/565.4 MB 1.5 MB/s  0:03:34
+Collecting nvidia-cublas-cu12==12.6.4.1 (from paddlepaddle-gpu==3.1.0)
+  Downloading nvidia_cublas_cu12-12.6.4.1-py3-none-win_amd64.whl (434.5 MB)
+     ---------------------------------------- 434.5/434.5 MB 2.0 MB/s  0:04:55
+Collecting nvidia-cufft-cu12==11.3.0.4 (from paddlepaddle-gpu==3.1.0)
+  Downloading nvidia_cufft_cu12-11.3.0.4-py3-none-win_amd64.whl (199.4 MB)
+     ---------------------------------------- 199.4/199.4 MB 1.4 MB/s  0:01:52
+Collecting nvidia-curand-cu12==10.3.7.77 (from paddlepaddle-gpu==3.1.0)
+  Downloading nvidia_curand_cu12-10.3.7.77-py3-none-win_amd64.whl (55.8 MB)
+     ---------------------------------------- 55.8/55.8 MB 1.2 MB/s  0:00:48
+Collecting nvidia-cusolver-cu12==11.7.1.2 (from paddlepaddle-gpu==3.1.0)
+  Downloading nvidia_cusolver_cu12-11.7.1.2-py3-none-win_amd64.whl (149.3 MB)
+     ---------------------------------------- 149.3/149.3 MB 2.4 MB/s  0:01:28
+Collecting nvidia-cusparse-cu12==12.5.4.2 (from paddlepaddle-gpu==3.1.0)
+  Downloading nvidia_cusparse_cu12-12.5.4.2-py3-none-win_amd64.whl (213.7 MB)
+     ---------------------------------------- 213.7/213.7 MB 4.3 MB/s  0:00:48
+Collecting nvidia-nvjitlink-cu12 (from nvidia-cufft-cu12==11.3.0.4->paddlepaddle-gpu==3.1.0)
+  Downloading nvidia_nvjitlink_cu12-12.9.86-py3-none-win_amd64.whl (35.6 MB)
+     ---------------------------------------- 35.6/35.6 MB 6.6 MB/s  0:00:05
+Requirement already satisfied: anyio in .\.venv\Lib\site-packages (from httpx->paddlepaddle-gpu==3.1.0) (4.14.2)
+Requirement already satisfied: certifi in .\.venv\Lib\site-packages (from httpx->paddlepaddle-gpu==3.1.0) (2026.7.22)
+Requirement already satisfied: httpcore==1.* in .\.venv\Lib\site-packages (from httpx->paddlepaddle-gpu==3.1.0) (1.0.9)
+Requirement already satisfied: idna in .\.venv\Lib\site-packages (from httpx->paddlepaddle-gpu==3.1.0) (3.18)
+Requirement already satisfied: h11>=0.16 in .\.venv\Lib\site-packages (from httpcore==1.*->httpx->paddlepaddle-gpu==3.1.0) (0.16.0)
+Installing collected packages: nvidia-nvjitlink-cu12, nvidia-curand-cu12, nvidia-cuda-runtime-cu12, nvidia-cublas-cu12, nvidia-cusparse-cu12, nvidia-cufft-cu12, nvidia-cudnn-cu12, nvidia-cusolver-cu12, paddlepaddle-gpu
+
+Successfully installed nvidia-cublas-cu12-12.6.4.1 nvidia-cuda-runtime-cu12-12.6.77 nvidia-cudnn-cu12-9.5.1.17 nvidia-cufft-cu12-11.3.0.4 nvidia-curand-cu12-10.3.7.77 nvidia-cusolver-cu12-11.7.1.2 nvidia-cusparse-cu12-12.5.4.2 nvidia-nvjitlink-cu12-12.9.86 paddlepaddle-gpu-3.1.0
+INSTALL_EXIT=0

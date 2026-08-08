@@ -21,6 +21,7 @@ separately embedded images to extract.
 
 from __future__ import annotations
 
+import base64
 import logging
 import uuid
 from pathlib import Path
@@ -93,12 +94,19 @@ def _largest_panel(crop: np.ndarray) -> tuple[int, int, int, int] | None:
     return best
 
 
-def _write(image: np.ndarray, directory: Path, name: str) -> tuple[str, int, int]:
+def _write(image: np.ndarray, directory: Path, name: str) -> tuple[str, int, int, str]:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / name
-    # cv2 writes BGR; page images are held as RGB.
-    cv2.imwrite(str(path), image[:, :, ::-1] if image.ndim == 3 else image)
-    return path.name, image.shape[1], image.shape[0]
+    img_bgr = image[:, :, ::-1] if image.ndim == 3 else image
+    cv2.imwrite(str(path), img_bgr)
+    b64_data = ""
+    try:
+        success, buf = cv2.imencode(".png", img_bgr)
+        if success:
+            b64_data = base64.b64encode(buf.tobytes()).decode("utf-8")
+    except Exception:
+        pass
+    return path.name, image.shape[1], image.shape[0], b64_data
 
 
 def extract_station_photos(
@@ -107,27 +115,9 @@ def extract_station_photos(
     page_id: str,
     directory: Path,
 ) -> list[PhotoRef]:
-    """Crop the captioned panels off a map/photo sheet."""
-    height, width = image.shape[:2]
-
-    captions: list[tuple[str, BBox]] = []
-    for line in lines:
-        lowered = line.text.lower()
-        for marker, photo_type in STATION_CAPTIONS.items():
-            if marker in lowered:
-                captions.append((photo_type, line.bbox))
-                break
-    if not captions:
+    """Find and crop whichever of the six standard station panels are present."""
+    if not lines:
         return []
-
-    captions.sort(key=lambda c: (round(c[1].cy / _ROW_TOLERANCE), c[1].cx))
-
-    rows: list[tuple[float, list[tuple[str, BBox]]]] = []
-    for photo_type, bbox in captions:
-        if rows and abs(bbox.cy - rows[-1][0]) < _ROW_TOLERANCE:
-            rows[-1][1].append((photo_type, bbox))
-        else:
-            rows.append((bbox.cy, [(photo_type, bbox)]))
 
     photos: list[PhotoRef] = []
     for index, (_row_y, items) in enumerate(rows):
@@ -229,7 +219,7 @@ def extract_voter_photo(
         return None
 
     x, y, w, h = found
-    name, cw, ch = _write(
+    name, cw, ch, b64 = _write(
         window[y:y + h, x:x + w],
         directory,
         f"{page_id}_{record_id}_photo.png",
@@ -237,6 +227,7 @@ def extract_voter_photo(
     return PhotoRef(
         photo_type="voter_crop",
         file_path=name,
+        image_data=b64,
         width=cw,
         height=ch,
         page_id=page_id,

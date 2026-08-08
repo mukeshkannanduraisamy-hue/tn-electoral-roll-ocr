@@ -13,7 +13,7 @@ from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine, engine_from_config, pool
 
 # The API package root, so `app` imports resolve wherever alembic is run
 # from: the CLI, a container entrypoint, or the app itself at startup.
@@ -78,11 +78,7 @@ def run_migrations_online() -> None:
         _run(existing)
         return
 
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    connectable = create_engine(database_url(), poolclass=pool.NullPool)
     with connectable.connect() as connection:
         _run(connection)
 

@@ -19,6 +19,7 @@ Those denormalised columns are recomputed on every write in
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import uuid
@@ -96,6 +97,7 @@ class FileRow(Base):
     template_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     languages: Mapped[list] = mapped_column(JSON, default=list)
     stored_path: Mapped[str] = mapped_column(String(1024), default="")
+    file_data: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
 
@@ -110,6 +112,7 @@ class PageRow(Base):
     page_number: Mapped[int] = mapped_column(Integer, index=True)
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     image_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    image_data: Mapped[str | None] = mapped_column(Text, nullable=True)
     width: Mapped[int] = mapped_column(Integer, default=0)
     height: Mapped[int] = mapped_column(Integer, default=0)
     template_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -348,6 +351,7 @@ class PhotoRow(Base):
     polling_station_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     photo_type: Mapped[str] = mapped_column(String(64), default="voter_crop", index=True)  # voter_crop | station_front | nazri_naksha | google_map | cad_map | thumbnail
     file_path: Mapped[str] = mapped_column(String(1024), default="")
+    image_data: Mapped[str | None] = mapped_column(Text, nullable=True)
     width: Mapped[int] = mapped_column(Integer, default=0)
     height: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
@@ -527,12 +531,8 @@ def database_url() -> str:
     copy in `alembic.ini` is how a migration ends up applied to a different
     database than the one the app is using.
     """
-    import os
-    url = settings.database_url or os.getenv("DATABASE_URL") or os.getenv("OCR_DATABASE_URL") or ""
-    if url:
-        if url.startswith("postgres://"):
-            url = "postgresql://" + url[len("postgres://"):]
-        return url
+    if settings.database_url:
+        return settings.database_url
     settings.ensure_dirs()
     return f"sqlite:///{(settings.data_dir / 'ocr.sqlite').as_posix()}"
 
@@ -735,13 +735,13 @@ def _add_missing_columns() -> None:
     may hold NULL on rows written before it existed. Everything else --
     renames, drops, type changes, backfills -- is alembic's job now.
     """
+    from sqlalchemy import inspect
     with engine.begin() as conn:
+        inspector = inspect(conn)
         for table_name, table in Base.metadata.tables.items():
-            existing = {
-                row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table_name})")
-            }
-            if not existing:
+            if not inspector.has_table(table_name):
                 continue  # table itself is absent; create_all owns it
+            existing = {col["name"] for col in inspector.get_columns(table_name)}
 
             for column in table.columns:
                 if column.name in existing:
@@ -941,6 +941,13 @@ def save_page(session: Session, page: Page, file_id: str) -> None:
     row.page_number = page.page_number
     row.status = page.status if isinstance(page.status, str) else page.status.value
     row.image_path = page.image_path
+    if page.image_path and not row.image_data:
+        try:
+            p_path = settings.pages_dir / page.image_path
+            if p_path.is_file():
+                row.image_data = base64.b64encode(p_path.read_bytes()).decode("utf-8")
+        except Exception:
+            pass
     row.width = page.width
     row.height = page.height
     row.template_id = page.template_id
@@ -970,6 +977,7 @@ def save_page(session: Session, page: Page, file_id: str) -> None:
                 record_id=photo.record_id,
                 photo_type=photo.photo_type,
                 file_path=photo.file_path,
+                image_data=getattr(photo, "image_data", None),
                 width=photo.width,
                 height=photo.height,
             )
@@ -1214,3 +1222,4 @@ if _is_sqlite:
     @event.listens_for(engine, "begin")
     def _code_begin_immediate(conn):
         conn.exec_driver_sql("BEGIN IMMEDIATE")
+
