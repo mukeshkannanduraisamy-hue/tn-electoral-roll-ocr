@@ -143,6 +143,31 @@ def test_an_unstamped_card_house_number_is_never_flagged():
     assert not any(issue.field == "house_number" for issue in record.issues)
 
 
+def test_which_signals_fired_is_stored_not_just_the_verdict():
+    """Either signal is sufficient, so a wrong one strikes off a live elector.
+
+    Recording which fired is what makes that auditable after the fact; a bare
+    Yes/No leaves no way to find the cases where the two disagreed.
+    """
+    mark = StampMark(x=30, y=20, w=280, h=180, angle=62.0)
+
+    both = _parse(_stamped_card_lines(), [mark])
+    assert both.fields["deletion_signals"].original_value == "reason_code+stamp"
+
+    code_only = _parse(_stamped_card_lines(), [])
+    assert code_only.fields["deletion_signals"].original_value == "reason_code"
+
+    stamp_only = _parse(
+        [ln for ln in _stamped_card_lines() if ln.text != "S"], [mark]
+    )
+    assert stamp_only.fields["deletion_signals"].original_value == "stamp"
+
+
+def test_a_live_elector_records_no_signals():
+    record = _parse(_live_card_lines(), [])
+    assert record.fields["deletion_signals"].original_value == ""
+
+
 def _house_warnings(record):
     return [i for i in record.issues if i.field == "house_number"]
 

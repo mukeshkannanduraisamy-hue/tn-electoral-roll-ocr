@@ -204,6 +204,9 @@ class ElectoralRollTamilTemplate:
                       description="Whether elector record is deleted or shifted"),
             ColumnDef(key="deletion_reason", label="நீக்க காரணம் (Deletion Reason)", type=ColumnType.TEXT, width=180,
                       description="Reason code: S - Shifted, E - Expired, R - Repeated, M - Missing, Q - Disqualified, DELETED"),
+            ColumnDef(key="deletion_signals", label="நீக்க ஆதாரம் (Deletion Signals)", type=ColumnType.TEXT, width=150,
+                      description="Which readers marked this elector deleted: reason_code, stamp, or both. "
+                                  "Either alone is sufficient, so this is how a disagreement is found later"),
             ColumnDef(key="section_name", label="பிரிவு பெயர் (Section Name)", type=ColumnType.TEXT, width=240,
                       description="Section number and name"),
             ColumnDef(key="part_number", label="பாகம் எண் (Part No)", type=ColumnType.NUMBER, width=90,
@@ -725,6 +728,11 @@ class ElectoralRollTamilTemplate:
         values["is_deleted"] = (verdict.flag, 1.0, None, [])
         if verdict.reason:
             values["deletion_reason"] = (verdict.reason, 1.0, None, [])
+        # Which readers fired, kept because either one alone is enough to strike
+        # an elector off. Without it a wrong reading is indistinguishable from a
+        # real deletion, and the two signals cannot be reconciled after the fact.
+        if verdict.signals:
+            values["deletion_signals"] = ("+".join(verdict.signals), 1.0, None, [])
 
         if header_meta.get("section_name"):
             values["section_name"] = (header_meta.get("section_name"), 1.0, None, [])
