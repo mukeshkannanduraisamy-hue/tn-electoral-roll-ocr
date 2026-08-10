@@ -255,21 +255,44 @@ assumption it was never tested.
 detection, 3/3 real ages recovered, and synthetic geometry tests that run without
 the rolls.
 
+## Settled by running the full roll
+
+**`S2` means a shift recorded in supplement 2.** The roll prints its own legend
+on page 33 — `E- Expired, S- Shifted, R-Repeated, M - Missing, Q- Disqualified` —
+so the letter is the reason and a trailing digit names the supplement. An
+intermediate reading of the data had `S` denoting the supplement rather than the
+reason, on the strength of an exact count match (226 `S` against 226 supplement-1
+deletions); the legend shows that match is a property of this part, where every
+deletion happened to be a shift. `W - Withdrawn` was in the first map, is not on
+the legend, and has been removed.
+
+Handling codes needed a second change: `S2` fed through the serial patterns
+yields serial **2**, silently renumbering the elector. Standalone marks are now
+claimed before the serial is read.
+
+**The full roll reconciles against its own summary**, which is the only external
+check available: 779 electors extracted against a declared 556 base + 223
+additions; 233 struck off against a declared 226 in supplement 1 and 7 in
+supplement 2; 546 active against a declared net of 546. All 233 carry both
+signals, none was struck off on one alone, and no active elector carries a stray
+signal.
+
+**Pages render at their native resolution, not the configured 300 dpi** — 143 dpi
+for these scans. Recovery re-read that crop unchanged and so inherited the
+limitation; enlarging the crop as a second variant dimension took age recovery
+from 185 of 233 to 212, at no extra wall-clock because agreement still ends the
+loop early.
+
 ## Open questions
 
-**What `S2` means.** Serial 25 reads `S2` where every other stamped card reads a
-single letter. Whether that is a two-character reason code, a sub-code, or
-something unrelated to deletion needs an answer from whoever produces these rolls.
+**No roll here exercises a reason code other than `S`.** Every deletion in TAM-16
+is a shift, so `E`, `R`, `M` and `Q` are mapped from the legend but never
+validated against a real card.
 
-Decided in the meantime: the elector is flagged deleted — the stamp says so
-independently — and the code is stored verbatim as `S2 - Deleted (code not
-documented)`. No meaning is invented for it, because a guess in a deletion reason
-is a guess in an audit trail. `describe_reason` maps documented codes and falls
-through for the rest, so answering this question is a one-line change.
-
-Implementation added a second reason to handle codes separately from serials:
-`S2` fed through the serial patterns yields serial **2**, silently renumbering the
-elector. Standalone codes are now claimed before the serial is read.
+**21 ages remain unrecoverable.** Measured directly: of the 48 originally missing,
+22 had no readable digits at any crop or scale — the stamp destroyed them rather
+than displaced them. Nothing done to this scan will recover those; it needs a
+higher-resolution source or the supplement lists that record the same electors.
 
 ## Out of scope
 
