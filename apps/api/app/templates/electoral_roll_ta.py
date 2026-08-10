@@ -141,6 +141,23 @@ GENDER_OPTIONS = {
 EPIC_PERMISSIVE_RE = re.compile(r"^[A-Z]{2,4}\d{6,9}$")
 EPIC_CANONICAL_RE = re.compile(r"^[A-Z]{3}\d{7}$")
 
+# Header labels that can share a printed line with the value being read, so a
+# match must stop when one of them starts.
+_HEADER_NEIGHBOURS = ("பாகம்", "பிரிவு", "சட்டமன்ற")
+
+
+def _trim_header_value(value: str) -> str:
+    """One header field's value, cut where the next label begins.
+
+    The part number is printed to the right of the constituency on the same
+    line, and OCR may return the pair as one string.
+    """
+    cleaned = value.strip()
+    for label in _HEADER_NEIGHBOURS:
+        cleaned = re.split(rf"\s*{label}", cleaned)[0]
+    return cleaned.strip(" :-–—")
+
+
 # A deletion reason code sitting alone in the serial box, which is how these
 # rolls print it. Matched before the serial patterns so `S2` is not read as 2.
 STANDALONE_CODE_RE = re.compile(r"^([SERMQWsermqw]\d?)$")
@@ -208,6 +225,9 @@ class ElectoralRollTamilTemplate:
             ColumnDef(key="deletion_signals", label="நீக்க ஆதாரம் (Deletion Signals)", type=ColumnType.TEXT, width=150,
                       description="Which readers marked this elector deleted: reason_code, stamp, or both. "
                                   "Either alone is sufficient, so this is how a disagreement is found later"),
+            ColumnDef(key="constituency", label="சட்டமன்றத் தொகுதி (Constituency)", type=ColumnType.TEXT, width=220,
+                      description="Assembly constituency number and name from the page header, "
+                                  "inherited by every elector on the page"),
             ColumnDef(key="section_name", label="பிரிவு பெயர் (Section Name)", type=ColumnType.TEXT, width=240,
                       description="Section number and name"),
             ColumnDef(key="part_number", label="பாகம் எண் (Part No)", type=ColumnType.NUMBER, width=90,
@@ -278,12 +298,31 @@ class ElectoralRollTamilTemplate:
         if m_part:
             meta["part_number"] = m_part.group(1)
 
-        # 2. Section Name
-        m_sec = re.search(r"பிரிவு\s*எண்\s*(?:மற்றும்\s*பெயர்)?\s*[:\-]?\s*([^\n\r]+)", full_text)
-        if m_sec:
-            sec_val = m_sec.group(1).strip()
-            sec_val = re.sub(r"\s*பாகம்.*$", "", sec_val)
-            meta["section_name"] = sec_val.strip()
+        # 2. Constituency and section, each read from its own OCR line.
+        #
+        # Both are matched per line rather than against `full_text`, which joins
+        # the whole page with spaces. A pattern anchored on "not a newline" finds
+        # none there and runs to the end of the document: every one of TAM-16's
+        # 779 records used to carry a full page dump as its section name.
+        for line in lines:
+            text = line.text.strip()
+
+            # Emptiness, not key presence: `meta` is pre-seeded with blanks.
+            if not meta.get("constituency"):
+                m_con = re.search(
+                    r"சட்டமன்ற\S*\s*தொகுதி\S*\s*(?:எண்\S*)?\s*"
+                    r"(?:மற்றும்\s*பெயர்)?\s*[:\-]\s*(.+)$",
+                    text,
+                )
+                if m_con:
+                    meta["constituency"] = _trim_header_value(m_con.group(1))
+
+            if not meta.get("section_name"):
+                m_sec = re.search(
+                    r"பிரிவு\s*எண்\S*\s*(?:மற்றும்\s*பெயர்)?\s*[:\-]?\s*(.+)$", text
+                )
+                if m_sec:
+                    meta["section_name"] = _trim_header_value(m_sec.group(1))
 
         # 3. List Type / Supplement Title
         if "நீக்கல் பட்டியல்" in full_text or "நீக்கல்" in full_text[:400]:
@@ -735,6 +774,8 @@ class ElectoralRollTamilTemplate:
         if verdict.signals:
             values["deletion_signals"] = ("+".join(verdict.signals), 1.0, None, [])
 
+        if header_meta.get("constituency"):
+            values["constituency"] = (header_meta.get("constituency"), 1.0, None, [])
         if header_meta.get("section_name"):
             values["section_name"] = (header_meta.get("section_name"), 1.0, None, [])
         if header_meta.get("part_number"):
