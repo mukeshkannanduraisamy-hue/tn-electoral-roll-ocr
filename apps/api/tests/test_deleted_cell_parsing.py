@@ -75,7 +75,7 @@ def test_live_cell_records_an_explicit_no():
 def test_reason_code_marks_the_cell_deleted():
     record = _parse(_stamped_card_lines(), [])
     assert record.fields["is_deleted"].original_value == "Yes"
-    assert "Shifted" in record.fields["deletion_reason"].original_value
+    assert "Supplement 1" in record.fields["deletion_reason"].original_value
 
 
 def test_stamp_alone_marks_the_cell_deleted():
@@ -91,13 +91,15 @@ def test_stamp_does_not_leak_into_the_live_cell_verdict():
     assert record.fields["deletion_reason"].original_value == ""
 
 
-def test_unknown_s2_code_is_flagged_without_inventing_a_meaning():
+def test_s2_names_the_second_supplement():
+    """Settled by the roll's summary: 7 deletions in Supplement 2, 7 cards `S2`."""
     lines = _stamped_card_lines()
     lines[0] = _line("S2", 20, 16, 0.80)
     record = _parse(lines, [])
     reason = record.fields["deletion_reason"].original_value
     assert record.fields["is_deleted"].original_value == "Yes"
     assert reason.startswith("S2")
+    assert "Supplement 2" in reason
     assert "Shifted" not in reason
 
 

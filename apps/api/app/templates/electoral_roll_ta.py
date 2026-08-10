@@ -203,7 +203,8 @@ class ElectoralRollTamilTemplate:
             ColumnDef(key="is_deleted", label="நீக்கப்பட்டது (Deleted)", type=ColumnType.TEXT, width=110,
                       description="Whether elector record is deleted or shifted"),
             ColumnDef(key="deletion_reason", label="நீக்க காரணம் (Deletion Reason)", type=ColumnType.TEXT, width=180,
-                      description="Reason code: S - Shifted, E - Expired, R - Repeated, M - Missing, Q - Disqualified, DELETED"),
+                      description="Which supplement recorded the deletion: S - Supplement 1, S2 - Supplement 2. "
+                                  "Not a reason for removal; the roll does not state one"),
             ColumnDef(key="deletion_signals", label="நீக்க ஆதாரம் (Deletion Signals)", type=ColumnType.TEXT, width=150,
                       description="Which readers marked this elector deleted: reason_code, stamp, or both. "
                                   "Either alone is sufficient, so this is how a disagreement is found later"),

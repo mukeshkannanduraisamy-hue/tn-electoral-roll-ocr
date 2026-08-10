@@ -16,14 +16,19 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-# Codes the Election Commission documents for a Special Intensive Revision.
+# What the mark beside a struck-off serial actually denotes.
+#
+# It names the supplement that recorded the deletion, not a reason for it. The
+# roll's own summary proves this: TAM-16 declares 226 deletions in
+# துணைப்பட்டியல் 1 and 7 in துணைப்பட்டியல் 2, total 233. Extraction found exactly
+# 233 struck off -- 226 marked `S`, 7 marked `S2`. Reading `S` as "Shifted"
+# instead would require all 226 people in Supplement 1 to have moved house, with
+# not one death or duplicate among them, and would leave `S2` meaningless.
+#
+# So no reason for removal is recorded, because the roll does not state one.
 REASON_MEANINGS = {
-    "S": "S - Shifted (இடம் மாறியவர்)",
-    "E": "E - Expired (இறந்தவர்)",
-    "R": "R - Repeated (இரட்டைப் பதிவு)",
-    "M": "M - Missing (காணாமல் போனவர்)",
-    "Q": "Q - Disqualified (தகுதியின்மை)",
-    "W": "W - Withdrawn (விலக்கப்பட்டவர்)",
+    "S": "S - துணைப்பட்டியல் 1 (Supplement 1 deletion)",
+    "S2": "S2 - துணைப்பட்டியல் 2 (Supplement 2 deletion)",
 }
 
 # A code is a documented letter, optionally carrying a digit -- serial 25 reads
@@ -68,15 +73,16 @@ def parse_reason_code(serial_text: str) -> str | None:
 
 
 def describe_reason(code: str) -> str:
-    """The code's documented meaning, or the code itself when unmapped.
+    """What the mark denotes, or the mark itself when it is not one we know.
 
-    An unknown code still marks the elector deleted -- the stamp says so too --
-    but inventing a meaning for it would put a guess in an audit trail.
+    An unrecognised mark still strikes the elector off -- the stamp says so
+    independently -- but naming it would put a guess in an audit trail. Rolls
+    using a different convention will land here rather than be mislabelled.
     """
     known = REASON_MEANINGS.get(code)
     if known:
         return known
-    return f"{code} - Deleted (code not documented)"
+    return f"{code} - Deleted (mark not recognised)"
 
 
 def assess_deletion(

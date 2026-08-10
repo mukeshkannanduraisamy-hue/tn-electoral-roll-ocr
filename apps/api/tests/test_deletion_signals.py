@@ -55,20 +55,41 @@ def test_lowercase_code_is_accepted():
     assert parse_reason_code("s 13") == "S"
 
 
-def test_known_code_is_mapped_to_its_meaning():
+def test_the_mark_names_the_supplement_not_a_reason():
+    """`S`/`S2` identify which supplement recorded the deletion.
+
+    Proven by the roll's own summary. TAM-16 declares 226 deletions in
+    Supplement 1 and 7 in Supplement 2, total 233; extraction found exactly 233
+    struck off, 226 marked `S` and 7 marked `S2`. For `S` to mean "Shifted"
+    instead, all 226 people in Supplement 1 would have to have moved house and
+    none died or was a duplicate.
+    """
     verdict = assess_deletion(reason_code="S", stamp_found=False)
     assert verdict.is_deleted is True
-    assert "Shifted" in verdict.reason
+    assert "Supplement 1" in verdict.reason
     assert verdict.signals == ("reason_code",)
 
 
-def test_unknown_code_is_recorded_verbatim_and_not_invented():
-    """S2 is unexplained; flag the elector, do not fabricate a meaning."""
+def test_supplement_two_is_recognised():
     verdict = assess_deletion(reason_code="S2", stamp_found=False)
     assert verdict.is_deleted is True
-    assert verdict.reason.startswith("S2")
-    assert "Shifted" not in verdict.reason
+    assert "Supplement 2" in verdict.reason
     assert verdict.signals == ("reason_code",)
+
+
+def test_no_reason_for_removal_is_claimed():
+    """The roll does not say why anyone was removed, so neither do we."""
+    for code in ("S", "S2"):
+        reason = assess_deletion(reason_code=code, stamp_found=False).reason
+        for invented in ("Shifted", "Expired", "Repeated", "Disqualified"):
+            assert invented not in reason, f"{code} claimed '{invented}'"
+
+
+def test_an_unrecognised_mark_is_recorded_verbatim():
+    verdict = assess_deletion(reason_code="E", stamp_found=False)
+    assert verdict.is_deleted is True
+    assert verdict.reason.startswith("E")
+    assert "Supplement" not in verdict.reason
 
 
 def test_stamp_alone_is_enough():
