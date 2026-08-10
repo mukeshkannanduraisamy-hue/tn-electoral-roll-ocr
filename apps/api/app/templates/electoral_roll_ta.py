@@ -308,12 +308,14 @@ class ElectoralRollTamilTemplate:
             text = line.text.strip()
 
             # Emptiness, not key presence: `meta` is pre-seeded with blanks.
-            if not meta.get("constituency"):
-                m_con = re.search(
-                    r"சட்டமன்ற\S*\s*தொகுதி\S*\s*(?:எண்\S*)?\s*"
-                    r"(?:மற்றும்\s*பெயர்)?\s*[:\-]\s*(.+)$",
-                    text,
-                )
+            #
+            # Anchored on `சட்டமன்ற` alone and then taking whatever follows the
+            # separator. Whole-page OCR spells the rest of the label a different
+            # way on almost every page -- தொகுதி, தாகுதி, தெொகுதி, தொாகுதி --
+            # and requiring the correct one left 289 of 779 electors with no
+            # constituency, on headers otherwise read at 0.93-0.96.
+            if not meta.get("constituency") and "சட்டமன்ற" in text:
+                m_con = re.search(r"[:\-]\s*(.+)$", text)
                 if m_con:
                     meta["constituency"] = _trim_header_value(m_con.group(1))
 

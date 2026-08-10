@@ -21,6 +21,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import pytest  # noqa: E402
+
 from app.schemas.core import BBox, OcrLine  # noqa: E402
 from app.templates.electoral_roll_ta import ElectoralRollTamilTemplate  # noqa: E402
 
@@ -78,6 +80,27 @@ def test_part_number_still_works():
 def test_the_part_number_does_not_leak_into_the_section():
     """Both sit on the header, and the part number is printed to the right."""
     assert "பாகம்" not in _meta()["section_name"]
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "சட்டமன்றத் தொகுதியின் எண் மற்றும் பெயர்",   # page 4, read cleanly
+        "சட்டமன்றத் தாகுதியின் எண் மற்றும் பெயர்",   # page 17
+        "சட்டமன்றத் தெொகுதியின் எண் மற்றும் பெயர்",  # page 23
+        "சட்டமன்றத் தொாகுதியின் எண் மற்றும் பெயர்",  # page 32
+    ],
+)
+def test_constituency_survives_the_ways_ocr_mangles_its_label(label):
+    """Whole-page OCR renders `தொகுதி` a different way on almost every page.
+
+    Requiring the exact spelling left the constituency blank on 289 of TAM-16's
+    779 electors, on pages whose header was otherwise read at 0.93-0.96
+    confidence. Only `சட்டமன்ற` survives intact everywhere, so that is the anchor.
+    """
+    lines = [_line(f"{label} : {CONSTITUENCY}", 10)]
+    meta = ElectoralRollTamilTemplate._extract_header_metadata(lines)
+    assert meta["constituency"] == CONSTITUENCY
 
 
 def test_a_page_without_a_header_reports_nothing_rather_than_guessing():
