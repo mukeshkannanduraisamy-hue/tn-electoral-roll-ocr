@@ -933,11 +933,27 @@ def promote_records(
         ).scalars().all()
     }
 
+    # Pre-parse rows and pre-fetch all existing VoterRow instances by EPIC in batch
+    row_records = [(row, row_to_record(row)) for row in rows]
+    epic_list = list({
+        normalise_epic(_field_value(rec, "epic"))
+        for _, rec in row_records
+    } - {""})
+
+    existing_voters_map: dict[str, VoterRow] = {}
+    if epic_list:
+        for i in range(0, len(epic_list), 500):
+            chunk = epic_list[i : i + 500]
+            v_rows = session.execute(
+                select(VoterRow).where(VoterRow.epic.in_(chunk))
+            ).scalars().all()
+            for v in v_rows:
+                existing_voters_map[v.epic] = v
+
     result = PromotionResult()
     seen_in_batch: dict[str, str] = {}
 
-    for row in rows:
-        record = row_to_record(row)
+    for row, record in row_records:
         epic = normalise_epic(_field_value(record, "epic"))
         name = _field_value(record, "name")
 
@@ -958,9 +974,7 @@ def promote_records(
             result.skipped += 1
             continue
 
-        existing = session.execute(
-            select(VoterRow).where(VoterRow.epic == epic)
-        ).scalar_one_or_none()
+        existing = existing_voters_map.get(epic)
 
         if existing is not None and payload.on_conflict == "skip":
             result.conflicts.append(PromotionConflict(
@@ -1040,6 +1054,7 @@ def promote_records(
             )
             result.created += 1
             result.voter_ids.append(voter.id)
+            existing_voters_map[epic] = voter
 
         # The crop was taken during extraction, before any voter existed;
         # promotion is the first moment it can be attributed to one.

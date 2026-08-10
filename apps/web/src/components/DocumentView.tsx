@@ -350,6 +350,8 @@ export const DocumentView: React.FC = () => {
       if (result.updated) parts.push(`${result.updated} updated`);
       if (result.skipped) parts.push(`${result.skipped} skipped`);
       toast.success(`Stored in the voter database: ${parts.join(", ")}`);
+      await loadPages();
+      refreshStats(activeFileId || undefined);
     } catch (e: any) {
       toast.error(e?.message || "Could not store these records");
     } finally {
