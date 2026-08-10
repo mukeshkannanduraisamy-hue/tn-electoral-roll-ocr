@@ -333,6 +333,13 @@ _SUMMARY_ROWS = (
     ("net", ("நிகர",)),
 )
 
+# Only these two are printed as several supplement rows plus a total. Restricting
+# the override keeps a stray "total" reading from clobbering a single-row figure.
+_SUBTOTALLED_ROWS = frozenset({"additions", "deletions"})
+
+# "Total", with the spellings OCR returns for it.
+_TOTAL_STEMS = ("மொத்தம்", "மொத்தம", "மாத்தம்", "மொததம்")
+
 
 def parse_summary(lines: list[OcrLine], page_id: str = "") -> RollSummary:
     """Read the base/additions/deletions/net table off a summary page."""
@@ -356,17 +363,42 @@ def parse_summary(lines: list[OcrLine], page_id: str = "") -> RollSummary:
     labelled: dict[str, ElectorCounts] = {}
     unclaimed: list[tuple[float, list[OcrLine]]] = []
 
+    # Additions and deletions are printed one row per supplement and then a
+    # `மொத்தம்` row that belongs to the category above it. Taking the first row
+    # reports supplement 1 as the whole figure, which is what made well-formed
+    # rolls look like they failed to reconcile. The category label is carried
+    # down the sub-rows so its own total can replace the first reading.
+    current_key: str | None = None
+
     for centre_y, band in bands:
-        tolerance = max(band[0].bbox.h, 1.0) * 2.5
+        # Narrow enough that a row does not read its neighbours' labels. At 2.5x
+        # the band height the window was wider than the row pitch, so the
+        # additions total saw `நீக்கல் பட்டியல்` printed below it and was filed
+        # as a deletion.
+        tolerance = max(band[0].bbox.h, 1.0) * 1.1
         row_text = " ".join(
             ln.text for ln in table_lines
             if ln.bbox.x < page_width * 0.60
             and abs(ln.bbox.cy - centre_y) <= tolerance
         )
-        for key, stems in _SUMMARY_ROWS:
-            if key not in labelled and any(stem in row_text for stem in stems):
-                labelled[key] = _counts_from(band)
-                break
+
+        matched = next(
+            (
+                key
+                for key, stems in _SUMMARY_ROWS
+                if any(stem in row_text for stem in stems)
+            ),
+            None,
+        )
+
+        if matched is not None:
+            current_key = matched
+            labelled.setdefault(matched, _counts_from(band))
+        elif (
+            current_key in _SUBTOTALLED_ROWS
+            and any(stem in row_text for stem in _TOTAL_STEMS)
+        ):
+            labelled[current_key] = _counts_from(band)
         else:
             unclaimed.append((centre_y, band))
 
