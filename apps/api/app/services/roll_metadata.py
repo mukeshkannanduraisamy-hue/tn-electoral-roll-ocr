@@ -62,8 +62,33 @@ def _strip_colon(text: str) -> str:
     return _clean(text.lstrip(": \t-"))
 
 
-def _as_int(text: str) -> int | None:
+#: A count with a letter `o` standing in for a zero. The summary's right-hand
+#: columns hold nothing but counts, and OCR returns the table's zeroes as `o`
+#: often enough to matter: TAM-16's deletions total reads `117 116 o 233`, and
+#: because a row needs four numbers the whole line was dropped, leaving
+#: deletions at supplement 1's 226 instead of the printed 233.
+#:
+#: Deliberately narrow. The table numbers its sections `I`, `IlI`, `IV` and
+#: labels one `B`, all in the same columns, so mapping letters to digits
+#: generally would invent rows. Only `o` is ambiguous with a digit, and only
+#: when it sits among digits.
+_INT_WITH_O_RE = re.compile(r"^(?=.*[oO])[0-9oO]{1,6}$")
+
+
+def _digits(text: str) -> str:
+    """`text` with an `o` read as the zero it is, when that is what it can be."""
     stripped = _clean(text)
+    if _INT_WITH_O_RE.match(stripped):
+        return stripped.replace("o", "0").replace("O", "0")
+    return stripped
+
+
+def _is_int(text: str) -> bool:
+    return bool(_INT_RE.match(_digits(text)))
+
+
+def _as_int(text: str) -> int | None:
+    stripped = _digits(text)
     return int(stripped) if _INT_RE.match(stripped) else None
 
 
@@ -126,7 +151,7 @@ def _number_bands(
     """
     numeric = [
         ln for ln in lines
-        if _INT_RE.match(_clean(ln.text)) and ln.bbox.x >= min_x
+        if _is_int(ln.text) and ln.bbox.x >= min_x
     ]
     bands: list[list[OcrLine]] = []
     for line in sorted(numeric, key=lambda ln: ln.bbox.cy):

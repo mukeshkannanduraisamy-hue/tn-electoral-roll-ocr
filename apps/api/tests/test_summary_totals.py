@@ -112,3 +112,54 @@ def test_a_sheet_without_subtotal_rows_still_parses():
 
 def test_no_lines_is_handled():
     assert parse_summary([]).net.total == 0
+
+
+def test_a_zero_read_as_the_letter_o_still_forms_a_row():
+    """TAM-16's deletions total is `117 116 o 233` -- the third-gender zero
+    came back as a letter at 0.792 confidence.
+
+    A row needs four numbers, so the whole line was dropped and deletions read
+    226 (supplement 1) instead of 233. In this column, which holds nothing but
+    counts, an `o` among digits is a zero.
+    """
+    rows: list[OcrLine] = []
+    rows += _row("அடிப்படைப் பட்டியல்", (279, 277, 0, 556), 100)
+    rows += _row("சேர்த்தல் பட்டியல்", (110, 113, 0, 223), 140)
+    # the deletions total, exactly as OCR returns it
+    rows += [
+        _line("நீக்கல் பட்டியல் மொத்தம்", _LABEL_X, 180),
+        _line("117", _NUMBER_XS[0], 180),
+        _line("116", _NUMBER_XS[1], 180),
+        _line("o", _NUMBER_XS[2], 180),
+        _line("233", _NUMBER_XS[3], 180),
+    ]
+    rows += _row("பாலினப் பிரிவில் மாற்றம்", (0, 0, 0, 0), 220)
+    rows += _row("நிகர வாக்காளர்கள்", (272, 274, 0, 546), 260)
+    rows.append(_line("x", PAGE_WIDTH - 20, 20))
+
+    summary = parse_summary(rows)
+    assert summary.deletions.total == 233
+    assert summary.deletions.third_gender == 0
+    assert summary.net_is_consistent
+
+
+def test_roman_numerals_are_not_mistaken_for_numbers():
+    """The table numbers its sections `I`, `IlI`, `IV` in the same columns.
+
+    Mapping letters to digits wholesale would turn `IlI` into 111 and invent a
+    row, so only an `o` sitting among digits is treated as a zero.
+    """
+    rows: list[OcrLine] = []
+    rows += _row("அடிப்படைப் பட்டியல்", (279, 277, 0, 556), 100)
+    rows += [_line(t, _NUMBER_XS[i], 140) for i, t in enumerate(("IlI", "IV", "B", "I"))]
+    rows += _row("சேர்த்தல் பட்டியல்", (5, 5, 0, 10), 180)
+    rows += _row("நீக்கல் பட்டியல்", (2, 1, 0, 3), 220)
+    rows += _row("பாலினப் பிரிவில் மாற்றம்", (0, 0, 0, 0), 260)
+    rows += _row("நிகர வாக்காளர்கள்", (282, 281, 0, 563), 300)
+    rows.append(_line("x", PAGE_WIDTH - 20, 20))
+
+    summary = parse_summary(rows)
+    assert summary.base.total == 556
+    assert summary.additions.total == 10
+    assert summary.deletions.total == 3
+    assert summary.net_is_consistent
