@@ -48,6 +48,17 @@ _AXIS_DEGREES = 6.0
 
 _MIN_SIDE_PX = 4
 
+# A stamp glyph is wide as well as tall. Tall Tamil letters are not: the false
+# positive this guards against was 20px of a 367px cell (5%), against 13-24% for
+# real stamp glyphs, and it struck a living elector off a clean card.
+_MIN_WIDTH_FRACTION = 0.08
+
+# Filtering on orientation was tried too -- real stamps measured 55-68 degrees
+# and the false positive sat at 23 -- and rejected. `minAreaRect` reports the
+# angle of a component's tightest box, not the angle the stamp was printed at,
+# so the band held for the glyphs measured but not in general. Width alone
+# separates the observed cases, and does so for a reason that generalises.
+
 
 @dataclass(frozen=True)
 class StampMark:
@@ -89,11 +100,14 @@ def find_stamp_marks(cell: np.ndarray) -> list[StampMark]:
     count, labels, stats, _ = cv2.connectedComponentsWithStats(ink, 8)
 
     min_height = cell.shape[0] * _MIN_HEIGHT_FRACTION
+    min_width = cell.shape[1] * _MIN_WIDTH_FRACTION
     marks: list[StampMark] = []
 
     for index in range(1, count):
         x, y, w, h, area = stats[index]
         if h < min_height or w < _MIN_SIDE_PX or h < _MIN_SIDE_PX:
+            continue
+        if w < min_width:
             continue
         if area / (w * h) >= _MAX_FILL:
             continue

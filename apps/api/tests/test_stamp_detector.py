@@ -95,6 +95,31 @@ def test_empty_cell_is_not_a_stamp():
     assert find_stamp_marks(np.full((CARD_H, CARD_W), 255, dtype=np.uint8)) == []
 
 
+def test_a_tall_narrow_glyph_is_not_a_stamp():
+    """Guards a real false positive: TAM-27 page 16, serial 385.
+
+    A clean card with no stamp and no reason code was struck off by a single
+    20x32 component at 23 degrees -- a tall Tamil letter in the name, hollow
+    enough to slip under the fill threshold. Under a rule where either signal is
+    sufficient, that removes a living elector.
+
+    Real stamp glyphs are far wider and sit at 55-68 degrees.
+    """
+    card = _blank_card()
+    # A tall thin near-vertical stroke pair, like ஹ: tall, hollow, not a rectangle.
+    cv2.line(card, (120, 60), (128, 108), 0, 2)
+    cv2.line(card, (140, 58), (132, 110), 0, 2)
+    cv2.line(card, (122, 62), (140, 60), 0, 2)
+    assert find_stamp_marks(card) == []
+
+
+def test_a_stamp_sized_diagonal_is_still_found_beside_such_glyphs():
+    """The narrow-glyph guard must not cost a real detection."""
+    card = _blank_card()
+    cv2.line(card, (120, 60), (128, 108), 0, 2)
+    assert len(find_stamp_marks(_with_stamp(card))) >= 1
+
+
 def test_photo_box_alone_is_not_a_stamp():
     """A tall hollow rectangle is furniture, however large."""
     card = np.full((CARD_H, CARD_W), 255, dtype=np.uint8)
