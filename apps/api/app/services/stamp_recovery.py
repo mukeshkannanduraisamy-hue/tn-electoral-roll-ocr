@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
+import cv2
 import numpy as np
 
 from ..templates.text_utils import extract_digits
@@ -39,6 +40,13 @@ MAX_AGE = 120
 # Widths to re-read, as fractions of cell width. A spread rather than a choice:
 # no single one of these is believed to be correct.
 _CROP_FRACTIONS: tuple[float, ...] = (0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 1.00)
+
+# Pages render at their own native resolution, which for these scans is ~143 dpi,
+# and at that size the recognizer loses digits it can read when the crop is
+# enlarged. On the real roll, enlarging recovered 21 of 48 otherwise-lost ages
+# against 5 without it. Enlarging first because it succeeds more often, which
+# ends the loop sooner; it is not trusted more, since agreement still decides.
+_UPSCALES: tuple[float, ...] = (2.0, 1.0)
 
 # How many plausible readings must agree. Two is the smallest number that stops a
 # single lucky read from being trusted.
@@ -76,11 +84,15 @@ def recover_age(cell: np.ndarray, read: OcrReader) -> int | None:
     width = cell.shape[1]
     plausible: list[int] = []
 
-    for fraction in _CROP_FRACTIONS:
+    for scale, fraction in ((s, f) for s in _UPSCALES for f in _CROP_FRACTIONS):
         cut = int(width * fraction)
         if cut < 40:
             continue
         crop = cell if cut >= width else cell[:, :cut]
+        if scale != 1.0:
+            crop = cv2.resize(
+                crop, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC
+            )
         try:
             age = _age_in(read(crop))
         except Exception:

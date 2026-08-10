@@ -31,7 +31,11 @@ from app.services.stamp_recovery import recover_age  # noqa: E402
 
 
 def _reader(by_width: dict[int, str]):
-    """Stands in for OCR: maps a crop's width to the age line it returns."""
+    """Stands in for OCR: maps a crop's width to the age line it returns.
+
+    Width is the crop's *final* width, after any upscale, since that is what a
+    recognizer actually sees.
+    """
 
     def read(crop: np.ndarray) -> list[str]:
         return [by_width.get(crop.shape[1], "")]
@@ -102,6 +106,30 @@ def test_ages_outside_the_electoral_range_are_not_plausible():
 
 def test_no_age_line_at_all_recovers_nothing():
     assert recover_age(_cell(), _reader({})) is None
+
+
+def test_the_cell_is_also_re_read_enlarged():
+    """Pages render at their native resolution, which here is 143 dpi.
+
+    At that size the recognizer loses digits it can read when the crop is
+    enlarged: on the real roll, upscaling recovered 21 of 48 ages that native
+    scale could not, against 5 without it. So scale is a variant like the crop
+    width -- not a tuned constant, since agreement still decides.
+    """
+    cell = _cell(width=800)
+    # Only the enlarged reads carry the age; every native-width read is damaged.
+    by_width = {int(800 * f): "வயது : 5பாலினம் : ஆண்" for f in (0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 1.0)}
+    by_width.update({int(800 * f * 2): "வயது : 59 பாலினம் : ஆண்" for f in (0.45, 0.55)})
+    assert recover_age(cell, _reader(by_width)) == 59
+
+
+def test_an_enlarged_misread_still_has_to_agree():
+    """Enlarging is not trusted more than anything else."""
+    cell = _cell(width=800)
+    by_width = {int(800 * f): "வயது : 5பாலினம்" for f in (0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 1.0)}
+    by_width[int(800 * 0.45 * 2)] = "வயது : 59 பாலினம்"
+    by_width[int(800 * 0.55 * 2)] = "வயது : 38 பாலினம்"
+    assert recover_age(cell, _reader(by_width)) is None
 
 
 # --------------------------------------------------------------- real rolls
