@@ -341,6 +341,58 @@ _SUBTOTALLED_ROWS = frozenset({"additions", "deletions"})
 _TOTAL_STEMS = ("மொத்தம்", "மொத்தம", "மாத்தம்", "மொததம்")
 
 
+# Page kinds that can carry the rest of a summary table. The legend sheet is the
+# one that does in practice: on TAM-16 the net row shares page 33 with the
+# deletion-reason key, and the classifier calls that page a legend.
+_SUMMARY_CONTINUATION_TYPES = frozenset({
+    PageType.SUMMARY_PAGE.value,
+    PageType.LEGEND_PAGE.value,
+    PageType.BLANK_OR_SIGNATURE.value,
+})
+
+
+def summary_lines(pages: Sequence[Page]) -> list[OcrLine]:
+    """Every line of the summary table, including the pages it runs onto.
+
+    The statutory summary does not always fit one sheet. On TAM-16 the base,
+    additions and deletions rows are on page 32 while the `நிகர` net row -- the
+    figure the roll certifies, and the only one that closes the arithmetic -- is
+    on page 33 beside the legend. Handing the parser the single page classified
+    `summary_page` left the net to be filled from an unrelated band.
+
+    Continuation lines are shifted down by the height of the pages before them
+    so the rows keep document order across the join, which is what the parser's
+    vertical banding depends on. Copies are returned: these lines belong to a
+    Page that gets saved.
+    """
+    ordered = sorted(pages, key=lambda p: p.page_number)
+    start = next(
+        (
+            index
+            for index, page in enumerate(ordered)
+            if page.page_type == PageType.SUMMARY_PAGE.value
+        ),
+        None,
+    )
+    if start is None:
+        return []
+
+    collected: list[OcrLine] = list(ordered[start].lines)
+    offset = float(ordered[start].height or 0)
+
+    for page in ordered[start + 1:]:
+        if page.page_type not in _SUMMARY_CONTINUATION_TYPES:
+            break
+        if page.records:
+            break                       # a sheet with electors is not the table
+        for line in page.lines:
+            shifted = line.bbox.model_copy(update={"y": line.bbox.y + offset})
+            collected.append(line.model_copy(update={"bbox": shifted}))
+        offset += float(page.height or 0)
+
+    return collected
+
+
 def parse_summary(lines: list[OcrLine], page_id: str = "") -> RollSummary:
     """Read the base/additions/deletions/net table off a summary page."""
     summary = RollSummary(source_page_id=page_id)
@@ -455,7 +507,7 @@ def build(pages: Sequence[Page], file_id: str = "") -> PartMetadata:
     if cover is not None:
         metadata.station = parse_cover(cover.lines, cover.id)
     if summary_page is not None:
-        metadata.summary = parse_summary(summary_page.lines, summary_page.id)
+        metadata.summary = parse_summary(summary_lines(pages), summary_page.id)
 
     printed: int | None = None
     source = ""
