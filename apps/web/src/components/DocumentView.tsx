@@ -229,7 +229,7 @@ function DetailRow({ label, value: v }: { label: string; value: React.ReactNode 
 }
 
 export const DocumentView: React.FC = () => {
-  const { activeFileId, setActiveFileId, files, setSelectedRecordId, selectedRecordId, deleteFile, setConfirmModal } =
+  const { activeFileId, setActiveFileId, files, setSelectedRecordId, selectedRecordId, deleteFile, setConfirmModal, refreshStats } =
     useOcrStore();
 
   const [pages, setPages] = useState<PageSummary[]>([]);
