@@ -230,13 +230,46 @@ with a stub and reset it only on entry, so the stub outlived the test. Nothing
 noticed until a test did real OCR after it and silently read nothing. It now
 resets on exit.
 
+## What was built
+
+| Module | Purpose |
+|---|---|
+| `app/services/stamp_detector.py` | Finds stamp glyphs by shape; returns boxes |
+| `app/services/stamp_recovery.py` | Recovers a damaged age by agreement across re-reads |
+| `app/templates/deletion_signals.py` | Combines the two signals into one auditable verdict |
+| `app/templates/field_integrity.py` | Says whether a field survived the stamp |
+
+Wired into `electoral_roll_ta.py`: stamps are detected per cell in `parse`,
+translated into page coordinates, and passed to `_parse_cell`; OCR lines falling
+inside a stamp are dropped before parsing; `is_deleted` is written on every cell;
+a damaged age is cleared and recovery attempted; a suspect house number raises a
+warning.
+
+Two modules were written and deleted rather than shipped, both because
+measurement contradicted them: `stamp_removal.py` (erasing the ink recovered 1
+age of 3 and made two cards worse) and `cell_regions.py` (cropping at the photo
+box recovered none). They are recorded here so neither idea gets retried on the
+assumption it was never tested.
+
+666 tests pass. Coverage: 15/15 labelled cards plus 2 confirmed TAM-15 stamps for
+detection, 3/3 real ages recovered, and synthetic geometry tests that run without
+the rolls.
+
 ## Open questions
 
 **What `S2` means.** Serial 25 reads `S2` where every other stamped card reads a
 single letter. Whether that is a two-character reason code, a sub-code, or
-something unrelated to deletion needs an answer from whoever produces these
-rolls. Until then it is treated as deleted with reason recorded verbatim and not
-mapped to a meaning.
+something unrelated to deletion needs an answer from whoever produces these rolls.
+
+Decided in the meantime: the elector is flagged deleted — the stamp says so
+independently — and the code is stored verbatim as `S2 - Deleted (code not
+documented)`. No meaning is invented for it, because a guess in a deletion reason
+is a guess in an audit trail. `describe_reason` maps documented codes and falls
+through for the rest, so answering this question is a one-line change.
+
+Implementation added a second reason to handle codes separately from serials:
+`S2` fed through the serial patterns yields serial **2**, silently renumbering the
+elector. Standalone codes are now claimed before the serial is read.
 
 ## Out of scope
 
