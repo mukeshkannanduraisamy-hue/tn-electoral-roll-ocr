@@ -143,6 +143,48 @@ def test_an_unstamped_card_house_number_is_never_flagged():
     assert not any(issue.field == "house_number" for issue in record.issues)
 
 
+def _house_warnings(record):
+    return [i for i in record.issues if i.field == "house_number"]
+
+
+def test_the_warning_is_withdrawn_when_recovery_repairs_the_value():
+    """The crop re-OCR runs *after* the first parse and overwrites the value.
+
+    On real pages it repaired `22` into `2-2` while the warning raised against the
+    damaged read stayed attached, so correct values carried warnings.
+    """
+    lines = [ln for ln in _stamped_card_lines() if "வீட்டு" not in ln.text]
+    lines.append(_line("வீட்டு எண் : 22", 20, 95))
+    mark = StampMark(x=30, y=20, w=280, h=180, angle=62.0)
+    record = _parse(lines, [mark])
+    assert _house_warnings(record), "expected the damaged value to be flagged"
+
+    record.fields["house_number"].original_value = "2-2"
+    ElectoralRollTamilTemplate._flag_suspect_house_number(record, stamped=True)
+    assert not _house_warnings(record)
+
+
+def test_the_warning_is_raised_when_recovery_damages_the_value():
+    """The same overwrite turned `2-19` into `219` on a real card."""
+    mark = StampMark(x=30, y=20, w=280, h=180, angle=62.0)
+    record = _parse(_stamped_card_lines(), [mark])
+    assert not _house_warnings(record)
+
+    record.fields["house_number"].original_value = "219"
+    ElectoralRollTamilTemplate._flag_suspect_house_number(record, stamped=True)
+    assert len(_house_warnings(record)) == 1
+
+
+def test_re_evaluating_does_not_stack_duplicate_warnings():
+    lines = [ln for ln in _stamped_card_lines() if "வீட்டு" not in ln.text]
+    lines.append(_line("வீட்டு எண் : 22", 20, 95))
+    mark = StampMark(x=30, y=20, w=280, h=180, angle=62.0)
+    record = _parse(lines, [mark])
+    for _ in range(3):
+        ElectoralRollTamilTemplate._flag_suspect_house_number(record, stamped=True)
+    assert len(_house_warnings(record)) == 1
+
+
 def test_ocr_fragment_inside_a_stamp_is_not_taken_for_a_field():
     """Serial 13 yields a stray `C` at 0.945 -- the outline of the `D`.
 

@@ -365,12 +365,57 @@ class ElectoralRollTamilTemplate:
             if stamp_marks and image is not None:
                 self._recover_stamped_age(record, image, cell)
 
+            # Re-judge the house number now the crop re-OCR has had its say: it
+            # overwrites the value either way, so the first read's verdict may be
+            # attached to a value that no longer exists.
+            self._flag_suspect_house_number(record, stamped=bool(stamp_marks))
+
             voter_keys = ("serial", "epic", "name", "relation_name", "house_number", "age", "gender")
             if not any(record.fields.get(k) and record.fields[k].original_value.strip() for k in voter_keys):
                 continue
 
             records.append(record)
         return records
+
+    _HOUSE_STAMP_WARNING = "may have lost a separator to the DELETED stamp"
+
+    @classmethod
+    def _flag_suspect_house_number(cls, record: Record, stamped: bool) -> None:
+        """Mark a house number the stamp may have flattened, or withdraw the mark.
+
+        Idempotent, because it runs twice: once on the first read and again after
+        the crop re-OCR, which overwrites `house_number` unconditionally. On real
+        pages that overwrite went both ways -- it repaired `22` into `2-2` on one
+        card and broke `2-19` into `219` on another -- so a verdict from the first
+        read alone is attached to a value that no longer exists.
+
+        The value is never corrected. `22` cannot be told from a genuine `22`;
+        only a human looking at the page image can settle it.
+        """
+        record.issues = [
+            issue
+            for issue in record.issues
+            if cls._HOUSE_STAMP_WARNING not in (issue.message or "")
+        ]
+        if not stamped:
+            return
+
+        field = record.fields.get("house_number")
+        value = (field.edited_value or field.original_value or "").strip() if field else ""
+        if not value or house_number_is_intact(value):
+            return
+
+        record.issues.append(
+            Issue(
+                code=IssueCode.BAD_FORMAT,
+                severity=IssueSeverity.WARNING,
+                field="house_number",
+                message=(
+                    f"'{value}' {cls._HOUSE_STAMP_WARNING} "
+                    f"(e.g. '2-2' read as '22'); check the page image"
+                ),
+            )
+        )
 
     @staticmethod
     def _recover_stamped_age(record: Record, image: np.ndarray, cell: BBox) -> None:
@@ -681,25 +726,6 @@ class ElectoralRollTamilTemplate:
         if verdict.reason:
             values["deletion_reason"] = (verdict.reason, 1.0, None, [])
 
-        # The stamp eats the separator in a house number: `2-2` becomes `22`,
-        # which is a perfectly valid house number and wrong. It cannot be told
-        # from a real `22`, so it is not corrected -- only marked, and only where
-        # a stamp actually crossed the cell.
-        if stamp_marks and "house_number" in values:
-            house_number = values["house_number"][0]
-            if house_number and not house_number_is_intact(house_number):
-                record.issues.append(
-                    Issue(
-                        code=IssueCode.BAD_FORMAT,
-                        severity=IssueSeverity.WARNING,
-                        field="house_number",
-                        message=(
-                            f"'{house_number}' may have lost a separator to the "
-                            f"DELETED stamp (e.g. '2-2' read as '22'); check the "
-                            f"page image"
-                        ),
-                    )
-                )
         if header_meta.get("section_name"):
             values["section_name"] = (header_meta.get("section_name"), 1.0, None, [])
         if header_meta.get("part_number"):
@@ -720,6 +746,8 @@ class ElectoralRollTamilTemplate:
                 )
             else:
                 record.fields[col.key] = FieldValue(key=col.key)
+
+        self._flag_suspect_house_number(record, stamped=bool(stamp_marks))
 
         if unparsed:
             record.issues.append(
