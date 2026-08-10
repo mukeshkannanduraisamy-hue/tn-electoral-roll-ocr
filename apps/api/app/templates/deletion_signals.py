@@ -16,20 +16,27 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-# What the mark beside a struck-off serial actually denotes.
+# Why the elector was removed. Quoted from the legend the roll prints on its own
+# final page:
 #
-# It names the supplement that recorded the deletion, not a reason for it. The
-# roll's own summary proves this: TAM-16 declares 226 deletions in
-# துணைப்பட்டியல் 1 and 7 in துணைப்பட்டியல் 2, total 233. Extraction found exactly
-# 233 struck off -- 226 marked `S`, 7 marked `S2`. Reading `S` as "Shifted"
-# instead would require all 226 people in Supplement 1 to have moved house, with
-# not one death or duplicate among them, and would leave `S2` meaningless.
+#     E- Expired, S- Shifted, R-Repeated, M - Missing, Q- Disqualified
 #
-# So no reason for removal is recorded, because the roll does not state one.
+# Only these five. An earlier version of this map also carried `W - Withdrawn`,
+# which appears nowhere on the roll; unlisted letters now fall through unnamed
+# rather than being given an invented meaning.
 REASON_MEANINGS = {
-    "S": "S - துணைப்பட்டியல் 1 (Supplement 1 deletion)",
-    "S2": "S2 - துணைப்பட்டியல் 2 (Supplement 2 deletion)",
+    "E": "Expired (இறந்தவர்)",
+    "S": "Shifted (இடம் மாறியவர்)",
+    "R": "Repeated (இரட்டைப் பதிவு)",
+    "M": "Missing (காணாமல் போனவர்)",
+    "Q": "Disqualified (தகுதியின்மை)",
 }
+
+# A trailing digit on the mark names the supplement that recorded the deletion,
+# not a different reason. TAM-16 declares 226 deletions in துணைப்பட்டியல் 1 and 7
+# in துணைப்பட்டியல் 2; extraction found exactly 226 `S` and 7 `S2`, so the digit
+# tracks the supplement while the letter keeps its documented meaning.
+_MARK_RE = re.compile(r"^([A-Z])(\d?)$")
 
 # A code is a documented letter, optionally carrying a digit -- serial 25 reads
 # `S2`, the only such case observed, and its meaning is not known.
@@ -73,16 +80,24 @@ def parse_reason_code(serial_text: str) -> str | None:
 
 
 def describe_reason(code: str) -> str:
-    """What the mark denotes, or the mark itself when it is not one we know.
+    """Why the elector was removed, and which supplement recorded it.
 
-    An unrecognised mark still strikes the elector off -- the stamp says so
-    independently -- but naming it would put a guess in an audit trail. Rolls
-    using a different convention will land here rather than be mislabelled.
+    A letter the legend does not list still strikes the elector off -- the stamp
+    says so independently -- but naming it would put a guess in an audit trail,
+    so it is reported unnamed instead.
     """
-    known = REASON_MEANINGS.get(code)
-    if known:
-        return known
-    return f"{code} - Deleted (mark not recognised)"
+    match = _MARK_RE.match(code)
+    if match is None:
+        return f"{code} - Deleted (mark not recognised)"
+
+    letter, supplement = match.group(1), match.group(2)
+    meaning = REASON_MEANINGS.get(letter)
+    if meaning is None:
+        return f"{code} - Deleted (mark not recognised)"
+
+    if supplement:
+        return f"{code} - {meaning}, supplement {supplement}"
+    return f"{code} - {meaning}"
 
 
 def assess_deletion(

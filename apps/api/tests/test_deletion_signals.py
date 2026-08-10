@@ -55,41 +55,46 @@ def test_lowercase_code_is_accepted():
     assert parse_reason_code("s 13") == "S"
 
 
-def test_the_mark_names_the_supplement_not_a_reason():
-    """`S`/`S2` identify which supplement recorded the deletion.
+def test_the_letter_is_the_reason_the_elector_was_removed():
+    """Per the legend printed on the roll's own last page:
 
-    Proven by the roll's own summary. TAM-16 declares 226 deletions in
-    Supplement 1 and 7 in Supplement 2, total 233; extraction found exactly 233
-    struck off, 226 marked `S` and 7 marked `S2`. For `S` to mean "Shifted"
-    instead, all 226 people in Supplement 1 would have to have moved house and
-    none died or was a duplicate.
+        E- Expired, S- Shifted, R-Repeated, M - Missing, Q- Disqualified
     """
     verdict = assess_deletion(reason_code="S", stamp_found=False)
     assert verdict.is_deleted is True
-    assert "Supplement 1" in verdict.reason
+    assert "Shifted" in verdict.reason
     assert verdict.signals == ("reason_code",)
 
 
-def test_supplement_two_is_recognised():
+@pytest.mark.parametrize(
+    "code,meaning",
+    [("E", "Expired"), ("S", "Shifted"), ("R", "Repeated"),
+     ("M", "Missing"), ("Q", "Disqualified")],
+)
+def test_every_documented_code_is_mapped(code, meaning):
+    assert meaning in assess_deletion(reason_code=code, stamp_found=False).reason
+
+
+def test_a_trailing_digit_keeps_the_reason_and_notes_the_supplement():
+    """`S2` is still a shift; the digit says which supplement recorded it.
+
+    TAM-16 declares 226 deletions in supplement 1 and 7 in supplement 2, and
+    extraction found exactly 226 `S` and 7 `S2` -- so the digit tracks the
+    supplement while the letter keeps its documented meaning.
+    """
     verdict = assess_deletion(reason_code="S2", stamp_found=False)
     assert verdict.is_deleted is True
-    assert "Supplement 2" in verdict.reason
-    assert verdict.signals == ("reason_code",)
+    assert "Shifted" in verdict.reason
+    assert "2" in verdict.reason
 
 
-def test_no_reason_for_removal_is_claimed():
-    """The roll does not say why anyone was removed, so neither do we."""
-    for code in ("S", "S2"):
-        reason = assess_deletion(reason_code=code, stamp_found=False).reason
-        for invented in ("Shifted", "Expired", "Repeated", "Disqualified"):
-            assert invented not in reason, f"{code} claimed '{invented}'"
-
-
-def test_an_unrecognised_mark_is_recorded_verbatim():
-    verdict = assess_deletion(reason_code="E", stamp_found=False)
+def test_a_letter_the_legend_does_not_list_is_not_given_a_meaning():
+    """`W` was in an earlier map and is not on the roll's legend."""
+    verdict = assess_deletion(reason_code="W", stamp_found=False)
     assert verdict.is_deleted is True
-    assert verdict.reason.startswith("E")
-    assert "Supplement" not in verdict.reason
+    assert verdict.reason.startswith("W")
+    for invented in ("Withdrawn", "Shifted", "Expired"):
+        assert invented not in verdict.reason
 
 
 def test_stamp_alone_is_enough():
