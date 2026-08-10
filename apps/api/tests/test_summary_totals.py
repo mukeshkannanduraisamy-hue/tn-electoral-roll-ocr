@@ -32,6 +32,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import pytest  # noqa: E402
+
 from app.schemas.core import BBox, OcrLine  # noqa: E402
 from app.services.roll_metadata import parse_summary  # noqa: E402
 
@@ -141,6 +143,69 @@ def test_a_zero_read_as_the_letter_o_still_forms_a_row():
     assert summary.deletions.total == 233
     assert summary.deletions.third_gender == 0
     assert summary.net_is_consistent
+
+
+def _sheet_with_gender_row(gender_tokens: tuple[str, str, str, str]) -> list[OcrLine]:
+    rows: list[OcrLine] = []
+    rows += _row("அடிப்படைப் பட்டியல்", (403, 374, 0, 777), 100)
+    rows += _row("சேர்த்தல் பட்டியல்", (7, 22, 0, 29), 140)
+    rows += _row("நீக்கல் பட்டியல்", (29, 23, 0, 52), 180)
+    rows += [
+        _line("பாலினப் பிரிவில் மாற்றம் செய்வதால் ஏற்படும் வேறுபாடு", _LABEL_X, 220),
+        *(_line(t, x, 220) for t, x in zip(gender_tokens, _NUMBER_XS)),
+    ]
+    rows += _row("நிகர வாக்காளர்கள்", (382, 372, 0, 754), 260)
+    rows.append(_line("x", PAGE_WIDTH - 20, 20))
+    return rows
+
+
+def test_a_gender_reclassification_row_may_be_negative():
+    """TAM-19 prints `1 -1 0 0`: one elector moved from female to male.
+
+    OCR returns the minus faithfully at 0.998, but `-1` did not match the
+    integer pattern, so the row had only three numbers, failed the four-number
+    filter and was filled from an unrelated band -- landing gender at 11 and
+    breaking the sheet's arithmetic.
+    """
+    summary = parse_summary(_sheet_with_gender_row(("1", "-1", "0", "0")))
+    assert summary.gender_adjustment.male == 1
+    assert summary.gender_adjustment.female == -1
+    assert summary.gender_adjustment.total == 0
+
+
+def test_the_sheet_reconciles_with_a_reclassification():
+    """777 + 29 - 52 + 0 = 754."""
+    summary = parse_summary(_sheet_with_gender_row(("1", "-1", "0", "0")))
+    assert summary.net_is_consistent
+
+
+def test_the_other_rows_are_unharmed_by_the_negative_row():
+    summary = parse_summary(_sheet_with_gender_row(("1", "-1", "0", "0")))
+    assert summary.base.total == 777
+    assert summary.additions.total == 29
+    assert summary.deletions.total == 52
+    assert summary.net.total == 754
+
+
+@pytest.mark.parametrize("minus", ["-", "−", "–", "—"])
+def test_the_dashes_ocr_uses_for_a_minus_are_all_read(minus):
+    """Hyphen, true minus, en dash and em dash all come back from OCR."""
+    summary = parse_summary(_sheet_with_gender_row(("1", f"{minus}1", "0", "0")))
+    assert summary.gender_adjustment.female == -1
+
+
+def test_a_negative_row_still_has_to_add_up():
+    assert parse_summary(
+        _sheet_with_gender_row(("1", "-1", "0", "0"))
+    ).gender_adjustment.adds_up
+
+
+def test_a_date_is_not_read_as_a_negative_number():
+    """Footers carry `06-04-2026`; it must not become a count."""
+    rows = _sheet_with_gender_row(("1", "-1", "0", "0"))
+    rows.append(_line("06-04-2026", _NUMBER_XS[0], 320))
+    summary = parse_summary(rows)
+    assert summary.net.total == 754
 
 
 def test_roman_numerals_are_not_mistaken_for_numbers():

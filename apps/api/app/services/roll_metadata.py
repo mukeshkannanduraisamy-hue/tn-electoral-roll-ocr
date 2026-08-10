@@ -43,7 +43,10 @@ logger = logging.getLogger(__name__)
 
 _DATE_RE = re.compile(r"\d{1,2}[-./]\d{1,2}[-./]\d{4}")
 _YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
-_INT_RE = re.compile(r"^\d{1,6}$")
+#: A count as it ends up after `_digits` has normalised it. Signed, because the
+#: gender-reclassification row genuinely is: `+1` to one column and `-1` to the
+#: other when an elector is moved between them.
+_INT_RE = re.compile(r"^-?\d{1,6}$")
 #: "... : 57 - பாலக்கொடு" -> ("57", "பாலக்கொடு"). The name is optional
 #: because the cover splits the parliamentary constituency over two lines.
 _NUM_NAME_RE = re.compile(r":\s*(\d+)\s*(?:[-–—]\s*(.*))?$")
@@ -74,12 +77,32 @@ def _strip_colon(text: str) -> str:
 #: when it sits among digits.
 _INT_WITH_O_RE = re.compile(r"^(?=.*[oO])[0-9oO]{1,6}$")
 
+#: Dashes OCR returns for a minus sign, in the order of likelihood.
+_MINUS_CHARS = "-−–—"
+
+#: A count that may be negative. The gender-reclassification row is signed by
+#: nature -- an elector moving from female to male is `+1` to one column and
+#: `-1` to the other -- and on TAM-19 OCR returns that `-1` faithfully at 0.998
+#: confidence. Matching only unsigned digits left the row three numbers long,
+#: so it failed the four-number filter and was filled from an unrelated band,
+#: putting 11 where the sheet prints 0 and breaking its arithmetic.
+_SIGNED_INT_RE = re.compile(rf"^[{_MINUS_CHARS}]\d{{1,6}}$")
+
 
 def _digits(text: str) -> str:
-    """`text` with an `o` read as the zero it is, when that is what it can be."""
+    """`text` as a plain integer, undoing what OCR does to these columns.
+
+    An `o` among digits is a zero: the summary's right-hand columns hold nothing
+    but counts. A leading dash is a minus sign. Neither rewrite is applied more
+    widely -- the table numbers its sections `I`, `IlI`, `IV` in these same
+    columns and its footer carries dates like `06-04-2026`, and both would
+    become counts under a looser rule.
+    """
     stripped = _clean(text)
     if _INT_WITH_O_RE.match(stripped):
         return stripped.replace("o", "0").replace("O", "0")
+    if _SIGNED_INT_RE.match(stripped):
+        return "-" + stripped[1:]
     return stripped
 
 
