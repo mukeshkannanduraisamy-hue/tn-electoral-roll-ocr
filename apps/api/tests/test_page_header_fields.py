@@ -103,6 +103,44 @@ def test_constituency_survives_the_ways_ocr_mangles_its_label(label):
     assert meta["constituency"] == CONSTITUENCY
 
 
+def test_the_header_band_is_re_read_enlarged_when_an_image_is_available(monkeypatch):
+    """A header error multiplies: every elector on the page inherits it.
+
+    Whole-page OCR reads the section's second word as `பனகுளம்`; the same band
+    enlarged reads `பனைகுளம்`, which is what is printed. One extra OCR call on a
+    thin strip is cheap next to getting it wrong on 30 records.
+    """
+    import numpy as np
+
+    from app.services import ocr_service
+    from app.templates import electoral_roll_ta as module
+
+    sharp = f"பிரிவு எண் மற்றும் பெயர் {SECTION}"
+    blurred = "பிரிவு எண் மற்றும் பெயர் 1-பன்குளம் (வ.கி) மற்றும் (ஊ), பனகுளம்"
+
+    def fake_run_ocr(image, *args, **kwargs):
+        return ocr_service.OcrPageResult(
+            lines=[_line(sharp, 28)], elapsed_ms=1, engine_lang="ta"
+        )
+
+    monkeypatch.setattr(module, "run_ocr", fake_run_ocr)
+
+    page_lines = [
+        _line(f"சட்டமன்றத் தொகுதியின் எண் மற்றும் பெயர் : {CONSTITUENCY}", 10),
+        _line(blurred, 28),
+    ]
+    image = np.full((400, 1100, 3), 255, dtype=np.uint8)
+    meta = ElectoralRollTamilTemplate._extract_header_metadata(page_lines, image)
+    assert meta["section_name"] == SECTION
+
+
+def test_header_extraction_still_works_with_no_image():
+    """Callers without pixels -- and every existing test -- keep working."""
+    meta = ElectoralRollTamilTemplate._extract_header_metadata(_page_lines(), None)
+    assert meta["constituency"] == CONSTITUENCY
+    assert meta["section_name"] == SECTION
+
+
 def test_a_page_without_a_header_reports_nothing_rather_than_guessing():
     body = [_line("பெயர் : இலட்சுமி", 95), _line("வயது : 41 பாலினம் : பெண்", 120)]
     meta = ElectoralRollTamilTemplate._extract_header_metadata(body)

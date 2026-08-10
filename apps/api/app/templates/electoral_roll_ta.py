@@ -281,8 +281,42 @@ class ElectoralRollTamilTemplate:
 
         return min(1.0, signals)
 
-    @staticmethod
-    def _extract_header_metadata(lines: list[OcrLine]) -> dict[str, Any]:
+    # Fraction of page height the header occupies, and how much to enlarge it.
+    # A header error is inherited by every elector on the page, so one extra OCR
+    # call on a thin strip is cheap next to getting it wrong thirty times.
+    _HEADER_BAND = 0.055
+    _HEADER_UPSCALE = 2.0
+
+    @classmethod
+    def _reread_header(cls, image: np.ndarray | None) -> list[OcrLine]:
+        """The header band, read again enlarged.
+
+        Pages render at their native resolution -- 143 dpi for these scans -- and
+        at that size the section's second word comes back as `பனகுளம்` where the
+        page prints `பனைகுளம்`. Enlarging the strip fixes it.
+        """
+        if image is None:
+            return []
+        band_height = max(1, int(image.shape[0] * cls._HEADER_BAND))
+        band = image[:band_height]
+        if band.size == 0:
+            return []
+        try:
+            enlarged = cv2.resize(
+                band, (0, 0),
+                fx=cls._HEADER_UPSCALE, fy=cls._HEADER_UPSCALE,
+                interpolation=cv2.INTER_CUBIC,
+            )
+            if enlarged.ndim == 2:
+                enlarged = cv2.cvtColor(enlarged, cv2.COLOR_GRAY2BGR)
+            return list(run_ocr(enlarged).lines)
+        except Exception:  # noqa: BLE001 - fall back to the whole-page read
+            return []
+
+    @classmethod
+    def _extract_header_metadata(
+        cls, lines: list[OcrLine], image: np.ndarray | None = None
+    ) -> dict[str, Any]:
         meta = {
             "part_number": "",
             "section_name": "",
@@ -290,6 +324,10 @@ class ElectoralRollTamilTemplate:
             "is_deletions_page": False,
         }
         full_text = " ".join(ln.text for ln in lines)
+
+        # The sharper re-read goes first, and the per-line loop below keeps the
+        # first match, so it wins wherever it found the same field.
+        lines = cls._reread_header(image) + list(lines)
 
         # 1. Part Number
         m_part = re.search(r"பாகம்\s*எண்\s*[:\-]?\s*(\d+)", full_text, re.IGNORECASE)
@@ -348,7 +386,7 @@ class ElectoralRollTamilTemplate:
         image: np.ndarray | None = None,
     ) -> list[Record]:
         cells = layout.cells or []
-        header_meta = self._extract_header_metadata(lines)
+        header_meta = self._extract_header_metadata(lines, image)
 
         buckets = assign_lines_to_cells(
             lines,

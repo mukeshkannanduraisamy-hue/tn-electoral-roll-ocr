@@ -386,6 +386,7 @@ class JobManager:
             # runs after the fan-in rather than per page.
             for file_id in touched_files:
                 self._apply_consensus(file_id)
+                self._reconcile_sections(file_id)
                 self._extract_part_metadata(file_id)
                 with session_scope() as session:
                     file_row = session.get(FileRow, file_id)
@@ -433,6 +434,32 @@ class JobManager:
                     )
         except Exception:  # noqa: BLE001 - never fail a job over post-processing
             logger.exception("Consensus failed for file %s", file_id)
+
+    def _reconcile_sections(self, file_id: str) -> None:
+        """Settle one section name per part, across every page of the file.
+
+        Runs after the fan-in for the same reason consensus does: a page cannot
+        tell that its section is one OCR reading among several, nor that it has
+        none because a supplement page does not reprint the header.
+        """
+        try:
+            from . import section_reconciliation
+
+            with session_scope() as session:
+                pages = load_pages_for_file(session, file_id)
+                if not pages:
+                    return
+
+                report = section_reconciliation.apply_sections(pages)
+                if report.records_changed:
+                    for page in pages:
+                        save_page(session, page, file_id)
+                    logger.info(
+                        "Sections reconciled on %s: %d records, %d pages inherited",
+                        file_id, report.records_changed, report.pages_inherited,
+                    )
+        except Exception:  # noqa: BLE001 - never fail a job over post-processing
+            logger.exception("Section reconciliation failed for file %s", file_id)
 
     def _extract_part_metadata(self, file_id: str) -> None:
         """Read the cover and summary sheets, and reconcile against them.
