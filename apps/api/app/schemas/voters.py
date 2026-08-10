@@ -203,6 +203,7 @@ class PromotionRequest(BaseModel):
     record_ids: list[str] = Field(default_factory=list)
     file_id: str | None = None
     page_id: str | None = None
+    all_documents: bool = False
     only_clean: bool = True
     """Promote only records with zero validation errors."""
     on_conflict: Literal["skip", "update"] = "skip"

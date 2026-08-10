@@ -893,8 +893,10 @@ def promote_records(
         stmt = stmt.where(RecordRow.page_id == payload.page_id)
     elif payload.file_id:
         stmt = stmt.where(RecordRow.file_id == payload.file_id)
+    elif payload.all_documents:
+        pass
     else:
-        raise HTTPException(400, "Provide record_ids, page_id or file_id")
+        raise HTTPException(400, "Provide record_ids, page_id, file_id, or all_documents")
 
     if payload.only_clean:
         stmt = stmt.where(RecordRow.error_count == 0)

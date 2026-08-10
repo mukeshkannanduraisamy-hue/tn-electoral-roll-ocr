@@ -18,6 +18,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   FileSearch,
+  Zap,
+  Loader2,
 } from "lucide-react";
 import { FieldValue, Record_ } from "@ocr/shared-types";
 import { useOcrStore } from "@/store/useOcrStore";
@@ -27,6 +29,7 @@ import {
   resetRecord,
   bulkUpdateRecords,
 } from "@/lib/api";
+import { promoteRecords } from "@/lib/voterApi";
 import { toast } from "sonner";
 
 const columnHelper = createColumnHelper<Record_>();
@@ -192,6 +195,30 @@ export const TableView: React.FC = () => {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const [promotingAll, setPromotingAll] = useState(false);
+
+  const handleApproveAllDocuments = async () => {
+    if (!confirm("Are you sure you want to promote ALL records across ALL uploaded documents into the voter database at high speed?")) return;
+    setPromotingAll(true);
+    try {
+      const result = await promoteRecords({
+        all_documents: true,
+        only_clean: false,
+        on_conflict: "skip",
+      });
+      const parts = [`${result.created} added`];
+      if (result.updated) parts.push(`${result.updated} updated`);
+      if (result.skipped) parts.push(`${result.skipped} skipped`);
+      toast.success(`Speed Insert Complete across ALL documents! ${parts.join(", ")}`);
+      loadData();
+      refreshStats(activeFileId || undefined);
+    } catch (e: any) {
+      toast.error(e?.message || "Could not store all document records");
+    } finally {
+      setPromotingAll(false);
     }
   };
 
@@ -504,6 +531,20 @@ export const TableView: React.FC = () => {
           >
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>Approve High Confidence</span>
+          </button>
+
+          <button
+            onClick={handleApproveAllDocuments}
+            disabled={promotingAll}
+            className="px-3 py-1 rounded-md bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 text-white hover:opacity-95 text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-orange-500/20 active:scale-95 disabled:opacity-40"
+            title="High-Speed Bulk Insert: Promote ALL records across ALL uploaded documents into the voter database"
+          >
+            {promotingAll ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Zap className="w-3.5 h-3.5 text-yellow-200 fill-yellow-200" />
+            )}
+            <span>Approve All Documents (Speed Insert)</span>
           </button>
 
           {activePageId && (

@@ -281,6 +281,7 @@ export function promoteRecords(payload: {
   record_ids?: string[];
   file_id?: string;
   page_id?: string;
+  all_documents?: boolean;
   only_clean?: boolean;
   on_conflict?: "skip" | "update";
 }): Promise<PromotionResult> {
