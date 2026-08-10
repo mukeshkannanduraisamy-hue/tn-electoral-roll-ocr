@@ -39,9 +39,14 @@ async def lifespan(_app: FastAPI):
     # Jobs cannot outlive the process that runs them, so anything still
     # marked in-flight at boot was orphaned by a restart. Clear it before
     # serving traffic, or the UI shows work that will never complete.
-    reconcile_interrupted_work()
-    # Creates the admin account on first boot and prunes expired sessions.
-    ensure_admin_user()
+    try:
+        reconcile_interrupted_work()
+    except Exception as exc:
+        logger.warning("Startup reconciliation skipped: %s", exc)
+    try:
+        ensure_admin_user()
+    except Exception as exc:
+        logger.warning("Startup admin user check skipped: %s", exc)
     logger.info("Data directory: %s", settings.data_dir)
     logger.info(
         "OCR: lang=%s version=%s device=%s workers=%d",

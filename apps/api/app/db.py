@@ -1004,15 +1004,7 @@ def save_page(session: Session, page: Page, file_id: str) -> None:
     row.page_number = page.page_number
     row.status = page.status if isinstance(page.status, str) else page.status.value
     row.image_path = page.image_path
-    if page.image_path and (
-        is_new_row or not _stored_page_image_present(session, page.id)
-    ):
-        try:
-            p_path = settings.pages_dir / page.image_path
-            if p_path.is_file():
-                row.image_data = base64.b64encode(p_path.read_bytes()).decode("utf-8")
-        except Exception:
-            pass
+    row.image_data = None
     row.width = page.width
     row.height = page.height
     row.template_id = page.template_id
