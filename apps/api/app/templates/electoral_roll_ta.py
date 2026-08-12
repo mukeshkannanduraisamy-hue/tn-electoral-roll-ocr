@@ -657,6 +657,7 @@ class ElectoralRollTamilTemplate:
 
         # --- pass 1: serial + EPIC, identified by shape and position -------
         top_band = cell.y + cell.h * 0.45
+        serial_boxes: list[tuple[OcrLine, str]] = []
         for idx_line, line in enumerate(lines):
             text = normalize(line.text)
             if line.bbox.cy > top_band:
@@ -685,11 +686,23 @@ class ElectoralRollTamilTemplate:
 
             m_ser_bare = SERIAL_BARE_RE.match(text)
             if m_ser_bare:
-                if "serial" not in values:
-                    put("serial", m_ser_bare.group(2), line)
-                    consumed.add(line.id)
+                serial_boxes.append((line, m_ser_bare.group(2)))
 
             reason_code = reason_code or code_prefix or None
+
+        # A supplement card prints two numbered boxes on its top row: the
+        # elector's serial on the left and the supplement's own number on the
+        # right, the latter a constant `1` down the page. Taking whichever line
+        # came first stored the supplement number for half the electors on every
+        # such page -- the lines arrive sorted by `(round(cy / 8), cx)`, so two
+        # boxes a pixel apart can land in different bands and swap places.
+        #
+        # Position decides it instead of arrival order: the serial is the
+        # leftmost box. A base-list card has only one, and is unaffected.
+        if serial_boxes and "serial" not in values:
+            line, digits = min(serial_boxes, key=lambda pair: pair[0].bbox.x)
+            put("serial", digits, line)
+            consumed.add(line.id)
 
         def _is_noise(text: str) -> bool:
             lowered = text.lower()
