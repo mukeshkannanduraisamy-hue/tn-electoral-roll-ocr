@@ -100,6 +100,35 @@ def test_the_epic_is_unaffected():
     assert record.fields["epic"].original_value == "IEB2202604"
 
 
+def test_a_serial_box_carrying_a_printed_marker_is_still_read():
+    """TAM-16 page 24 prints `#2  604` in the serial box.
+
+    The `#2` is on the page, not an OCR slip. The box then matched no serial
+    pattern at all, so only the supplement's `1` was left to be taken as the
+    serial -- the residue after the left-box rule fixed the rest.
+    """
+    lines = [
+        _line("#2 604", 65, _at(68.5)),
+        _line("1", 206, _at(67.5)),
+        _line("IEB1479708", 312, _at(67.5)),
+        _line("பெயர் : தவமணி திம்மராயன்", 36, 45),
+        _line("வயது : 45 பாலினம் : பெண்", 20, 120),
+    ]
+    record = _parse(lines)
+    assert record.fields["serial"].original_value == "604"
+
+
+def test_a_printed_marker_is_not_read_as_a_deletion_code():
+    """`#2` marks something about the entry; it does not strike anyone off."""
+    lines = [
+        _line("#2 604", 65, _at(68.5)),
+        _line("1", 206, _at(67.5)),
+        _line("IEB1479708", 312, _at(67.5)),
+        _line("வயது : 45 பாலினம் : பெண்", 20, 120),
+    ]
+    assert _parse(lines).fields["is_deleted"].original_value == "No"
+
+
 def test_a_base_list_card_with_one_box_still_works():
     lines = [
         _line("13", 120, 16),

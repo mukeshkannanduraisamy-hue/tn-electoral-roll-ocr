@@ -162,13 +162,17 @@ def _trim_header_value(value: str) -> str:
 # rolls print it. Matched before the serial patterns so `S2` is not read as 2.
 STANDALONE_CODE_RE = re.compile(r"^([SERMQWsermqw]\d?)$")
 
-# Serial with the code run together, for rolls that print them in one line. The
-# optional trailing digit is `S2` on serial 25, whose meaning is undocumented.
+# Serial with a marker run together in the same box. Two kinds appear: a
+# deletion reason code (`S`, `S2`), and a printed entry marker (`#2 604` on
+# TAM-16 page 24, which is on the page rather than an OCR slip). Only the letter
+# forms mean anything about deletion -- `parse_reason_code` matches those alone,
+# so `#` reaching here cannot strike an elector off.
+_SERIAL_MARKER = r"[#SERMQWsermqw]\d?"
 SERIAL_WITH_CODE_RE = re.compile(
-    r"^\s*\[?\s*([SERMQWsermqw]\d?)?\s*[\.\-:\s]*(\d{1,4})\s*\]?\s*"
+    rf"^\s*\[?\s*({_SERIAL_MARKER})?\s*[\.\-:\s]*(\d{{1,4}})\s*\]?\s*"
 )
 SERIAL_BARE_RE = re.compile(
-    r"^\s*\[?\s*([SERMQWsermqw]\d?)?\s*[\.\-:\s]*(\d{1,4})\s*\]?\s*$"
+    rf"^\s*\[?\s*({_SERIAL_MARKER})?\s*[\.\-:\s]*(\d{{1,4}})\s*\]?\s*$"
 )
 
 # Placeholder text printed where a photo would be -- never a field value.
@@ -818,6 +822,33 @@ class ElectoralRollTamilTemplate:
             stamp_found=stamp_found,
             on_deletions_page=bool(header_meta.get("is_deletions_page")),
         )
+        # An age no elector can have is not their age. A lost leading digit
+        # turns 80 into 8 and 60 into 6, and the roll lists nobody under 18, so
+        # such a value is damage that reads as data. Dropped rather than stored:
+        # a blank can be recovered from the page image later, a plausible-looking
+        # wrong number cannot, because nobody knows to look.
+        if "age" in values:
+            digits = extract_digits(values["age"][0])
+            plausible = False
+            if digits:
+                try:
+                    plausible = MIN_AGE <= int(digits) <= MAX_AGE
+                except ValueError:
+                    plausible = False
+            if not plausible:
+                rejected = values.pop("age")[0]
+                record.issues.append(
+                    Issue(
+                        code=IssueCode.OUT_OF_RANGE,
+                        severity=IssueSeverity.WARNING,
+                        field="age",
+                        message=(
+                            f"'{rejected}' is not a possible age for an elector "
+                            f"({MIN_AGE}-{MAX_AGE}); dropped rather than stored"
+                        ),
+                    )
+                )
+
         values["is_deleted"] = (verdict.flag, 1.0, None, [])
         if verdict.reason:
             values["deletion_reason"] = (verdict.reason, 1.0, None, [])
