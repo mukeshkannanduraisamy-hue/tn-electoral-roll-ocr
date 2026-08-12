@@ -61,6 +61,32 @@ from ..schemas.core import (
 logger = logging.getLogger(__name__)
 
 
+#: Most pages to have in flight at once on a GPU. Each worker holds its own
+#: engine -- `ocr_service` caches per thread so two threads never share a
+#: predictor -- and one engine occupies 591 MiB of this project's 4 GB card, so
+#: three peak around 2.2 GB and leave it half free.
+#:
+#: Measured on twelve stamped pages: 56.4 s at one worker, 47.5 s at two, 44.4 s
+#: at three, identical output throughout. The gain is not the GPU doing more at
+#: once but the CPU work either side of inference -- rendering, deskew,
+#: preprocessing, template parsing, about a third of each page -- overlapping
+#: instead of leaving the card idle.
+GPU_WORKER_LIMIT = 3
+
+#: Ceiling on CPU, where workers are cheap but contend for cores.
+CPU_WORKER_LIMIT = 8
+
+
+def resolve_worker_count(device: str, configured: int) -> int:
+    """How many pages to OCR at once on `device`.
+
+    Never more than `configured`: a deployment that asks for one worker gets
+    one, whatever the hardware.
+    """
+    limit = GPU_WORKER_LIMIT if device.startswith("gpu") else CPU_WORKER_LIMIT
+    return max(1, min(configured, limit))
+
+
 # ---------------------------------------------------------------------------
 # Worker process
 # ---------------------------------------------------------------------------
@@ -138,19 +164,17 @@ class JobManager:
         """
         with self._lock:
             if self._executor is None:
-                # A single GPU serialises compute, so fanning pages across
-                # threads there buys nothing and risks concurrent access to one
-                # engine on a 4 GB card. On CPU the workers parallelise across
-                # cores as before.
+                # A GPU takes fewer workers than a CPU but more than one: about
+                # a third of each page is CPU work either side of inference, and
+                # with a single worker the card idles through all of it. See
+                # `resolve_worker_count` for the measurements.
                 from . import ocr_service
 
-                if ocr_service.resolve_device().startswith("gpu"):
-                    workers = 1
-                else:
-                    workers = max(1, min(settings.ocr_workers, 8)) if settings.ocr_workers >= 1 else 1
+                device = ocr_service.resolve_device()
+                workers = resolve_worker_count(device, settings.ocr_workers)
                 logger.info(
                     "Starting OCR ThreadPoolExecutor with %d worker(s) on %s",
-                    workers, ocr_service.resolve_device(),
+                    workers, device,
                 )
                 self._executor = ThreadPoolExecutor(
                     max_workers=workers, thread_name_prefix="ocr-worker"
