@@ -25,6 +25,11 @@ const TEMPLATES = [
   { id: "generic", label: "Generic OCR" },
 ];
 
+const OCR_ENGINES = [
+  { id: "paddle", label: "PaddleOCR (High Speed - Default)" },
+  { id: "eagle_vlm", label: "NVIDIA Eagle VLM (Locate-Anything)" },
+];
+
 export const BulkExtractModal: React.FC<BulkExtractModalProps> = ({
   isOpen,
   onClose,
@@ -39,6 +44,7 @@ export const BulkExtractModal: React.FC<BulkExtractModalProps> = ({
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [templateId, setTemplateId] = useState("auto");
+  const [ocrEngine, setOcrEngine] = useState("paddle");
   const [isStarting, setIsStarting] = useState(false);
   const [jobStarted, setJobStarted] = useState(false);
 
@@ -75,7 +81,7 @@ export const BulkExtractModal: React.FC<BulkExtractModalProps> = ({
     if (!selectedIds.size || isStarting) return;
     try {
       setIsStarting(true);
-      const job = await startBulkJob(Array.from(selectedIds), templateId);
+      const job = await startBulkJob(Array.from(selectedIds), templateId, false, ocrEngine);
       if (job) setJobStarted(true);
     } catch (e) {
       toast.error("Failed to start bulk OCR extraction");
@@ -167,9 +173,9 @@ export const BulkExtractModal: React.FC<BulkExtractModalProps> = ({
 
         {/* Body */}
         <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4 min-h-0">
-          {/* Template Selector */}
-          <div className="flex items-center gap-4 shrink-0">
-            <div className="flex-1">
+          {/* Template & OCR Engine Selectors */}
+          <div className="grid grid-cols-2 gap-4 shrink-0">
+            <div>
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
                 Target Template
               </label>
@@ -186,9 +192,22 @@ export const BulkExtractModal: React.FC<BulkExtractModalProps> = ({
                 ))}
               </select>
             </div>
-            <div className="shrink-0 text-xs text-slate-500 dark:text-slate-400 mt-5 font-medium">
-              <span className="text-slate-900 dark:text-slate-200 font-bold">{totalSelected}</span> files ·{" "}
-              <span className="text-slate-900 dark:text-slate-200 font-bold">{totalPages}</span> pages selected
+            <div>
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+                OCR Engine Provider
+              </label>
+              <select
+                value={ocrEngine}
+                onChange={(e) => setOcrEngine(e.target.value)}
+                disabled={isRunning}
+                className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-indigo-500 outline-none disabled:opacity-50 font-medium"
+              >
+                {OCR_ENGINES.map((eng) => (
+                  <option key={eng.id} value={eng.id}>
+                    {eng.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

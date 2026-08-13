@@ -48,6 +48,7 @@ def process_page(
     lang: str | None = None,
     save_image: bool = True,
     page_id: str | None = None,
+    ocr_engine: str | None = None,
 ) -> Page:
     """Process one page of one PDF into a fully populated `Page`."""
     pdf_path = Path(pdf_path)
@@ -87,7 +88,7 @@ def process_page(
 
     # ------------------------------------------------------------- 3. OCR
     try:
-        ocr_result = ocr_service.run_ocr(pre.image, scale=pre.scale, lang=lang)
+        ocr_result = ocr_service.run_ocr(pre.image, scale=pre.scale, lang=lang, ocr_engine=ocr_engine)
     except ocr_service.OcrError as exc:
         page.status = PageStatus.ERROR
         page.error = str(exc)

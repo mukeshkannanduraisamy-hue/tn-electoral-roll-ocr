@@ -323,26 +323,18 @@ def _normalise(result: Any, scale: float) -> list[OcrLine]:
 
 
 # ---------------------------------------------------------------------------
-# Public entry point
+# Public entry point & Engine Dispatcher
 # ---------------------------------------------------------------------------
 
 
-def run_ocr(
+def _run_paddle_ocr(
     image: np.ndarray,
     scale: float = 1.0,
     lang: str | None = None,
 ) -> OcrPageResult:
-    """Run OCR on a preprocessed RGB image.
-
-    `scale` is `PreprocessResult.scale` -- the factor from rendered-page to
-    preprocessed pixels. Boxes are divided by it on the way out.
-    """
     lang = lang or settings.ocr_lang
     engine = get_engine(lang=lang)
 
-    # PaddleOCR reads ndarray input as BGR (it is cv2-native internally).
-    # Our pipeline works in RGB, so convert here rather than leaving a
-    # channel-swap bug that only shows up as slightly worse accuracy.
     if image.ndim == 3 and image.shape[2] == 3:
         feed = image[:, :, ::-1].copy()
     else:
@@ -363,10 +355,30 @@ def run_ocr(
     for result in results:
         lines.extend(_normalise(result, scale))
 
-    # Reading order: top-to-bottom, then left-to-right within a band.
     lines.sort(key=lambda ln: (round(ln.bbox.cy / 10), ln.bbox.cx))
-
     return OcrPageResult(lines=lines, elapsed_ms=elapsed_ms, engine_lang=lang)
+
+
+def run_ocr(
+    image: np.ndarray,
+    scale: float = 1.0,
+    lang: str | None = None,
+    ocr_engine: str | None = None,
+) -> OcrPageResult:
+    """Run OCR on a preprocessed RGB image using the requested engine.
+
+    Engine options: `"paddle"` (default PaddleOCR) or `"eagle_vlm"` (NVIDIA Eagle VLM).
+    """
+    engine_name = ocr_engine or getattr(settings, "ocr_engine", "paddle")
+    lang = lang or settings.ocr_lang
+
+    if engine_name == "eagle_vlm":
+        from .ocr_engines.eagle_engine import EagleOcrEngine
+        eagle_engine = EagleOcrEngine()
+        res = eagle_engine.run_ocr(image, scale=scale, lang=lang)
+        return OcrPageResult(lines=res.lines, elapsed_ms=res.elapsed_ms, engine_lang=lang)
+
+    return _run_paddle_ocr(image, scale=scale, lang=lang)
 
 
 def run_ocr_batch(

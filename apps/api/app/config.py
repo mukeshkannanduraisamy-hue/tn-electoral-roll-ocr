@@ -73,6 +73,13 @@ class Settings(BaseSettings):
     """Only correct small skews; a larger estimate usually means the estimator
     latched onto page furniture rather than text baselines."""
 
+    # ------------------------------------------------------------ ocr engine
+    ocr_engine: str = "paddle"
+    """`paddle` for PaddleOCR (High speed) or `eagle_vlm` for NVIDIA Eagle VLM (Locate Anything)."""
+
+    eagle_model_endpoint: str = ""
+    """API endpoint or local model path for NVIDIA Eagle VLM / Locate Anything model."""
+
     # ------------------------------------------------------------ paddleocr
     ocr_lang: str = "ta"
     """Default recognition language. `ta` = Tamil (PP-OCRv5 multilingual)."""
