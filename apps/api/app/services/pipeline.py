@@ -283,6 +283,7 @@ def process_page_with_retry(
     save_image: bool = True,
     page_id: str | None = None,
     max_retries: int | None = None,
+    ocr_engine: str | None = None,
 ) -> Page:
     """Process one page with automatic retry logic on transient errors."""
     retries = max_retries if max_retries is not None else settings.max_retries
@@ -298,6 +299,7 @@ def process_page_with_retry(
             lang=lang,
             save_image=save_image,
             page_id=page_id,
+            ocr_engine=ocr_engine,
         )
         if last_page.status == PageStatus.COMPLETED:
             return last_page
@@ -321,6 +323,7 @@ def process_pdf(
     template_id: str = "auto",
     lang: str | None = None,
     save_image: bool = True,
+    ocr_engine: str | None = None,
 ):
     """Process every page of a PDF, yielding pages as they complete."""
     info = pdf_service.inspect(pdf_path)
@@ -332,5 +335,6 @@ def process_pdf(
             template_id=template_id,
             lang=lang,
             save_image=save_image,
+            ocr_engine=ocr_engine,
         )
 

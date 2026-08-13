@@ -108,6 +108,7 @@ def _process_page_task(
     template_id: str,
     lang: str | None,
     page_id: str,
+    ocr_engine: str | None = None,
 ) -> str:
     """Top-level so it is picklable. Returns the Page as a JSON string."""
     from . import pipeline
@@ -119,6 +120,7 @@ def _process_page_task(
         template_id=template_id,
         lang=lang,
         page_id=page_id,
+        ocr_engine=ocr_engine,
     )
     return page.model_dump_json()
 
@@ -220,7 +222,7 @@ class JobManager:
     # ---------------------------------------------------------------- submit
 
     def submit(self, file_ids: list[str], template_id: str = "auto",
-               lang: str | None = None) -> Job:
+               lang: str | None = None, ocr_engine: str | None = None) -> Job:
         """Queue a job and start it on a background thread."""
         job_id = uuid.uuid4().hex[:12]
 
@@ -241,7 +243,7 @@ class JobManager:
 
         thread = threading.Thread(
             target=self._run_job,
-            args=(job_id, file_ids, template_id, lang),
+            args=(job_id, file_ids, template_id, lang, ocr_engine),
             name=f"ocr-job-{job_id}",
             daemon=True,
         )
@@ -253,7 +255,7 @@ class JobManager:
     # ------------------------------------------------------------- execution
 
     def _run_job(self, job_id: str, file_ids: list[str], template_id: str,
-                 lang: str | None) -> None:
+                 lang: str | None, ocr_engine: str | None = None) -> None:
         started = datetime.now(timezone.utc)
         try:
             self._update_job(job_id, status=JobStatus.RUNNING.value, started_at=started)
@@ -299,6 +301,7 @@ class JobManager:
                             template_id,
                             lang,
                             page_id,
+                            ocr_engine,
                         )
                         futures.append((future, file_id, file_row.name, page_number))
 

@@ -73,13 +73,13 @@ def _is_managed_upload(stored_path: str) -> bool:
 @router.post("", response_model=list[SourceFile])
 async def upload(
     files: list[UploadFile] = File(...),
-    session: Session = Depends(get_session),
 ) -> list[SourceFile]:
     """Accept one or more PDFs, validating each before it is registered."""
     if not files:
         raise HTTPException(400, "No files provided")
 
-    created: list[SourceFile] = []
+    # Phase 1: Save files to disk asynchronously without holding an open DB connection
+    saved_files: list[tuple[str, str, Path, int]] = []
     for upload_file in files:
         name = Path(upload_file.filename or "upload.pdf").name
         if not name.lower().endswith(".pdf"):
@@ -100,44 +100,54 @@ async def upload(
                             f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit",
                         )
                     out.write(chunk)
+            saved_files.append((file_id, name, stored, size))
         except HTTPException:
             stored.unlink(missing_ok=True)
             raise
         finally:
             await upload_file.close()
 
-        # Validate before registering so a corrupt PDF surfaces immediately
-        # rather than at OCR time.
+    # Phase 2: Open DB session and register files with automatic connection retry
+    from ..db import session_scope
+    from sqlalchemy.exc import OperationalError
+
+    created: list[SourceFile] = []
+    for file_id, name, stored, size in saved_files:
+        page_count = 0
+        status = FileStatus.PENDING.value
+        error_msg = None
+
         try:
             info = pdf_service.inspect(stored)
+            page_count = info.page_count
         except pdf_service.PdfError as exc:
             stored.unlink(missing_ok=True)
-            row = FileRow(
-                id=file_id,
-                name=name,
-                size_bytes=size,
-                status=FileStatus.ERROR.value,
-                error=str(exc),
-                stored_path="",
-            )
-            session.add(row)
-            session.flush()
-            created.append(file_to_schema(row))
-            continue
+            status = FileStatus.ERROR.value
+            error_msg = str(exc)
 
-        row = FileRow(
-            id=file_id,
-            name=name,
-            size_bytes=size,
-            page_count=info.page_count,
-            status=FileStatus.PENDING.value,
-            stored_path=str(stored),
-            file_data=None,
-            languages=[settings.ocr_lang],
-        )
-        session.add(row)
-        session.flush()
-        created.append(file_to_schema(row))
+        # Retry loop for DB insertion in case connection was interrupted
+        for attempt in range(2):
+            try:
+                with session_scope() as session:
+                    row = FileRow(
+                        id=file_id,
+                        name=name,
+                        size_bytes=size,
+                        page_count=page_count,
+                        status=status,
+                        error=error_msg,
+                        stored_path="" if status == FileStatus.ERROR.value else str(stored),
+                        file_data=None,
+                        languages=[settings.ocr_lang],
+                    )
+                    session.add(row)
+                    session.flush()
+                    created.append(file_to_schema(row))
+                break
+            except OperationalError as err:
+                logger.warning("DB OperationalError during file upload registration (attempt %d/2): %s", attempt + 1, err)
+                if attempt == 1:
+                    raise
 
     return created
 
