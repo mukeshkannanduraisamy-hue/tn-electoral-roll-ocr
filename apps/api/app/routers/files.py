@@ -144,12 +144,16 @@ async def upload(
 
 @router.get("", response_model=list[SourceFile])
 def list_files(session: Session = Depends(get_session)) -> list[SourceFile]:
-    rows = (
-        session.execute(select(FileRow).order_by(FileRow.created_at.desc()))
-        .scalars()
-        .all()
-    )
-    return [file_to_schema(r) for r in rows]
+    try:
+        rows = (
+            session.execute(select(FileRow).order_by(FileRow.created_at.desc()))
+            .scalars()
+            .all()
+        )
+        return [file_to_schema(r) for r in rows]
+    except Exception as exc:
+        logger.error("Failed to list files: %s", exc, exc_info=True)
+        raise HTTPException(500, f"Failed to fetch files from database: {exc}")
 
 
 # ── /import-folder MUST be declared BEFORE /{file_id} to avoid shadowing ───

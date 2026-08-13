@@ -63,22 +63,29 @@ export interface BulkUpdatePayload {
 
 async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const url = path.startsWith("http") ? path : `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
-  const res = await fetch(url, {
-    credentials: API_BASE ? "include" : "same-origin",
-    ...init,
-    headers: {
-      ...(init.body && !(init.body instanceof FormData)
-        ? { "Content-Type": "application/json" }
-        : {}),
-      ...(init.headers || {}),
-    },
-  });
+  try {
+    const res = await fetch(url, {
+      credentials: API_BASE ? "include" : "same-origin",
+      ...init,
+      headers: {
+        ...(init.body && !(init.body instanceof FormData)
+          ? { "Content-Type": "application/json" }
+          : {}),
+        ...(init.headers || {}),
+      },
+    });
 
-  if (res.status === 401) {
-    notifyUnauthorized();
+    if (res.status === 401) {
+      notifyUnauthorized();
+    }
+
+    return res;
+  } catch (err) {
+    if (err instanceof TypeError && err.message.toLowerCase().includes("fetch")) {
+      throw new Error(`Unable to connect to OCR API server at ${API_BASE || "localhost"}. Please verify backend service is running.`);
+    }
+    throw err;
   }
-
-  return res;
 }
 
 async function handleError(res: Response, fallback: string): Promise<never> {

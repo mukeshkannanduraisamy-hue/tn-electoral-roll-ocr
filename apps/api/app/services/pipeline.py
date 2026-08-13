@@ -75,10 +75,15 @@ def process_page(
     page.height = display.shape[0]
 
     if save_image:
+        import threading
         out_path = settings.pages_dir / f"{page_id}.png"
-        # cv2 writes BGR; our arrays are RGB.
-        cv2.imwrite(str(out_path), display[:, :, ::-1])
         page.image_path = out_path.name
+        # cv2 writes BGR; our arrays are RGB. Defer disk I/O to a background thread
+        threading.Thread(
+            target=cv2.imwrite,
+            args=(str(out_path), display[:, :, ::-1]),
+            daemon=True
+        ).start()
 
     # ------------------------------------------------------------- 3. OCR
     try:

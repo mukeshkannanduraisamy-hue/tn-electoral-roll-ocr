@@ -38,9 +38,21 @@ REASON_MEANINGS = {
 # tracks the supplement while the letter keeps its documented meaning.
 _MARK_RE = re.compile(r"^([A-Z])(\d?)$")
 
-# A code is a documented letter, optionally carrying a digit -- serial 25 reads
-# `S2`, the only such case observed, and its meaning is not known.
-_CODE_RE = re.compile(r"^\s*\[?\s*([SERMQWsermqw]\d?)\s*[\.\-:\s]+\d", re.UNICODE)
+# The whole box is the code, with no serial beside it. This is how the rolls
+# usually print it, and it is the only reading under which a trailing digit is
+# unambiguously part of the code rather than the serial.
+_STANDALONE_RE = re.compile(r"^\s*\[?\s*([SERMQWsermqw]\d?)\s*\]?\s*$", re.UNICODE)
+
+# A code sharing its box with the serial. The separator between them is optional
+# because OCR closes it up: `S 576` comes back as `S576`.
+#
+# The trailing digit is only part of the code when a separator follows it. Left
+# greedy it swallows the serial's first digit -- `S576` reads as code `S5`,
+# serial 76, which is how elector KCY2607174 (TAM-26 page 23) came to be stored
+# under a serial that appears nowhere on the card.
+_CODE_RE = re.compile(
+    r"^\s*\[?\s*([SERMQWsermqw](?:\d(?=[\s.\-:]))?)\s*[\.\-:\s]*\d", re.UNICODE
+)
 
 _DELETIONS_PAGE_REASON = "நீக்கல் பட்டியல் (Deletions List)"
 _STAMP_REASON = "DELETED (stamp)"
@@ -71,7 +83,16 @@ def parse_reason_code(serial_text: str) -> str | None:
     Case is not evidence: this is the lowest-confidence line on a stamped card
     (0.710-0.837), so a lowercase read is a recognition artefact, not a different
     code.
+
+    A box holding nothing but the code is read first. `S2` on its own is the
+    code entire; the same two characters in front of a serial are the letter
+    `S` and the serial's leading digit, and only the absence of a serial tells
+    the two apart.
     """
+    standalone = _STANDALONE_RE.match(serial_text)
+    if standalone:
+        return standalone.group(1).upper()
+
     match = _CODE_RE.match(serial_text)
     if match is None:
         return None

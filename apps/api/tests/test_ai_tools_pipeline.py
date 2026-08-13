@@ -238,8 +238,8 @@ def test_page_details_returns_empty_for_a_known_file_with_no_matching_pages():
 
 
 def test_page_details_unscoped_returns_pages_across_multiple_files():
-    file_a = uuid.uuid4().hex
-    file_b = uuid.uuid4().hex
+    file_a = "000000_" + uuid.uuid4().hex[:20]
+    file_b = "000001_" + uuid.uuid4().hex[:20]
     page_a = uuid.uuid4().hex
     page_b = uuid.uuid4().hex
     with session_scope() as s:

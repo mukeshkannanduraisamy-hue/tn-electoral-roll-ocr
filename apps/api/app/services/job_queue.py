@@ -61,30 +61,13 @@ from ..schemas.core import (
 logger = logging.getLogger(__name__)
 
 
-#: Most pages to have in flight at once on a GPU. Each worker holds its own
-#: engine -- `ocr_service` caches per thread so two threads never share a
-#: predictor -- and one engine occupies 591 MiB of this project's 4 GB card, so
-#: three peak around 2.2 GB and leave it half free.
-#:
-#: Measured on twelve stamped pages: 56.4 s at one worker, 47.5 s at two, 44.4 s
-#: at three, identical output throughout. The gain is not the GPU doing more at
-#: once but the CPU work either side of inference -- rendering, deskew,
-#: preprocessing, template parsing, about a third of each page -- overlapping
-#: instead of leaving the card idle.
-GPU_WORKER_LIMIT = 3
-
-#: Ceiling on CPU, where workers are cheap but contend for cores.
-CPU_WORKER_LIMIT = 8
-
-
 def resolve_worker_count(device: str, configured: int) -> int:
     """How many pages to OCR at once on `device`.
 
-    Never more than `configured`: a deployment that asks for one worker gets
-    one, whatever the hardware.
+    Relies directly on the user-configured `ocr_workers` setting rather than
+    hardcoded limits, allowing scaling on machines with more VRAM/CPU cores.
     """
-    limit = GPU_WORKER_LIMIT if device.startswith("gpu") else CPU_WORKER_LIMIT
-    return max(1, min(configured, limit))
+    return max(1, configured)
 
 
 # ---------------------------------------------------------------------------
