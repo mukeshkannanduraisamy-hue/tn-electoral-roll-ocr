@@ -163,16 +163,24 @@ def _trim_header_value(value: str) -> str:
 STANDALONE_CODE_RE = re.compile(r"^([SERMQWsermqw]\d?)$")
 
 # Serial with a marker run together in the same box. Two kinds appear: a
-# deletion reason code (`S`, `S2`), and a printed entry marker (`#2 604` on
-# TAM-16 page 24, which is on the page rather than an OCR slip). Only the letter
-# forms mean anything about deletion -- `parse_reason_code` matches those alone,
-# so `#` reaching here cannot strike an elector off.
-_SERIAL_MARKER = r"[#SERMQWsermqw]\d?"
+# deletion reason code (`S`, `S2`), and a printed entry marker (`#2  604` on
+# TAM-16 page 24, which is on the page rather than an OCR slip).
+#
+# The `#` form must be followed by a serial, because OCR does not always keep
+# the box on one line. Returned alone, `#2` parsed as marker `#` plus serial 2 --
+# and being furthest left it won the leftmost-box rule, costing 32 serial jumps
+# against the 4 the marker was added to fix. Requiring the separator means a
+# lone marker matches nothing and the real serial beside it still wins.
+#
+# Only the letter forms say anything about deletion: `parse_reason_code` matches
+# those alone, so a `#` reaching here cannot strike an elector off.
+_ENTRY_MARKER = r"(?:#\d?\s+)?"
+_REASON_CODE = r"([SERMQWsermqw]\d?)?"
 SERIAL_WITH_CODE_RE = re.compile(
-    rf"^\s*\[?\s*({_SERIAL_MARKER})?\s*[\.\-:\s]*(\d{{1,4}})\s*\]?\s*"
+    rf"^\s*\[?\s*{_ENTRY_MARKER}{_REASON_CODE}\s*[\.\-:\s]*(\d{{1,4}})\s*\]?\s*"
 )
 SERIAL_BARE_RE = re.compile(
-    rf"^\s*\[?\s*({_SERIAL_MARKER})?\s*[\.\-:\s]*(\d{{1,4}})\s*\]?\s*$"
+    rf"^\s*\[?\s*{_ENTRY_MARKER}{_REASON_CODE}\s*[\.\-:\s]*(\d{{1,4}})\s*\]?\s*$"
 )
 
 # Placeholder text printed where a photo would be -- never a field value.

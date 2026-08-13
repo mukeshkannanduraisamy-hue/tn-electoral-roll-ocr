@@ -61,13 +61,26 @@ from ..schemas.core import (
 logger = logging.getLogger(__name__)
 
 
+# How many pages may be OCR'd at once, by device. Measured on this project's
+# GTX 1650: one engine occupies 591 MiB and three workers peaked at 2177 MiB of
+# 4096. A fourth would not fit with room to spare, and an unbounded count taken
+# from `ocr_workers` -- 8 is a plausible setting -- would ask for about 4.7 GiB
+# on a 4 GiB card and fail mid-job.
+#
+# Raising these should follow a VRAM measurement rather than the CPU core count,
+# since it is card memory that runs out first.
+GPU_WORKER_LIMIT = 3
+CPU_WORKER_LIMIT = 8
+
+
 def resolve_worker_count(device: str, configured: int) -> int:
     """How many pages to OCR at once on `device`.
 
-    Relies directly on the user-configured `ocr_workers` setting rather than
-    hardcoded limits, allowing scaling on machines with more VRAM/CPU cores.
+    Never more than `configured`: a deployment that asks for one worker gets
+    one, whatever the hardware.
     """
-    return max(1, configured)
+    limit = GPU_WORKER_LIMIT if device.startswith("gpu") else CPU_WORKER_LIMIT
+    return max(1, min(configured, limit))
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +121,6 @@ def _process_page_task(
     template_id: str,
     lang: str | None,
     page_id: str,
-    ocr_engine: str | None = None,
 ) -> str:
     """Top-level so it is picklable. Returns the Page as a JSON string."""
     from . import pipeline
@@ -120,7 +132,6 @@ def _process_page_task(
         template_id=template_id,
         lang=lang,
         page_id=page_id,
-        ocr_engine=ocr_engine,
     )
     return page.model_dump_json()
 
@@ -222,7 +233,7 @@ class JobManager:
     # ---------------------------------------------------------------- submit
 
     def submit(self, file_ids: list[str], template_id: str = "auto",
-               lang: str | None = None, ocr_engine: str | None = None) -> Job:
+               lang: str | None = None) -> Job:
         """Queue a job and start it on a background thread."""
         job_id = uuid.uuid4().hex[:12]
 
@@ -243,7 +254,7 @@ class JobManager:
 
         thread = threading.Thread(
             target=self._run_job,
-            args=(job_id, file_ids, template_id, lang, ocr_engine),
+            args=(job_id, file_ids, template_id, lang),
             name=f"ocr-job-{job_id}",
             daemon=True,
         )
@@ -255,7 +266,7 @@ class JobManager:
     # ------------------------------------------------------------- execution
 
     def _run_job(self, job_id: str, file_ids: list[str], template_id: str,
-                 lang: str | None, ocr_engine: str | None = None) -> None:
+                 lang: str | None) -> None:
         started = datetime.now(timezone.utc)
         try:
             self._update_job(job_id, status=JobStatus.RUNNING.value, started_at=started)
@@ -301,7 +312,6 @@ class JobManager:
                             template_id,
                             lang,
                             page_id,
-                            ocr_engine,
                         )
                         futures.append((future, file_id, file_row.name, page_number))
 

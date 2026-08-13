@@ -118,6 +118,24 @@ def test_a_serial_box_carrying_a_printed_marker_is_still_read():
     assert record.fields["serial"].original_value == "604"
 
 
+def test_a_marker_split_onto_its_own_line_is_not_read_as_the_serial():
+    """OCR does not always keep `#2  604` together.
+
+    When it returns `#2` and `604` separately, the marker sits furthest left and
+    wins the leftmost-box rule, giving the elector serial 2. Accepting `#` as a
+    marker cost 32 serial jumps this way -- more than the 4 it was added to fix.
+    A marker only counts as one when a serial follows it.
+    """
+    lines = [
+        _line("#2", 65, _at(68.5)),
+        _line("604", 120, _at(68.5)),
+        _line("1", 206, _at(67.5)),
+        _line("IEB1479708", 312, _at(67.5)),
+        _line("வயது : 45 பாலினம் : பெண்", 20, 120),
+    ]
+    assert _parse(lines).fields["serial"].original_value == "604"
+
+
 def test_a_printed_marker_is_not_read_as_a_deletion_code():
     """`#2` marks something about the entry; it does not strike anyone off."""
     lines = [
