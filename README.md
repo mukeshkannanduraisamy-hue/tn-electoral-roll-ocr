@@ -45,7 +45,7 @@ OCR alone is sufficient.
 Requires **Node 20+**. Python 3.11 is installed for you if missing.
 
 ```bash
-git clone <your-repo-url> && cd OCR
+git clone https://github.com/mukeshkannanduraisamy-hue/tn-electoral-roll-ocr.git OCR && cd OCR
 ```
 
 ```bash
