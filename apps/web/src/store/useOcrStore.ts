@@ -421,9 +421,9 @@ export const useOcrStore = create<OcrState>((set, get) => ({
     }
   },
 
-  startBulkJob: async (fileIds, templateId = "auto", allPending = false, ocrEngine = "paddle") => {
+  startBulkJob: async (fileIds, templateId = "auto", allPending = false) => {
     try {
-      const job = await createJob(fileIds, templateId, allPending, ocrEngine);
+      const job = await createJob(fileIds, templateId, allPending);
       set({ activeJobId: job.id, activeJobStatus: "running", activeJobProgress: 0, fileJobProgress: {} });
       attachJobSSE(job.id, get, set as any);
       toast.info(`Started OCR extraction task #${job.id.slice(0, 6)}`);

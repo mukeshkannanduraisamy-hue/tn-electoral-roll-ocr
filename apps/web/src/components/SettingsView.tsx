@@ -33,12 +33,6 @@ export function SettingsView() {
   const [retries, setRetries] = useState(storeRetries);
   const [mode, setMode] = useState<"turbo" | "balanced" | "max_accuracy">(performanceMode);
 
-  // User-end controls for OCR Engine & NVIDIA Eagle
-  const [defaultOcrEngine, setDefaultOcrEngine] = useState("paddle");
-  const [eagleEndpoint, setEagleEndpoint] = useState(
-    typeof window !== "undefined" ? localStorage.getItem("eagle_endpoint") || "" : ""
-  );
-
   const handleSaveSettings = () => {
     setEngineSettings({
       performanceMode: mode,
@@ -47,11 +41,7 @@ export function SettingsView() {
       cacheEnabled,
       retries,
     });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("default_ocr_engine", defaultOcrEngine);
-      localStorage.setItem("eagle_endpoint", eagleEndpoint);
-    }
-    toast.success(`Settings saved: ${defaultOcrEngine.toUpperCase()} engine with ${workers} worker threads`);
+    toast.success(`Engine settings saved: ${mode.toUpperCase()} mode with ${workers} workers`);
   };
 
   return (
@@ -160,52 +150,6 @@ export function SettingsView() {
                     }`}
                   />
                 </button>
-              </div>
-            </div>
-          </div>
-
-          {/* OCR Engine Provider & NVIDIA Eagle Model Panel */}
-          <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-sm space-y-5">
-            <div className="flex items-center space-x-3">
-              <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950 text-purple-600 dark:text-purple-400">
-                <Zap className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                  OCR Model Engine & NVIDIA Eagle Configuration
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  User-end control for selecting default OCR engine and custom VLM endpoints
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              <div>
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">
-                  Default OCR Model Engine
-                </label>
-                <select
-                  value={defaultOcrEngine}
-                  onChange={(e) => setDefaultOcrEngine(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-slate-100 font-bold text-indigo-600 dark:text-indigo-400"
-                >
-                  <option value="paddle">PaddleOCR (High Speed - Default)</option>
-                  <option value="eagle_vlm">NVIDIA Eagle VLM (Locate-Anything)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">
-                  NVIDIA Eagle Endpoint / Model API
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. http://localhost:8080/v1 or NIM URL"
-                  value={eagleEndpoint}
-                  onChange={(e) => setEagleEndpoint(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500 font-mono"
-                />
               </div>
             </div>
           </div>

@@ -27,7 +27,6 @@ class JobRequest(BaseModel):
     file_ids: list[str] = Field(default_factory=list)
     template_id: str = "auto"
     lang: str | None = None
-    ocr_engine: str | None = None
     all_pending: bool = False
     """Process every file currently in the pending state."""
 
@@ -56,7 +55,7 @@ def create_job(payload: JobRequest, session: Session = Depends(get_session)) -> 
         raise HTTPException(404, f"Unknown file ids: {', '.join(missing)}")
 
     session.rollback()
-    return manager.submit(file_ids, template_id=payload.template_id, lang=payload.lang, ocr_engine=payload.ocr_engine)
+    return manager.submit(file_ids, template_id=payload.template_id, lang=payload.lang)
 
 
 @router.get("", response_model=list[Job])

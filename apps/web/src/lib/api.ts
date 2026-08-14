@@ -209,10 +209,10 @@ export async function bulkUpdateRecords(payload: BulkUpdatePayload): Promise<{ u
   return res.json();
 }
 
-export async function createJob(fileIds: string[], templateId = "auto", allPending = false, ocrEngine = "paddle"): Promise<Job> {
+export async function createJob(fileIds: string[], templateId = "auto", allPending = false): Promise<Job> {
   const res = await apiFetch("/api/jobs", {
     method: "POST",
-    body: JSON.stringify({ file_ids: fileIds, template_id: templateId, all_pending: allPending, ocr_engine: ocrEngine }),
+    body: JSON.stringify({ file_ids: fileIds, template_id: templateId, all_pending: allPending }),
   });
   if (!res.ok) await handleError(res, "Failed to submit OCR job");
   return res.json();

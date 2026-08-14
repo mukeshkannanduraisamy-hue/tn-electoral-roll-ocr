@@ -48,7 +48,6 @@ def process_page(
     lang: str | None = None,
     save_image: bool = True,
     page_id: str | None = None,
-    ocr_engine: str | None = None,
 ) -> Page:
     """Process one page of one PDF into a fully populated `Page`."""
     pdf_path = Path(pdf_path)
@@ -88,7 +87,7 @@ def process_page(
 
     # ------------------------------------------------------------- 3. OCR
     try:
-        ocr_result = ocr_service.run_ocr(pre.image, scale=pre.scale, lang=lang, ocr_engine=ocr_engine)
+        ocr_result = ocr_service.run_ocr(pre.image, scale=pre.scale, lang=lang)
     except ocr_service.OcrError as exc:
         page.status = PageStatus.ERROR
         page.error = str(exc)
@@ -283,7 +282,6 @@ def process_page_with_retry(
     save_image: bool = True,
     page_id: str | None = None,
     max_retries: int | None = None,
-    ocr_engine: str | None = None,
 ) -> Page:
     """Process one page with automatic retry logic on transient errors."""
     retries = max_retries if max_retries is not None else settings.max_retries
@@ -299,7 +297,6 @@ def process_page_with_retry(
             lang=lang,
             save_image=save_image,
             page_id=page_id,
-            ocr_engine=ocr_engine,
         )
         if last_page.status == PageStatus.COMPLETED:
             return last_page
@@ -323,7 +320,6 @@ def process_pdf(
     template_id: str = "auto",
     lang: str | None = None,
     save_image: bool = True,
-    ocr_engine: str | None = None,
 ):
     """Process every page of a PDF, yielding pages as they complete."""
     info = pdf_service.inspect(pdf_path)
@@ -335,6 +331,5 @@ def process_pdf(
             template_id=template_id,
             lang=lang,
             save_image=save_image,
-            ocr_engine=ocr_engine,
         )
 
