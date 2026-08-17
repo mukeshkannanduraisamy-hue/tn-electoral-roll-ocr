@@ -327,3 +327,10 @@ export async function downloadVoterExport(
   anchor.remove();
   URL.revokeObjectURL(url);
 }
+
+export function resetDatabase(): Promise<{ status: string; message: string }> {
+  return request<{ status: string; message: string }>("/api/voters/reset-database", {
+    method: "POST",
+  });
+}
+

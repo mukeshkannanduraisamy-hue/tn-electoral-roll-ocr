@@ -18,6 +18,7 @@ import {
   X,
   Loader2,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useOcrStore } from "@/store/useOcrStore";
@@ -59,7 +60,24 @@ export const Navbar: React.FC<NavbarProps> = ({
     cancelJob,
     setIsShortcutsOpen,
     setActiveTab,
+    setConfirmModal,
+    resetAllData,
   } = useOcrStore();
+
+  const handleClearDatabase = () => {
+    setUserMenuOpen(false);
+    setConfirmModal({
+      isOpen: true,
+      title: "Delete All Data in Database?",
+      message:
+        "This will permanently delete all voter records, polling stations, summary counts, and uploaded PDF documents from PostgreSQL and clear local storage caches. This action cannot be undone.",
+      confirmText: "Delete All Data",
+      danger: true,
+      onConfirm: async () => {
+        await resetAllData();
+      },
+    });
+  };
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -242,6 +260,16 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="hidden sm:inline">Import PDF</span>
         </button>
 
+        {/* Delete All Data button */}
+        <button
+          onClick={handleClearDatabase}
+          className="h-8 px-2.5 rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+          title="Delete all data in database"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          <span className="hidden md:inline">Delete DB Data</span>
+        </button>
+
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
@@ -276,7 +304,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           {userMenuOpen && (
-            <div className="absolute right-0 top-full mt-2 w-44 card-vimc rounded-xl shadow-xl border border-border z-50 py-1 animate-scale-in">
+            <div className="absolute right-0 top-full mt-2 w-48 card-vimc rounded-xl shadow-xl border border-border z-50 py-1 animate-scale-in">
               <div className="px-3 py-2 border-b border-border">
                 <div className="text-xs font-semibold text-foreground">
                   {authUser?.display_name || authUser?.username}
@@ -284,8 +312,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <div className="text-[11px] text-muted-foreground">Administrator</div>
               </div>
               <button
+                onClick={handleClearDatabase}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors border-b border-border/50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete All Data in DB
+              </button>
+              <button
                 onClick={() => void signOut()}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 Sign out

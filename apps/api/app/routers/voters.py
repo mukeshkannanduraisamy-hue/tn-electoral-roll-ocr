@@ -7,11 +7,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+import shutil
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import asc, desc, func, select
+from sqlalchemy import asc, desc, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..auth import require_user
 from ..db import (
     AuditLogRow,
@@ -1077,3 +1079,35 @@ def promote_records(
         user.username, result.created, result.updated, result.skipped,
     )
     return result
+
+
+@router.post("/reset-database")
+def reset_database(
+    session: Session = Depends(get_session),
+    user: UserRow = Depends(require_user),
+) -> dict:
+    """Truncate all data tables and clean cached files."""
+    try:
+        session.execute(
+            text("TRUNCATE TABLE voters, records, pages, files, polling_stations, summaries, photos, ocr_blocks, audit_logs, jobs CASCADE;")
+        )
+        session.commit()
+
+        for sub in ["pages", "photos", "uploads"]:
+            p = settings.data_dir / sub
+            if p.exists():
+                for item in p.iterdir():
+                    if item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                    else:
+                        try:
+                            item.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+        logger.info("User %r reset the database and cleared caches", user.username)
+        return {"status": "ok", "message": "All database records and file caches have been completely deleted."}
+    except Exception as e:
+        session.rollback()
+        logger.error("Failed to reset database: %s", e)
+        raise HTTPException(500, f"Database reset failed: {e}") from e
+

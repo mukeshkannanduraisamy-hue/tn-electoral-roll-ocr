@@ -95,16 +95,36 @@ function AgeBar({ label, count, max }: { label: string; count: number; max: numb
 }
 
 export function DashboardView() {
-  const { files, setActiveTab, deleteFile, setConfirmModal } = useOcrStore();
+  const { files, setActiveTab, deleteFile, setConfirmModal, resetAllData } = useOcrStore();
   const [stats, setStats] = useState<VoterStats | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchStats = () => {
+    setLoading(true);
     voterStats()
       .then(setStats)
       .catch(() => setStats(null))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchStats();
   }, []);
+
+  const handleDeleteAllData = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: "Delete All Data in Database?",
+      message:
+        "This will permanently delete all voter records, polling stations, summary counts, and uploaded PDF documents from PostgreSQL and clear all caches. Are you sure you want to proceed?",
+      confirmText: "Delete All Data",
+      danger: true,
+      onConfirm: async () => {
+        await resetAllData();
+        fetchStats();
+      },
+    });
+  };
 
   const totalDocs = files.length;
   const totalPages = files.reduce((a, f) => a + (f.page_count || 0), 0);
@@ -158,6 +178,14 @@ export function DashboardView() {
               >
                 <Upload className="w-4 h-4" />
                 Import PDF
+              </button>
+              <button
+                onClick={handleDeleteAllData}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600/80 hover:bg-rose-600 border border-rose-500/30 text-sm font-semibold shadow-lg shadow-rose-600/25 transition-all text-white backdrop-blur-sm"
+                title="Delete all data in database"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete All Data
               </button>
             </div>
           </div>
