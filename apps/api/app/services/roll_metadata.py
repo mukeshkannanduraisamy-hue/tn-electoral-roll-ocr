@@ -53,8 +53,8 @@ _NUM_NAME_RE = re.compile(r":\s*(\d+)\s*(?:[-–—]\s*(.*))?$")
 
 # Vertical tolerance for "on the same baseline", as a fraction of line
 # height. Values sit a few pixels off their labels; a whole line height
-# apart is a different row.
-_BAND = 1.2
+# apart is a different row. 0.5 ensures empty rows never steal values from neighbours.
+_BAND = 0.5
 
 
 def _clean(text: str) -> str:
