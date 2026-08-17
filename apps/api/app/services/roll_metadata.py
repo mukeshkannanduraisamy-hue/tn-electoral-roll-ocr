@@ -247,6 +247,15 @@ def parse_cover(lines: list[OcrLine], page_id: str = "") -> PollingStationInfo:
             ]
             if below:
                 info.pc_name = _strip_colon(below[0].text)
+        # Extract reservation status e.g. (பொது) / (தனி)
+        ac_res_m = re.search(r"\((பொது|தனி|SC|ST|GEN)\)|(பொது|தனி)", info.ac_name)
+        if ac_res_m:
+            info.ac_reservation = ac_res_m.group(1) or ac_res_m.group(2)
+        
+        pc_res_m = re.search(r"\((பொது|தனி|SC|ST|GEN)\)|(பொது|தனி)", info.pc_name)
+        if pc_res_m:
+            info.pc_reservation = pc_res_m.group(1) or pc_res_m.group(2)
+
         # Both names carry a trailing reservation status -- "(பொது)",
         # "(தனி)" -- which belongs to the seat, not to the place.
         info.pc_name = re.sub(r"\s*\(.*?\)\s*$", "", info.pc_name).strip()

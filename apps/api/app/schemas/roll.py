@@ -41,8 +41,10 @@ class PollingStationInfo(BaseModel):
     part_number: str = ""
     ac_number: str = ""
     ac_name: str = ""
+    ac_reservation: str = "பொது"
     pc_number: str = ""
     pc_name: str = ""
+    pc_reservation: str = "பொது"
 
     # --- revision --------------------------------------------------------
     revision_year: str = ""
