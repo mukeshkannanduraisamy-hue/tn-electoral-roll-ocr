@@ -1,14 +1,14 @@
-"""create electoral roll views (Standard Professional Names)
+"""create electoral roll views (Standard Professional Names with Join IDs)
 
 Revision ID: d8e9f0a1b2c3
 Revises: 7743375bcf7b
 Create Date: 2026-08-17 10:00:00.000000
 
-Creates the 4 standard professional views for the electoral roll system:
-1. `view_part_details` (Table 1: 1. திருத்தத்தின் விவரங்கள் , 2. பாகத்தின் விவரங்கள்...)
-2. `view_elector_counts` (Table 2: 4. வாக்காளர்களின் எண்ணிக்கை)
-3. `view_voters_list` (Table 3: வாக்காளர் பட்டியல் with உறவு_முறை & தந்தை_கணவர்_பெயர்)
-4. `view_voter_master` (Unified Master View in Voter POV Order with zero duplicate columns)
+Creates the 4 standard professional views for the electoral roll system with Join IDs:
+1. `view_part_details` (Table 1: includes polling_station_id, file_id)
+2. `view_elector_counts` (Table 2: includes polling_station_id, file_id)
+3. `view_voters_list` (Table 3: includes voter_id, polling_station_id, file_id)
+4. `view_voter_master` (Unified Master: includes voter_id, polling_station_id, file_id)
 """
 from typing import Sequence, Union
 
@@ -45,9 +45,9 @@ SELECT
     COALESCE(ps.district, 'தர்மபுரி') AS "மாவட்டம்",
     COALESCE(ps.pincode, '') AS "அஞ்சல்_குறியீட்டு_எண்",
     
-    -- Supported provenance columns
+    -- Join / Provenance IDs
     ps.id AS polling_station_id,
-    ps.file_id,
+    ps.file_id AS file_id,
     COALESCE(f.name, '') AS source_file_name,
     ps.created_at
 FROM public.polling_stations ps
@@ -67,8 +67,9 @@ SELECT
     COALESCE(ps.third_gender_electors, (ps.payload->'counts'->>'third_gender')::int, 0) AS "மூன்றாம்_பாலினம்",
     COALESCE(ps.total_electors, (ps.payload->'counts'->>'total')::int, 0) AS "மொத்தம்",
     
-    -- Supported provenance columns
+    -- Join / Provenance IDs
     ps.id AS polling_station_id,
+    ps.file_id AS file_id,
     COALESCE(f.name, '') AS source_file_name,
     ps.created_at
 FROM public.polling_stations ps
@@ -105,8 +106,10 @@ SELECT
     )) AS "பிரிவு_தலைப்பு",
     v.part_number AS "பாகம்_எண்",
     
-    -- Supported provenance columns
+    -- Join / Provenance IDs
     v.id AS voter_id,
+    COALESCE(v.polling_station_id, ps.id) AS polling_station_id,
+    COALESCE(v.source_file_id, ps.file_id) AS file_id,
     v.is_deleted,
     v.deletion_reason,
     COALESCE(f.name, v.source_file_name) AS source_file_name,
@@ -177,8 +180,10 @@ SELECT
     COALESCE(ps.third_gender_electors, (ps.payload->'counts'->>'third_gender')::int, 0) AS "மூன்றாம்_பாலினம்",
     COALESCE(ps.total_electors, (ps.payload->'counts'->>'total')::int, 0) AS "மொத்த_வாக்காளர்கள்",
 
-    -- 5. Supported Provenance Columns (No duplicate columns)
+    -- 5. Join / Provenance IDs
     v.id AS voter_id,
+    COALESCE(v.polling_station_id, ps.id) AS polling_station_id,
+    COALESCE(v.source_file_id, ps.file_id) AS file_id,
     v.is_deleted,
     v.deletion_reason,
     COALESCE(f.name, v.source_file_name) AS source_file_name,
