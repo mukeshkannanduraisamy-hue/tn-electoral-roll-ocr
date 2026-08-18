@@ -69,12 +69,13 @@ async function proxyRequest(
   }
 
   try {
+    const isStream = path.endsWith("/events");
     const response = await fetch(targetUrl, {
       method,
       headers,
       body: body ?? undefined,
-      // @ts-ignore — Node.js fetch supports this signal pattern; no hard cap
-      signal: AbortSignal.timeout(300_000), // 5 minute max for bulk operations
+      // @ts-ignore — Allow unbounded streaming for SSE events; 15 mins for bulk operations
+      signal: isStream ? undefined : AbortSignal.timeout(900_000),
     });
 
     // Stream the response back

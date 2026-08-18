@@ -1019,31 +1019,9 @@ def save_page(session: Session, page: Page, file_id: str) -> None:
     session.query(RecordRow).filter(RecordRow.page_id == page.id).delete(
         synchronize_session=False
     )
-    session.query(OCRBlockRow).filter(OCRBlockRow.page_id == page.id).delete(
-        synchronize_session=False
-    )
-    session.query(PhotoRow).filter(PhotoRow.page_id == page.id).delete(
-        synchronize_session=False
-    )
-    for photo in page.photos:
-        session.add(
-            PhotoRow(
-                id=uuid.uuid4().hex[:12],
-                file_id=file_id,
-                page_id=page.id,
-                record_id=photo.record_id,
-                photo_type=photo.photo_type,
-                file_path=photo.file_path,
-                image_data=getattr(photo, "image_data", None),
-                width=photo.width,
-                height=photo.height,
-            )
-        )
-
     for record in page.records:
         session.add(RecordRow(**record_to_row(record, file_id, page.page_number)))
-        for block in _ocr_blocks_for(record, page):
-            session.add(block)
+
 
 
 def _ocr_blocks_for(record: Record, page: Page) -> Iterator[OCRBlockRow]:
