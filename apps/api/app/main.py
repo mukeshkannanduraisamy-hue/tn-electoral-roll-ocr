@@ -19,7 +19,7 @@ from .db import init_db, reconcile_interrupted_work
 from .auth import ensure_admin_user, require_user
 from .routers import (
     ai_chat, auth, export, files, jobs, pages, photos, polling_stations, records,
-    templates, voters,
+    templates, validation, voters,
 )
 # Aliased: `settings` is already the config object imported above.
 from .routers import settings as settings_router
@@ -155,6 +155,7 @@ app.include_router(templates.router, prefix="/api/templates", tags=["templates"]
 app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"],
                    dependencies=PROTECTED)
 app.include_router(ai_chat.router, prefix="/api/ai", tags=["ai"], dependencies=PROTECTED)
+app.include_router(validation.router, prefix="/api/validation", tags=["validation"], dependencies=PROTECTED)
 
 
 @app.get("/", tags=["meta"])

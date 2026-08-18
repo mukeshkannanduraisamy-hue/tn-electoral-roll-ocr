@@ -19,6 +19,7 @@ import {
   Loader2,
   Sparkles,
   Trash2,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useOcrStore } from "@/store/useOcrStore";
@@ -249,6 +250,16 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <Sparkles className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">AI Assistant</span>
+        </button>
+
+        {/* Audit & Verification button */}
+        <button
+          onClick={() => setActiveTab("validation" as any)}
+          className="h-8 px-3 rounded-lg bg-emerald-950 border border-emerald-500/40 hover:bg-emerald-900/60 text-emerald-300 text-xs font-bold shadow-md flex items-center gap-1.5 transition-all"
+          title="Open PDF vs Database Verification & Audit"
+        >
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="hidden md:inline">Audit & Validation</span>
         </button>
 
         {/* Import button */}

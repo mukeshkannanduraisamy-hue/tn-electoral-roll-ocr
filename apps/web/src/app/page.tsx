@@ -21,6 +21,7 @@ import { DashboardView } from "@/components/DashboardView";
 import { SettingsView } from "@/components/SettingsView";
 import { AnalyticsView } from "@/components/AnalyticsView";
 import { PollingStationsView } from "@/components/PollingStationsView";
+import ValidationView from "@/components/ValidationView";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
 import { FloatingAiChatbot } from "@/components/FloatingAiChatbot";
 
@@ -49,7 +50,7 @@ export default function Home() {
     if (signedIn) loadFiles();
   }, [signedIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Global keydown: ?, 1-7, Esc
+  // Global keydown: ?, 1-8, Esc
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -62,9 +63,10 @@ export default function Home() {
       else if (e.key === "2") setActiveTab("voters");
       else if (e.key === "3") setActiveTab("table");
       else if (e.key === "4") setActiveTab("analytics");
-      else if (e.key === "5") setActiveTab("page");
-      else if (e.key === "6") setActiveTab("review");
-      else if (e.key === "7") setActiveTab("settings");
+      else if (e.key === "5") setActiveTab("validation");
+      else if (e.key === "6") setActiveTab("page");
+      else if (e.key === "7") setActiveTab("review");
+      else if (e.key === "8") setActiveTab("settings");
       else if (e.key === "Escape") setIsShortcutsOpen(false);
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -136,6 +138,7 @@ export default function Home() {
             {activeTab === "polling_stations" && <PollingStationsView />}
             {activeTab === "table"            && <DocumentView />}
             {activeTab === "analytics"        && <AnalyticsView />}
+            {activeTab === "validation"       && <ValidationView />}
             {activeTab === "page"             && <PageView />}
             {activeTab === "review"           && <ReviewQueue />}
             {activeTab === "settings"         && <SettingsView />}
