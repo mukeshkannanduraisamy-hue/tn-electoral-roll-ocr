@@ -1,13 +1,13 @@
-"""create electoral roll views (3 Dedicated Views with Join IDs)
+"""create electoral roll views (3 Dedicated Views with part_details_id, elector_counts_id, voters_list_id)
 
 Revision ID: d8e9f0a1b2c3
 Revises: 7743375bcf7b
-Create Date: 2026-08-18 10:00:00.000000
+Create Date: 2026-08-18 10:15:00.000000
 
-Creates the 3 standard dedicated views for the electoral roll system with explicit Join IDs:
-1. `view_part_details` (Table 1: includes polling_station_id, file_id)
-2. `view_elector_counts` (Table 2: includes polling_station_id, file_id)
-3. `view_voters_list` (Table 3: includes voter_id, polling_station_id, file_id)
+Creates the 3 dedicated views for the electoral roll system with specific join IDs:
+1. `view_part_details` (Table 1: includes part_details_id)
+2. `view_elector_counts` (Table 2: includes elector_counts_id, part_details_id)
+3. `view_voters_list` (Table 3: includes voters_list_id, part_details_id, elector_counts_id)
 """
 from typing import Sequence, Union
 
@@ -49,9 +49,8 @@ SELECT
     COALESCE(ps.district, 'தர்மபுரி') AS "மாவட்டம்",
     COALESCE(ps.pincode, '') AS "அஞ்சல்_குறியீட்டு_எண்",
     
-    -- Explicit Join IDs & Provenance
-    ps.id AS polling_station_id,
-    ps.file_id AS file_id,
+    -- Specific View Join ID & Provenance
+    ps.id AS part_details_id,
     COALESCE(f.name, '') AS source_file_name,
     ps.created_at
 FROM public.polling_stations ps
@@ -71,9 +70,9 @@ SELECT
     COALESCE(ps.third_gender_electors, (ps.payload->'counts'->>'third_gender')::int, 0) AS "மூன்றாம்_பாலினம்",
     COALESCE(ps.total_electors, (ps.payload->'counts'->>'total')::int, 0) AS "மொத்தம்",
     
-    -- Explicit Join IDs & Provenance
-    ps.id AS polling_station_id,
-    ps.file_id AS file_id,
+    -- Specific View Join IDs & Provenance
+    ps.id AS elector_counts_id,
+    ps.id AS part_details_id,
     COALESCE(f.name, '') AS source_file_name,
     ps.created_at
 FROM public.polling_stations ps
@@ -110,10 +109,10 @@ SELECT
     )) AS "பிரிவு_தலைப்பு",
     v.part_number AS "பாகம்_எண்",
     
-    -- Explicit Join IDs & Provenance
-    v.id AS voter_id,
-    COALESCE(v.polling_station_id, ps.id) AS polling_station_id,
-    COALESCE(v.source_file_id, ps.file_id) AS file_id,
+    -- Specific View Join IDs & Provenance
+    v.id AS voters_list_id,
+    COALESCE(v.polling_station_id, ps.id) AS part_details_id,
+    COALESCE(v.polling_station_id, ps.id) AS elector_counts_id,
     v.is_deleted,
     v.deletion_reason,
     COALESCE(f.name, v.source_file_name) AS source_file_name,
