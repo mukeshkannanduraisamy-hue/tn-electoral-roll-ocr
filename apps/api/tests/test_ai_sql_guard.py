@@ -19,9 +19,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import sqlite3  # noqa: E402
 import pytest  # noqa: E402
 
-from app.db import session_scope  # noqa: E402
+from app.db import database_url, session_scope  # noqa: E402
 from app.services.ai_agent import registry  # noqa: E402
 from app.services.ai_agent.tools import sql as sqltool  # noqa: E402
+
+#: The text-level guard is backend-agnostic and is always exercised. Actually
+#: *running* a statement is not: the read-only connection and SQLite's
+#: authorizer -- the layer that makes the table allowlist real -- have no
+#: Postgres equivalent here, so on a Postgres deployment the tool refuses
+#: outright rather than executing unguarded. These tests assert execution, so
+#: they only mean something on SQLite.
+_on_sqlite = database_url().startswith("sqlite")
+requires_sqlite = pytest.mark.skipif(
+    not _on_sqlite,
+    reason="run_readonly_sql executes only on SQLite; it fails closed elsewhere",
+)
 
 
 def _guard(statement: str):
@@ -115,6 +127,7 @@ def _run(args):
         return registry.execute(s, "run_readonly_sql", args)
 
 
+@requires_sqlite
 def test_the_tool_returns_rows_and_echoes_the_sql():
     result = _run({"sql": "SELECT COUNT(*) AS n FROM voters", "rationale": "count"})
     assert result["columns"] == ["n"]
@@ -127,6 +140,7 @@ def test_the_tool_reports_a_refusal_as_a_tool_error():
         _run({"sql": "SELECT * FROM app_settings", "rationale": "leak the key"})
 
 
+@requires_sqlite
 def test_results_are_capped():
     result = _run({"sql": "SELECT id FROM voters", "rationale": "all ids"})
     assert len(result["rows"]) <= sqltool.ROW_LIMIT
@@ -168,6 +182,7 @@ def test_the_parser_names_the_table_it_refused_where_it_can(statement):
         _guard(statement)
 
 
+@requires_sqlite
 def test_the_authorizer_refuses_a_forbidden_read_the_parser_let_through():
     """The parser is not the boundary; SQLite's authorizer is.
 
@@ -182,6 +197,7 @@ def test_the_authorizer_refuses_a_forbidden_read_the_parser_let_through():
         conn.close()
 
 
+@requires_sqlite
 def test_the_authorizer_still_allows_an_ordinary_read():
     conn = sqltool._readonly_connection()
     try:
@@ -198,6 +214,7 @@ def test_a_comma_join_is_refused_end_to_end():
 
 # --- Fix 1: database path derivation ----------------------------------------
 
+@requires_sqlite
 def test_readonly_connection_opens_correct_database():
     """Verify the connection opens the expected SQLite database.
 
@@ -238,6 +255,7 @@ def test_authorizer_allows_ordinary_functions(func_name):
     assert result == sqlite3.SQLITE_OK, f"_authorizer should allow {func_name}"
 
 
+@requires_sqlite
 def test_load_extension_is_refused():
     """Integration test: a query calling load_extension is refused.
 

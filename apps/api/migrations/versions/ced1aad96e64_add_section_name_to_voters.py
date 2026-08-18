@@ -36,7 +36,11 @@ def downgrade() -> None:
     with op.batch_alter_table('voters', schema=None) as batch_op:
         batch_op.drop_column('section_name')
 
-    with op.batch_alter_table('chat_threads', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_chat_threads_created_at'))
+    # `ix_chat_threads_created_at` is deliberately NOT dropped here. This
+    # migration never creates it -- autogenerate emitted the drop because the
+    # model already declared index=True while no migration had caught up. The
+    # index is created and dropped by 26c432a958c4, which comes *after* this
+    # revision, so dropping it here made every rollback past this point fail
+    # with "index does not exist".
 
     # ### end Alembic commands ###

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -131,6 +132,7 @@ async def upload(
             page_count=info.page_count,
             status=FileStatus.PENDING.value,
             stored_path=str(stored),
+            file_data=None,
             languages=[settings.ocr_lang],
         )
         session.add(row)
@@ -142,12 +144,16 @@ async def upload(
 
 @router.get("", response_model=list[SourceFile])
 def list_files(session: Session = Depends(get_session)) -> list[SourceFile]:
-    rows = (
-        session.execute(select(FileRow).order_by(FileRow.created_at.desc()))
-        .scalars()
-        .all()
-    )
-    return [file_to_schema(r) for r in rows]
+    try:
+        rows = (
+            session.execute(select(FileRow).order_by(FileRow.created_at.desc()))
+            .scalars()
+            .all()
+        )
+        return [file_to_schema(r) for r in rows]
+    except Exception as exc:
+        logger.error("Failed to list files: %s", exc, exc_info=True)
+        raise HTTPException(500, f"Failed to fetch files from database: {exc}")
 
 
 # ── /import-folder MUST be declared BEFORE /{file_id} to avoid shadowing ───
@@ -258,13 +264,26 @@ def list_pages(file_id: str, session: Session = Depends(get_session)) -> list[di
         .all()
     )
 
+    # Bulk query record error/warning aggregations grouped by page_id for this file
+    record_stats = session.execute(
+        select(
+            RecordRow.page_id,
+            func.count(RecordRow.id).label("record_count"),
+            func.coalesce(func.sum(RecordRow.error_count), 0).label("error_count"),
+            func.coalesce(func.sum(RecordRow.warning_count), 0).label("warning_count"),
+        )
+        .where(RecordRow.file_id == file_id)
+        .group_by(RecordRow.page_id)
+    ).all()
+
+    stats_by_page = {
+        r[0]: (r[1], int(r[2]), int(r[3]))
+        for r in record_stats
+    }
+
     summaries = []
     for row in rows:
-        counts = session.execute(
-            select(RecordRow.error_count, RecordRow.warning_count).where(
-                RecordRow.page_id == row.id
-            )
-        ).all()
+        rec_count, err_count, warn_count = stats_by_page.get(row.id, (0, 0, 0))
         summaries.append(
             {
                 "id": row.id,
@@ -278,9 +297,9 @@ def list_pages(file_id: str, session: Session = Depends(get_session)) -> list[di
                 # same way.
                 "page_type": row.page_type,
                 "classification_confidence": row.classification_confidence,
-                "record_count": len(counts),
-                "error_count": sum(c[0] for c in counts),
-                "warning_count": sum(c[1] for c in counts),
+                "record_count": rec_count,
+                "error_count": err_count,
+                "warning_count": warn_count,
                 "ocr_ms": row.ocr_ms,
                 "error": row.error,
             }

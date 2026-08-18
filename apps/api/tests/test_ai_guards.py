@@ -258,3 +258,16 @@ def test_deeply_nested_results_do_not_crash():
         deep = {"child": deep}
     guards.permitted_numbers([deep])  # must not raise
     guards.collect_citations([deep])  # must not raise
+
+
+def test_user_prompt_numbers_are_permitted():
+    # Numbers explicitly asked about in the user prompt (e.g. part number 289)
+    # must be permitted so assistant sentences quoting them are not discarded.
+    user_prompt = "Tell me about Part 289."
+    allowed = guards.permitted_numbers(TOOL_RESULTS, user_prompt=user_prompt)
+    assert "289" in allowed
+    text = "You are asking about Part 289."
+    kept, dropped = guards.strip_unverified_numbers(text, allowed)
+    assert kept == text
+    assert dropped == 0
+

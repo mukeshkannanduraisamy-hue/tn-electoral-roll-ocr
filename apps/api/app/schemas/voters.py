@@ -47,7 +47,7 @@ class VoterBase(BaseModel):
     gender: Gender | Literal[""] = ""
     part_number: str = Field(default="", max_length=32)
     constituency: str = Field(default="", max_length=255)
-    section_name: str | None = Field(default="", max_length=512)
+    section_name: str | None = Field(default="")
     notes: str = Field(default="", max_length=2000)
     verified: bool = False
 
@@ -67,14 +67,26 @@ class VoterBase(BaseModel):
             raise ValueError("Name cannot be empty")
         return cleaned
 
-    @field_validator("age")
+    @field_validator("age", mode="before")
     @classmethod
-    def _check_age(cls, v: int | None) -> int | None:
+    def _check_age(cls, v: object) -> int | None:
+        """Coerce missing / implausible ages to None rather than raising.
+
+        The validator runs on CREATE and READ.  On READ the DB may contain a
+        row whose age was 0 (OCR failed to extract it) or outside 18-120 (a
+        very old resident).  Raising here turns every such row into a 400 on
+        the list endpoint, which is far worse than silently treating the age
+        as unknown.
+        """
         if v is None:
             return None
-        if not MIN_AGE <= v <= MAX_AGE:
-            raise ValueError(f"Age {v} is outside the plausible range {MIN_AGE}-{MAX_AGE}")
-        return v
+        try:
+            n = int(v)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+        if not MIN_AGE <= n <= MAX_AGE:
+            return None
+        return n
 
     @field_validator("relation_name", "house_number", "part_number",
                      "constituency", "notes")
@@ -116,16 +128,18 @@ class VoterUpdate(BaseModel):
             return None
         return VoterBase._check_epic(v)
 
-    @field_validator("age")
+    @field_validator("age", mode="before")
     @classmethod
-    def _check_age(cls, v: int | None) -> int | None:
+    def _check_age(cls, v: object) -> int | None:
         if v is None:
             return None
-        if not MIN_AGE <= v <= MAX_AGE:
-            raise ValueError(
-                f"Age {v} is outside the plausible range {MIN_AGE}-{MAX_AGE}"
-            )
-        return v
+        try:
+            n = int(v)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+        if not MIN_AGE <= n <= MAX_AGE:
+            return None
+        return n
 
 
 class Voter(VoterBase):
@@ -189,6 +203,7 @@ class PromotionRequest(BaseModel):
     record_ids: list[str] = Field(default_factory=list)
     file_id: str | None = None
     page_id: str | None = None
+    all_documents: bool = False
     only_clean: bool = True
     """Promote only records with zero validation errors."""
     on_conflict: Literal["skip", "update"] = "skip"

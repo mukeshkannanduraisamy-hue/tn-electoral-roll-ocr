@@ -30,6 +30,7 @@ import {
   Table2,
   Trash2,
   Users,
+  Zap,
 } from "lucide-react";
 import {
   Page,
@@ -229,7 +230,7 @@ function DetailRow({ label, value: v }: { label: string; value: React.ReactNode 
 }
 
 export const DocumentView: React.FC = () => {
-  const { activeFileId, setActiveFileId, files, setSelectedRecordId, selectedRecordId, deleteFile, setConfirmModal } =
+  const { activeFileId, setActiveFileId, files, setSelectedRecordId, selectedRecordId, deleteFile, setConfirmModal, refreshStats } =
     useOcrStore();
 
   const [pages, setPages] = useState<PageSummary[]>([]);
@@ -350,10 +351,36 @@ export const DocumentView: React.FC = () => {
       if (result.updated) parts.push(`${result.updated} updated`);
       if (result.skipped) parts.push(`${result.skipped} skipped`);
       toast.success(`Stored in the voter database: ${parts.join(", ")}`);
+      await loadPages();
+      refreshStats(activeFileId || undefined);
     } catch (e: any) {
       toast.error(e?.message || "Could not store these records");
     } finally {
       setPromoting(false);
+    }
+  };
+
+  const [promotingAll, setPromotingAll] = useState(false);
+
+  const approveAllDocuments = async () => {
+    if (!confirm("Are you sure you want to promote ALL records across ALL uploaded documents into the voter database at high speed?")) return;
+    setPromotingAll(true);
+    try {
+      const result = await promoteRecords({
+        all_documents: true,
+        only_clean: false,
+        on_conflict: "skip",
+      });
+      const parts = [`${result.created} added`];
+      if (result.updated) parts.push(`${result.updated} updated`);
+      if (result.skipped) parts.push(`${result.skipped} skipped`);
+      toast.success(`Speed Insert Complete across ALL documents! ${parts.join(", ")}`);
+      await loadPages();
+      refreshStats(activeFileId || undefined);
+    } catch (e: any) {
+      toast.error(e?.message || "Could not store all document records");
+    } finally {
+      setPromotingAll(false);
     }
   };
 
@@ -532,11 +559,24 @@ export const DocumentView: React.FC = () => {
                 onClick={() => void approve(false)}
                 disabled={promoting}
                 className="px-2.5 py-1.5 rounded-lg border border-border hover:bg-muted text-xs disabled:opacity-40"
-                title="Store every record, including those with validation errors"
+                title="Store every record in this document, including those with validation errors"
               >
-                Approve all
+                Approve all (this doc)
               </button>
             )}
+            <button
+              onClick={() => void approveAllDocuments()}
+              disabled={promotingAll || promoting}
+              className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 text-white hover:opacity-95 disabled:opacity-40 text-xs font-bold flex items-center gap-1.5 shadow-md shadow-orange-500/20 transition-all active:scale-95"
+              title="High-Speed Bulk Insert: Promote ALL records across ALL uploaded documents into the voter database"
+            >
+              {promotingAll ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Zap className="w-3.5 h-3.5 text-yellow-200 fill-yellow-200" />
+              )}
+              Approve All Documents (Speed Insert)
+            </button>
           </div>
         </div>
 

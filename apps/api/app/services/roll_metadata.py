@@ -43,15 +43,18 @@ logger = logging.getLogger(__name__)
 
 _DATE_RE = re.compile(r"\d{1,2}[-./]\d{1,2}[-./]\d{4}")
 _YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
-_INT_RE = re.compile(r"^\d{1,6}$")
+#: A count as it ends up after `_digits` has normalised it. Signed, because the
+#: gender-reclassification row genuinely is: `+1` to one column and `-1` to the
+#: other when an elector is moved between them.
+_INT_RE = re.compile(r"^-?\d{1,6}$")
 #: "... : 57 - பாலக்கொடு" -> ("57", "பாலக்கொடு"). The name is optional
 #: because the cover splits the parliamentary constituency over two lines.
 _NUM_NAME_RE = re.compile(r":\s*(\d+)\s*(?:[-–—]\s*(.*))?$")
 
 # Vertical tolerance for "on the same baseline", as a fraction of line
 # height. Values sit a few pixels off their labels; a whole line height
-# apart is a different row.
-_BAND = 1.2
+# apart is a different row. 0.5 ensures empty rows never steal values from neighbours.
+_BAND = 0.5
 
 
 def _clean(text: str) -> str:
@@ -62,8 +65,53 @@ def _strip_colon(text: str) -> str:
     return _clean(text.lstrip(": \t-"))
 
 
-def _as_int(text: str) -> int | None:
+#: A count with a letter `o` standing in for a zero. The summary's right-hand
+#: columns hold nothing but counts, and OCR returns the table's zeroes as `o`
+#: often enough to matter: TAM-16's deletions total reads `117 116 o 233`, and
+#: because a row needs four numbers the whole line was dropped, leaving
+#: deletions at supplement 1's 226 instead of the printed 233.
+#:
+#: Deliberately narrow. The table numbers its sections `I`, `IlI`, `IV` and
+#: labels one `B`, all in the same columns, so mapping letters to digits
+#: generally would invent rows. Only `o` is ambiguous with a digit, and only
+#: when it sits among digits.
+_INT_WITH_O_RE = re.compile(r"^(?=.*[oO])[0-9oO]{1,6}$")
+
+#: Dashes OCR returns for a minus sign, in the order of likelihood.
+_MINUS_CHARS = "-−–—"
+
+#: A count that may be negative. The gender-reclassification row is signed by
+#: nature -- an elector moving from female to male is `+1` to one column and
+#: `-1` to the other -- and on TAM-19 OCR returns that `-1` faithfully at 0.998
+#: confidence. Matching only unsigned digits left the row three numbers long,
+#: so it failed the four-number filter and was filled from an unrelated band,
+#: putting 11 where the sheet prints 0 and breaking its arithmetic.
+_SIGNED_INT_RE = re.compile(rf"^[{_MINUS_CHARS}]\d{{1,6}}$")
+
+
+def _digits(text: str) -> str:
+    """`text` as a plain integer, undoing what OCR does to these columns.
+
+    An `o` among digits is a zero: the summary's right-hand columns hold nothing
+    but counts. A leading dash is a minus sign. Neither rewrite is applied more
+    widely -- the table numbers its sections `I`, `IlI`, `IV` in these same
+    columns and its footer carries dates like `06-04-2026`, and both would
+    become counts under a looser rule.
+    """
     stripped = _clean(text)
+    if _INT_WITH_O_RE.match(stripped):
+        return stripped.replace("o", "0").replace("O", "0")
+    if _SIGNED_INT_RE.match(stripped):
+        return "-" + stripped[1:]
+    return stripped
+
+
+def _is_int(text: str) -> bool:
+    return bool(_INT_RE.match(_digits(text)))
+
+
+def _as_int(text: str) -> int | None:
+    stripped = _digits(text)
     return int(stripped) if _INT_RE.match(stripped) else None
 
 
@@ -126,7 +174,7 @@ def _number_bands(
     """
     numeric = [
         ln for ln in lines
-        if _INT_RE.match(_clean(ln.text)) and ln.bbox.x >= min_x
+        if _is_int(ln.text) and ln.bbox.x >= min_x
     ]
     bands: list[list[OcrLine]] = []
     for line in sorted(numeric, key=lambda ln: ln.bbox.cy):
@@ -199,6 +247,15 @@ def parse_cover(lines: list[OcrLine], page_id: str = "") -> PollingStationInfo:
             ]
             if below:
                 info.pc_name = _strip_colon(below[0].text)
+        # Extract reservation status e.g. (பொது) / (தனி)
+        ac_res_m = re.search(r"\((பொது|தனி|SC|ST|GEN)\)|(பொது|தனி)", info.ac_name)
+        if ac_res_m:
+            info.ac_reservation = ac_res_m.group(1) or ac_res_m.group(2)
+        
+        pc_res_m = re.search(r"\((பொது|தனி|SC|ST|GEN)\)|(பொது|தனி)", info.pc_name)
+        if pc_res_m:
+            info.pc_reservation = pc_res_m.group(1) or pc_res_m.group(2)
+
         # Both names carry a trailing reservation status -- "(பொது)",
         # "(தனி)" -- which belongs to the seat, not to the place.
         info.pc_name = re.sub(r"\s*\(.*?\)\s*$", "", info.pc_name).strip()
@@ -333,6 +390,65 @@ _SUMMARY_ROWS = (
     ("net", ("நிகர",)),
 )
 
+# Only these two are printed as several supplement rows plus a total. Restricting
+# the override keeps a stray "total" reading from clobbering a single-row figure.
+_SUBTOTALLED_ROWS = frozenset({"additions", "deletions"})
+
+# "Total", with the spellings OCR returns for it.
+_TOTAL_STEMS = ("மொத்தம்", "மொத்தம", "மாத்தம்", "மொததம்")
+
+
+# Page kinds that can carry the rest of a summary table. The legend sheet is the
+# one that does in practice: on TAM-16 the net row shares page 33 with the
+# deletion-reason key, and the classifier calls that page a legend.
+_SUMMARY_CONTINUATION_TYPES = frozenset({
+    PageType.SUMMARY_PAGE.value,
+    PageType.LEGEND_PAGE.value,
+    PageType.BLANK_OR_SIGNATURE.value,
+})
+
+
+def summary_lines(pages: Sequence[Page]) -> list[OcrLine]:
+    """Every line of the summary table, including the pages it runs onto.
+
+    The statutory summary does not always fit one sheet. On TAM-16 the base,
+    additions and deletions rows are on page 32 while the `நிகர` net row -- the
+    figure the roll certifies, and the only one that closes the arithmetic -- is
+    on page 33 beside the legend. Handing the parser the single page classified
+    `summary_page` left the net to be filled from an unrelated band.
+
+    Continuation lines are shifted down by the height of the pages before them
+    so the rows keep document order across the join, which is what the parser's
+    vertical banding depends on. Copies are returned: these lines belong to a
+    Page that gets saved.
+    """
+    ordered = sorted(pages, key=lambda p: p.page_number)
+    start = next(
+        (
+            index
+            for index, page in enumerate(ordered)
+            if page.page_type == PageType.SUMMARY_PAGE.value
+        ),
+        None,
+    )
+    if start is None:
+        return []
+
+    collected: list[OcrLine] = list(ordered[start].lines)
+    offset = float(ordered[start].height or 0)
+
+    for page in ordered[start + 1:]:
+        if page.page_type not in _SUMMARY_CONTINUATION_TYPES:
+            break
+        if page.records:
+            break                       # a sheet with electors is not the table
+        for line in page.lines:
+            shifted = line.bbox.model_copy(update={"y": line.bbox.y + offset})
+            collected.append(line.model_copy(update={"bbox": shifted}))
+        offset += float(page.height or 0)
+
+    return collected
+
 
 def parse_summary(lines: list[OcrLine], page_id: str = "") -> RollSummary:
     """Read the base/additions/deletions/net table off a summary page."""
@@ -356,17 +472,42 @@ def parse_summary(lines: list[OcrLine], page_id: str = "") -> RollSummary:
     labelled: dict[str, ElectorCounts] = {}
     unclaimed: list[tuple[float, list[OcrLine]]] = []
 
+    # Additions and deletions are printed one row per supplement and then a
+    # `மொத்தம்` row that belongs to the category above it. Taking the first row
+    # reports supplement 1 as the whole figure, which is what made well-formed
+    # rolls look like they failed to reconcile. The category label is carried
+    # down the sub-rows so its own total can replace the first reading.
+    current_key: str | None = None
+
     for centre_y, band in bands:
-        tolerance = max(band[0].bbox.h, 1.0) * 2.5
+        # Narrow enough that a row does not read its neighbours' labels. At 2.5x
+        # the band height the window was wider than the row pitch, so the
+        # additions total saw `நீக்கல் பட்டியல்` printed below it and was filed
+        # as a deletion.
+        tolerance = max(band[0].bbox.h, 1.0) * 1.1
         row_text = " ".join(
             ln.text for ln in table_lines
             if ln.bbox.x < page_width * 0.60
             and abs(ln.bbox.cy - centre_y) <= tolerance
         )
-        for key, stems in _SUMMARY_ROWS:
-            if key not in labelled and any(stem in row_text for stem in stems):
-                labelled[key] = _counts_from(band)
-                break
+
+        matched = next(
+            (
+                key
+                for key, stems in _SUMMARY_ROWS
+                if any(stem in row_text for stem in stems)
+            ),
+            None,
+        )
+
+        if matched is not None:
+            current_key = matched
+            labelled.setdefault(matched, _counts_from(band))
+        elif (
+            current_key in _SUBTOTALLED_ROWS
+            and any(stem in row_text for stem in _TOTAL_STEMS)
+        ):
+            labelled[current_key] = _counts_from(band)
         else:
             unclaimed.append((centre_y, band))
 
@@ -423,7 +564,7 @@ def build(pages: Sequence[Page], file_id: str = "") -> PartMetadata:
     if cover is not None:
         metadata.station = parse_cover(cover.lines, cover.id)
     if summary_page is not None:
-        metadata.summary = parse_summary(summary_page.lines, summary_page.id)
+        metadata.summary = parse_summary(summary_lines(pages), summary_page.id)
 
     printed: int | None = None
     source = ""

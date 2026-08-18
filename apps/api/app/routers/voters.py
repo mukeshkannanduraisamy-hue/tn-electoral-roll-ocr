@@ -7,11 +7,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+import shutil
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import asc, desc, func, select
+from sqlalchemy import asc, desc, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..auth import require_user
 from ..db import (
     AuditLogRow,
@@ -227,17 +229,22 @@ def voter_stats(
         ).all()
     )
 
-    # Age histogram in decade buckets, computed in SQL rather than by pulling
-    # every row into Python.
-    age_rows = session.execute(
-        select(VoterRow.age).where(VoterRow.age.isnot(None))
-    ).scalars().all()
-    buckets: dict[str, int] = {}
-    for age in age_rows:
-        low = min(int(age) // 10 * 10, 90)
-        buckets[f"{low}-{low + 9}" if low < 90 else "90+"] = (
-            buckets.get(f"{low}-{low + 9}" if low < 90 else "90+", 0) + 1
+    age_counts = session.execute(
+        select(
+            func.floor(VoterRow.age / 10).label("decade"),
+            func.count()
         )
+        .where(VoterRow.age.isnot(None))
+        .group_by("decade")
+    ).all()
+    buckets: dict[str, int] = {}
+    for decade, count in age_counts:
+        if decade is None:
+            continue
+        d = int(decade)
+        low = min(d * 10, 90)
+        label = f"{low}-{low + 9}" if low < 90 else "90+"
+        buckets[label] = buckets.get(label, 0) + count
 
     verified = session.execute(
         select(func.count()).select_from(VoterRow).where(VoterRow.verified.is_(True))
@@ -888,8 +895,10 @@ def promote_records(
         stmt = stmt.where(RecordRow.page_id == payload.page_id)
     elif payload.file_id:
         stmt = stmt.where(RecordRow.file_id == payload.file_id)
+    elif payload.all_documents:
+        pass
     else:
-        raise HTTPException(400, "Provide record_ids, page_id or file_id")
+        raise HTTPException(400, "Provide record_ids, page_id, file_id, or all_documents")
 
     if payload.only_clean:
         stmt = stmt.where(RecordRow.error_count == 0)
@@ -928,11 +937,27 @@ def promote_records(
         ).scalars().all()
     }
 
+    # Pre-parse rows and pre-fetch all existing VoterRow instances by EPIC in batch
+    row_records = [(row, row_to_record(row)) for row in rows]
+    epic_list = list({
+        normalise_epic(_field_value(rec, "epic"))
+        for _, rec in row_records
+    } - {""})
+
+    existing_voters_map: dict[str, VoterRow] = {}
+    if epic_list:
+        for i in range(0, len(epic_list), 500):
+            chunk = epic_list[i : i + 500]
+            v_rows = session.execute(
+                select(VoterRow).where(VoterRow.epic.in_(chunk))
+            ).scalars().all()
+            for v in v_rows:
+                existing_voters_map[v.epic] = v
+
     result = PromotionResult()
     seen_in_batch: dict[str, str] = {}
 
-    for row in rows:
-        record = row_to_record(row)
+    for row, record in row_records:
         epic = normalise_epic(_field_value(record, "epic"))
         name = _field_value(record, "name")
 
@@ -953,9 +978,7 @@ def promote_records(
             result.skipped += 1
             continue
 
-        existing = session.execute(
-            select(VoterRow).where(VoterRow.epic == epic)
-        ).scalar_one_or_none()
+        existing = existing_voters_map.get(epic)
 
         if existing is not None and payload.on_conflict == "skip":
             result.conflicts.append(PromotionConflict(
@@ -1002,6 +1025,10 @@ def promote_records(
             # is the template's marker for a struck-off cell; anything else,
             # including an unread cell, is treated as active.
             "is_deleted": _field_value(record, "is_deleted") == "Yes",
+            "section_name": (
+                _field_value(record, "section_name")
+                or (page.payload or {}).get("section_name", "") if page else ""
+            )[:500],
             "deletion_reason": _field_value(record, "deletion_reason"),
             "source_record_id": row.id,
             "source_page_id": row.page_id,
@@ -1031,6 +1058,7 @@ def promote_records(
             )
             result.created += 1
             result.voter_ids.append(voter.id)
+            existing_voters_map[epic] = voter
 
         # The crop was taken during extraction, before any voter existed;
         # promotion is the first moment it can be attributed to one.
@@ -1051,3 +1079,35 @@ def promote_records(
         user.username, result.created, result.updated, result.skipped,
     )
     return result
+
+
+@router.post("/reset-database")
+def reset_database(
+    session: Session = Depends(get_session),
+    user: UserRow = Depends(require_user),
+) -> dict:
+    """Truncate all data tables and clean cached files."""
+    try:
+        session.execute(
+            text("TRUNCATE TABLE voters, records, pages, files, polling_stations, summaries, photos, ocr_blocks, audit_logs, jobs CASCADE;")
+        )
+        session.commit()
+
+        for sub in ["pages", "photos", "uploads"]:
+            p = settings.data_dir / sub
+            if p.exists():
+                for item in p.iterdir():
+                    if item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                    else:
+                        try:
+                            item.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+        logger.info("User %r reset the database and cleared caches", user.username)
+        return {"status": "ok", "message": "All database records and file caches have been completely deleted."}
+    except Exception as e:
+        session.rollback()
+        logger.error("Failed to reset database: %s", e)
+        raise HTTPException(500, f"Database reset failed: {e}") from e
+

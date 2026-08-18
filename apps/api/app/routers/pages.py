@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
+from fastapi.responses import FileResponse, Response
+from sqlalchemy.orm import Session, undefer
 
 from ..config import settings
 from ..db import FileRow, PageRow, get_session, load_page, save_page
@@ -34,8 +35,25 @@ def get_page_image(page_id: str, session: Session = Depends(get_session)):
     bounding box refers to -- serving the raw PDF render instead would put
     every overlay box slightly out of alignment.
     """
-    row = session.get(PageRow, page_id)
-    if row is None or not row.image_path:
+    # `image_data` is deferred so that listing pages does not drag every page
+    # image along; this is the one endpoint whose whole job is those bytes, so
+    # ask for them up front rather than paying a second round trip below.
+    row = session.get(PageRow, page_id, options=[undefer(PageRow.image_data)])
+    if row is None:
+        raise HTTPException(404, "Page image not found")
+
+    if row.image_data:
+        try:
+            raw = base64.b64decode(row.image_data)
+            return Response(
+                content=raw,
+                media_type="image/png",
+                headers={"Cache-Control": "public, max-age=31536000, immutable"},
+            )
+        except Exception:
+            pass
+
+    if not row.image_path:
         raise HTTPException(404, "Page image not found")
 
     path = settings.pages_dir / row.image_path

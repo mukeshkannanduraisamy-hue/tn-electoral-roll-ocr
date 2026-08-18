@@ -1,0 +1,208 @@
+{
+  "device": "gpu:0",
+  "pdfs": 31,
+  "voters_extracted": 22485,
+  "voters_stored": 22485,
+  "deleted": 489,
+  "elapsed_sec": 1948.0,
+  "page_type_distribution": {
+    "cover_page": 31,
+    "blank_or_signature": 32,
+    "map_photo_page": 31,
+    "voter_list_page": 792,
+    "other": 5,
+    "summary_page": 31,
+    "legend_page": 31,
+    "supplement_page": 16
+  },
+  "anomaly_count": 0,
+  "anomalies": [],
+  "per_part": {
+    "1": {
+      "voters": 238,
+      "deleted": 0,
+      "anomalies": 0,
+      "pages": 15
+    },
+    "2": {
+      "voters": 100,
+      "deleted": 0,
+      "anomalies": 0,
+      "pages": 11
+    },
+    "3": {
+      "voters": 304,
+      "deleted": 4,
+      "anomalies": 0,
+      "pages": 19
+    },
+    "4": {
+      "voters": 798,
+      "deleted": 1,
+      "anomalies": 0,
+      "pages": 33
+    },
+    "5": {
+      "voters": 1002,
+      "deleted": 1,
+      "anomalies": 0,
+      "pages": 42
+    },
+    "6": {
+      "voters": 1140,
+      "deleted": 5,
+      "anomalies": 0,
+      "pages": 45
+    },
+    "8": {
+      "voters": 830,
+      "deleted": 0,
+      "anomalies": 0,
+      "pages": 35
+    },
+    "11": {
+      "voters": 1018,
+      "deleted": 0,
+      "anomalies": 0,
+      "pages": 41
+    },
+    "12": {
+      "voters": 628,
+      "deleted": 1,
+      "anomalies": 0,
+      "pages": 30
+    },
+    "13": {
+      "voters": 917,
+      "deleted": 1,
+      "anomalies": 0,
+      "pages": 37
+    },
+    "14": {
+      "voters": 910,
+      "deleted": 0,
+      "anomalies": 0,
+      "pages": 38
+    },
+    "15": {
+      "voters": 1093,
+      "deleted": 146,
+      "anomalies": 0,
+      "pages": 42
+    },
+    "16": {
+      "voters": 779,
+      "deleted": 233,
+      "anomalies": 0,
+      "pages": 33
+    },
+    "17": {
+      "voters": 615,
+      "deleted": 19,
+      "anomalies": 0,
+      "pages": 27
+    },
+    "18": {
+      "voters": 940,
+      "deleted": 4,
+      "anomalies": 0,
+      "pages": 38
+    },
+    "19": {
+      "voters": 805,
+      "deleted": 52,
+      "anomalies": 0,
+      "pages": 35
+    },
+    "21": {
+      "voters": 728,
+      "deleted": 1,
+      "anomalies": 0,
+      "pages": 31
+    },
+    "22": {
+      "voters": 707,
+      "deleted": 1,
+      "anomalies": 0,
+      "pages": 30
+    },
+    "23": {
+      "voters": 594,
+      "deleted": 0,
+      "anomalies": 0,
+      "pages": 26
+    },
+    "24": {
+      "voters": 577,
+      "deleted": 0,
+      "anomalies": 0,
+      "pages": 26
+    },
+    "25": {
+      "voters": 603,
+      "deleted": 2,
+      "anomalies": 0,
+      "pages": 28
+    },
+    "26": {
+      "voters": 585,
+      "deleted": 1,
+      "anomalies": 0,
+      "pages": 26
+    },
+    "27": {
+      "voters": 552,
+      "deleted": 0,
+      "anomalies": 0,
+      "pages": 25
+    },
+    "28": {
+      "voters": 669,
+      "deleted": 0,
+      "anomalies": 0,
+      "pages": 29
+    },
+    "29": {
+      "voters": 592,
+      "deleted": 2,
+      "anomalies": 0,
+      "pages": 27
+    },
+    "30": {
+      "voters": 882,
+      "deleted": 8,
+      "anomalies": 0,
+      "pages": 37
+    },
+    "31": {
+      "voters": 751,
+      "deleted": 0,
+      "anomalies": 0,
+      "pages": 33
+    },
+    "32": {
+      "voters": 671,
+      "deleted": 1,
+      "anomalies": 0,
+      "pages": 29
+    },
+    "34": {
+      "voters": 1032,
+      "deleted": 0,
+      "anomalies": 0,
+      "pages": 41
+    },
+    "35": {
+      "voters": 800,
+      "deleted": 4,
+      "anomalies": 0,
+      "pages": 33
+    },
+    "38": {
+      "voters": 625,
+      "deleted": 2,
+      "anomalies": 0,
+      "pages": 27
+    }
+  }
+}

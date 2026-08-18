@@ -61,6 +61,28 @@ from ..schemas.core import (
 logger = logging.getLogger(__name__)
 
 
+# How many pages may be OCR'd at once, by device. Measured on this project's
+# GTX 1650: one engine occupies 591 MiB and three workers peaked at 2177 MiB of
+# 4096. A fourth would not fit with room to spare, and an unbounded count taken
+# from `ocr_workers` -- 8 is a plausible setting -- would ask for about 4.7 GiB
+# on a 4 GiB card and fail mid-job.
+#
+# Raising these should follow a VRAM measurement rather than the CPU core count,
+# since it is card memory that runs out first.
+GPU_WORKER_LIMIT = 3
+CPU_WORKER_LIMIT = 8
+
+
+def resolve_worker_count(device: str, configured: int) -> int:
+    """How many pages to OCR at once on `device`.
+
+    Never more than `configured`: a deployment that asks for one worker gets
+    one, whatever the hardware.
+    """
+    limit = GPU_WORKER_LIMIT if device.startswith("gpu") else CPU_WORKER_LIMIT
+    return max(1, min(configured, limit))
+
+
 # ---------------------------------------------------------------------------
 # Worker process
 # ---------------------------------------------------------------------------
@@ -138,19 +160,17 @@ class JobManager:
         """
         with self._lock:
             if self._executor is None:
-                # A single GPU serialises compute, so fanning pages across
-                # threads there buys nothing and risks concurrent access to one
-                # engine on a 4 GB card. On CPU the workers parallelise across
-                # cores as before.
+                # A GPU takes fewer workers than a CPU but more than one: about
+                # a third of each page is CPU work either side of inference, and
+                # with a single worker the card idles through all of it. See
+                # `resolve_worker_count` for the measurements.
                 from . import ocr_service
 
-                if ocr_service.resolve_device().startswith("gpu"):
-                    workers = 1
-                else:
-                    workers = max(1, min(settings.ocr_workers, 8)) if settings.ocr_workers >= 1 else 1
+                device = ocr_service.resolve_device()
+                workers = resolve_worker_count(device, settings.ocr_workers)
                 logger.info(
                     "Starting OCR ThreadPoolExecutor with %d worker(s) on %s",
-                    workers, ocr_service.resolve_device(),
+                    workers, device,
                 )
                 self._executor = ThreadPoolExecutor(
                     max_workers=workers, thread_name_prefix="ocr-worker"
@@ -386,6 +406,7 @@ class JobManager:
             # runs after the fan-in rather than per page.
             for file_id in touched_files:
                 self._apply_consensus(file_id)
+                self._reconcile_sections(file_id)
                 self._extract_part_metadata(file_id)
                 with session_scope() as session:
                     file_row = session.get(FileRow, file_id)
@@ -433,6 +454,32 @@ class JobManager:
                     )
         except Exception:  # noqa: BLE001 - never fail a job over post-processing
             logger.exception("Consensus failed for file %s", file_id)
+
+    def _reconcile_sections(self, file_id: str) -> None:
+        """Settle one section name per part, across every page of the file.
+
+        Runs after the fan-in for the same reason consensus does: a page cannot
+        tell that its section is one OCR reading among several, nor that it has
+        none because a supplement page does not reprint the header.
+        """
+        try:
+            from . import section_reconciliation
+
+            with session_scope() as session:
+                pages = load_pages_for_file(session, file_id)
+                if not pages:
+                    return
+
+                report = section_reconciliation.apply_sections(pages)
+                if report.records_changed:
+                    for page in pages:
+                        save_page(session, page, file_id)
+                    logger.info(
+                        "Sections reconciled on %s: %d records, %d pages inherited",
+                        file_id, report.records_changed, report.pages_inherited,
+                    )
+        except Exception:  # noqa: BLE001 - never fail a job over post-processing
+            logger.exception("Section reconciliation failed for file %s", file_id)
 
     def _extract_part_metadata(self, file_id: str) -> None:
         """Read the cover and summary sheets, and reconcile against them.

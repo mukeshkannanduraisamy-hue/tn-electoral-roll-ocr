@@ -263,6 +263,8 @@ class PhotoRef(BaseModel):
     | google_map | cad_map | key_map"""
     file_path: str = ""
     """Filename within the photos directory, served by `/api/photos/{id}`."""
+    image_data: str | None = None
+    """Base64 PNG image bytes stored directly in Supabase DB."""
     width: int = 0
     height: int = 0
     page_id: str = ""

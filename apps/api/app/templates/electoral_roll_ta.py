@@ -44,6 +44,10 @@ from ..schemas.core import (
 )
 from ..services.layout_service import assign_lines_to_cells
 from ..services.ocr_service import run_ocr
+from ..services.stamp_detector import StampMark, covers, find_stamp_marks
+from ..services.stamp_recovery import recover_age
+from .deletion_signals import assess_deletion, parse_reason_code
+from .field_integrity import house_number_is_intact
 from .text_utils import (
     best_enum_match,
     clean_identifier,
@@ -137,6 +141,48 @@ GENDER_OPTIONS = {
 EPIC_PERMISSIVE_RE = re.compile(r"^[A-Z]{2,4}\d{6,9}$")
 EPIC_CANONICAL_RE = re.compile(r"^[A-Z]{3}\d{7}$")
 
+# Header labels that can share a printed line with the value being read, so a
+# match must stop when one of them starts.
+_HEADER_NEIGHBOURS = ("பாகம்", "பிரிவு", "சட்டமன்ற")
+
+
+def _trim_header_value(value: str) -> str:
+    """One header field's value, cut where the next label begins.
+
+    The part number is printed to the right of the constituency on the same
+    line, and OCR may return the pair as one string.
+    """
+    cleaned = value.strip()
+    for label in _HEADER_NEIGHBOURS:
+        cleaned = re.split(rf"\s*{label}", cleaned)[0]
+    return cleaned.strip(" :-–—")
+
+
+# A deletion reason code sitting alone in the serial box, which is how these
+# rolls print it. Matched before the serial patterns so `S2` is not read as 2.
+STANDALONE_CODE_RE = re.compile(r"^([SERMQWsermqw]\d?)$")
+
+# Serial with a marker run together in the same box. Two kinds appear: a
+# deletion reason code (`S`, `S2`), and a printed entry marker (`#2  604` on
+# TAM-16 page 24, which is on the page rather than an OCR slip).
+#
+# The `#` form must be followed by a serial, because OCR does not always keep
+# the box on one line. Returned alone, `#2` parsed as marker `#` plus serial 2 --
+# and being furthest left it won the leftmost-box rule, costing 32 serial jumps
+# against the 4 the marker was added to fix. Requiring the separator means a
+# lone marker matches nothing and the real serial beside it still wins.
+#
+# Only the letter forms say anything about deletion: `parse_reason_code` matches
+# those alone, so a `#` reaching here cannot strike an elector off.
+_ENTRY_MARKER = r"(?:#\d?\s+)?"
+_REASON_CODE = r"([SERMQWsermqw]\d?)?"
+SERIAL_WITH_CODE_RE = re.compile(
+    rf"^\s*\[?\s*{_ENTRY_MARKER}{_REASON_CODE}\s*[\.\-:\s]*(\d{{1,4}})\s*\]?\s*"
+)
+SERIAL_BARE_RE = re.compile(
+    rf"^\s*\[?\s*{_ENTRY_MARKER}{_REASON_CODE}\s*[\.\-:\s]*(\d{{1,4}})\s*\]?\s*$"
+)
+
 # Placeholder text printed where a photo would be -- never a field value.
 PHOTO_NOISE = (
     "photo",
@@ -186,7 +232,14 @@ class ElectoralRollTamilTemplate:
             ColumnDef(key="is_deleted", label="நீக்கப்பட்டது (Deleted)", type=ColumnType.TEXT, width=110,
                       description="Whether elector record is deleted or shifted"),
             ColumnDef(key="deletion_reason", label="நீக்க காரணம் (Deletion Reason)", type=ColumnType.TEXT, width=180,
-                      description="Reason code: S - Shifted, E - Expired, R - Repeated, M - Missing, Q - Disqualified, DELETED"),
+                      description="Which supplement recorded the deletion: S - Supplement 1, S2 - Supplement 2. "
+                                  "Not a reason for removal; the roll does not state one"),
+            ColumnDef(key="deletion_signals", label="நீக்க ஆதாரம் (Deletion Signals)", type=ColumnType.TEXT, width=150,
+                      description="Which readers marked this elector deleted: reason_code, stamp, or both. "
+                                  "Either alone is sufficient, so this is how a disagreement is found later"),
+            ColumnDef(key="constituency", label="சட்டமன்றத் தொகுதி (Constituency)", type=ColumnType.TEXT, width=220,
+                      description="Assembly constituency number and name from the page header, "
+                                  "inherited by every elector on the page"),
             ColumnDef(key="section_name", label="பிரிவு பெயர் (Section Name)", type=ColumnType.TEXT, width=240,
                       description="Section number and name"),
             ColumnDef(key="part_number", label="பாகம் எண் (Part No)", type=ColumnType.NUMBER, width=90,
@@ -240,8 +293,42 @@ class ElectoralRollTamilTemplate:
 
         return min(1.0, signals)
 
-    @staticmethod
-    def _extract_header_metadata(lines: list[OcrLine]) -> dict[str, Any]:
+    # Fraction of page height the header occupies, and how much to enlarge it.
+    # A header error is inherited by every elector on the page, so one extra OCR
+    # call on a thin strip is cheap next to getting it wrong thirty times.
+    _HEADER_BAND = 0.055
+    _HEADER_UPSCALE = 2.0
+
+    @classmethod
+    def _reread_header(cls, image: np.ndarray | None) -> list[OcrLine]:
+        """The header band, read again enlarged.
+
+        Pages render at their native resolution -- 143 dpi for these scans -- and
+        at that size the section's second word comes back as `பனகுளம்` where the
+        page prints `பனைகுளம்`. Enlarging the strip fixes it.
+        """
+        if image is None:
+            return []
+        band_height = max(1, int(image.shape[0] * cls._HEADER_BAND))
+        band = image[:band_height]
+        if band.size == 0:
+            return []
+        try:
+            enlarged = cv2.resize(
+                band, (0, 0),
+                fx=cls._HEADER_UPSCALE, fy=cls._HEADER_UPSCALE,
+                interpolation=cv2.INTER_CUBIC,
+            )
+            if enlarged.ndim == 2:
+                enlarged = cv2.cvtColor(enlarged, cv2.COLOR_GRAY2BGR)
+            return list(run_ocr(enlarged).lines)
+        except Exception:  # noqa: BLE001 - fall back to the whole-page read
+            return []
+
+    @classmethod
+    def _extract_header_metadata(
+        cls, lines: list[OcrLine], image: np.ndarray | None = None
+    ) -> dict[str, Any]:
         meta = {
             "part_number": "",
             "section_name": "",
@@ -250,6 +337,10 @@ class ElectoralRollTamilTemplate:
         }
         full_text = " ".join(ln.text for ln in lines)
 
+        # The sharper re-read goes first, and the per-line loop below keeps the
+        # first match, so it wins wherever it found the same field.
+        lines = cls._reread_header(image) + list(lines)
+
         # 1. Part Number
         m_part = re.search(r"பாகம்\s*எண்\s*[:\-]?\s*(\d+)", full_text, re.IGNORECASE)
         if not m_part:
@@ -257,12 +348,33 @@ class ElectoralRollTamilTemplate:
         if m_part:
             meta["part_number"] = m_part.group(1)
 
-        # 2. Section Name
-        m_sec = re.search(r"பிரிவு\s*எண்\s*(?:மற்றும்\s*பெயர்)?\s*[:\-]?\s*([^\n\r]+)", full_text)
-        if m_sec:
-            sec_val = m_sec.group(1).strip()
-            sec_val = re.sub(r"\s*பாகம்.*$", "", sec_val)
-            meta["section_name"] = sec_val.strip()
+        # 2. Constituency and section, each read from its own OCR line.
+        #
+        # Both are matched per line rather than against `full_text`, which joins
+        # the whole page with spaces. A pattern anchored on "not a newline" finds
+        # none there and runs to the end of the document: every one of TAM-16's
+        # 779 records used to carry a full page dump as its section name.
+        for line in lines:
+            text = line.text.strip()
+
+            # Emptiness, not key presence: `meta` is pre-seeded with blanks.
+            #
+            # Anchored on `சட்டமன்ற` alone and then taking whatever follows the
+            # separator. Whole-page OCR spells the rest of the label a different
+            # way on almost every page -- தொகுதி, தாகுதி, தெொகுதி, தொாகுதி --
+            # and requiring the correct one left 289 of 779 electors with no
+            # constituency, on headers otherwise read at 0.93-0.96.
+            if not meta.get("constituency") and "சட்டமன்ற" in text:
+                m_con = re.search(r"[:\-]\s*(.+)$", text)
+                if m_con:
+                    meta["constituency"] = _trim_header_value(m_con.group(1))
+
+            if not meta.get("section_name"):
+                m_sec = re.search(
+                    r"பிரிவு\s*எண்\S*\s*(?:மற்றும்\s*பெயர்)?\s*[:\-]?\s*(.+)$", text
+                )
+                if m_sec:
+                    meta["section_name"] = _trim_header_value(m_sec.group(1))
 
         # 3. List Type / Supplement Title
         if "நீக்கல் பட்டியல்" in full_text or "நீக்கல்" in full_text[:400]:
@@ -286,7 +398,7 @@ class ElectoralRollTamilTemplate:
         image: np.ndarray | None = None,
     ) -> list[Record]:
         cells = layout.cells or []
-        header_meta = self._extract_header_metadata(lines)
+        header_meta = self._extract_header_metadata(lines, image)
 
         buckets = assign_lines_to_cells(
             lines,
@@ -305,7 +417,13 @@ class ElectoralRollTamilTemplate:
             if not cell_lines and image is None:
                 continue
 
-            record = self._parse_cell(cell_lines, cell, index, page_id, header_meta)
+            # The stamp has to be found in the pixels: it sits at 55-68 degrees
+            # and OCR never returns a line matching it, only fragments.
+            stamp_marks = self._find_cell_stamp(image, cell)
+
+            record = self._parse_cell(
+                cell_lines, cell, index, page_id, header_meta, stamp_marks
+            )
 
             has_name = bool(record.fields.get("name") and record.fields["name"].original_value.strip())
             has_house = bool(record.fields.get("house_number") and record.fields["house_number"].original_value.strip())
@@ -336,12 +454,148 @@ class ElectoralRollTamilTemplate:
                 except Exception:
                     pass
 
+            # The stamp costs the age line a digit -- `59` is read as `5`, under
+            # the electoral minimum. The remnant must never be stored as an age,
+            # and re-reading the same crop cannot help, so recovery gets a go.
+            if stamp_marks and image is not None:
+                self._recover_stamped_age(record, image, cell)
+
+            # Re-judge the house number now the crop re-OCR has had its say: it
+            # overwrites the value either way, so the first read's verdict may be
+            # attached to a value that no longer exists.
+            self._flag_suspect_house_number(record, stamped=bool(stamp_marks))
+
             voter_keys = ("serial", "epic", "name", "relation_name", "house_number", "age", "gender")
             if not any(record.fields.get(k) and record.fields[k].original_value.strip() for k in voter_keys):
                 continue
 
             records.append(record)
         return records
+
+    _HOUSE_STAMP_WARNING = "may have lost a separator to the DELETED stamp"
+
+    @classmethod
+    def _flag_suspect_house_number(cls, record: Record, stamped: bool) -> None:
+        """Mark a house number the stamp may have flattened, or withdraw the mark.
+
+        Idempotent, because it runs twice: once on the first read and again after
+        the crop re-OCR, which overwrites `house_number` unconditionally. On real
+        pages that overwrite went both ways -- it repaired `22` into `2-2` on one
+        card and broke `2-19` into `219` on another -- so a verdict from the first
+        read alone is attached to a value that no longer exists.
+
+        The value is never corrected. `22` cannot be told from a genuine `22`;
+        only a human looking at the page image can settle it.
+        """
+        record.issues = [
+            issue
+            for issue in record.issues
+            if cls._HOUSE_STAMP_WARNING not in (issue.message or "")
+        ]
+        if not stamped:
+            return
+
+        field = record.fields.get("house_number")
+        value = (field.edited_value or field.original_value or "").strip() if field else ""
+        if not value or house_number_is_intact(value):
+            return
+
+        record.issues.append(
+            Issue(
+                code=IssueCode.BAD_FORMAT,
+                severity=IssueSeverity.WARNING,
+                field="house_number",
+                message=(
+                    f"'{value}' {cls._HOUSE_STAMP_WARNING} "
+                    f"(e.g. '2-2' read as '22'); check the page image"
+                ),
+            )
+        )
+
+    @staticmethod
+    def _recover_stamped_age(record: Record, image: np.ndarray, cell: BBox) -> None:
+        """Replace an age the stamp destroyed, or leave the field unreadable.
+
+        A stored age that is wrong is worse than one that is missing, so the
+        damaged remnant is cleared whether or not recovery then succeeds.
+        """
+        field = record.fields.get("age")
+        if field is None:
+            return
+
+        digits = extract_digits(field.original_value or "")
+        if digits:
+            try:
+                if MIN_AGE <= int(digits) <= MAX_AGE:
+                    return                      # came through the stamp intact
+            except ValueError:
+                pass
+
+        field.original_value = ""
+        field.confidence = 0.0
+
+        x1, y1 = max(0, int(cell.x)), max(0, int(cell.y))
+        x2 = min(image.shape[1], int(cell.x + cell.w))
+        y2 = min(image.shape[0], int(cell.y + cell.h))
+        if x2 - x1 <= 20 or y2 - y1 <= 20:
+            return
+        crop = image[y1:y2, x1:x2]
+        if crop.ndim == 3:
+            crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+
+        def read(variant: np.ndarray) -> list[str]:
+            result = run_ocr(cv2.cvtColor(variant, cv2.COLOR_GRAY2BGR))
+            return [line.text for line in result.lines]
+
+        try:
+            recovered = recover_age(crop, read)
+        except Exception:
+            return
+        if recovered is not None:
+            field.original_value = str(recovered)
+            field.confidence = 1.0
+
+    @staticmethod
+    def _find_cell_stamp(
+        image: np.ndarray | None, cell: BBox
+    ) -> list[StampMark]:
+        """Stamp geometry for one cell, translated into *page* coordinates.
+
+        The detector works on a crop and so reports cell-local pixels, but every
+        OCR box it is compared against is page-space. Returning cell-local marks
+        would leave fragment suppression working only for whichever cell happens
+        to sit at the page origin.
+
+        Returns nothing when there is no page image to look at, which leaves the
+        reason code as the only signal -- correct, since a cell with no pixels
+        offers no evidence either way.
+        """
+        if image is None:
+            return []
+        x1, y1 = max(0, int(cell.x)), max(0, int(cell.y))
+        x2 = min(image.shape[1], int(cell.x + cell.w))
+        y2 = min(image.shape[0], int(cell.y + cell.h))
+        if x2 - x1 <= 20 or y2 - y1 <= 20:
+            return []
+        crop = image[y1:y2, x1:x2]
+        if crop.ndim == 3:
+            crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        try:
+            marks = find_stamp_marks(crop)
+        except cv2.error:
+            # A malformed crop must not lose the whole page; the reason code
+            # still carries the verdict.
+            return []
+        return [
+            StampMark(
+                x=mark.x + x1,
+                y=mark.y + y1,
+                w=mark.w,
+                h=mark.h,
+                angle=mark.angle,
+            )
+            for mark in marks
+        ]
 
     def _parse_cell(
         self,
@@ -350,8 +604,10 @@ class ElectoralRollTamilTemplate:
         index: int,
         page_id: str,
         header_meta: dict[str, Any] | None = None,
+        stamp_marks: list[StampMark] | None = None,
     ) -> Record:
         header_meta = header_meta or {}
+        stamp_marks = stamp_marks or []
         record = Record(
             id=uuid.uuid4().hex[:12],
             page_id=page_id,
@@ -372,24 +628,37 @@ class ElectoralRollTamilTemplate:
                 record.fields[col.key] = FieldValue(key=col.key)
             return record
 
+        # Stamp ink that OCR recognised as text -- a stray `C` at 0.945 is the
+        # outline of the `D`. High confidence, so nothing downstream would doubt
+        # it; drop it before any of it is mistaken for a field value.
+        if stamp_marks:
+            lines = [
+                ln
+                for ln in lines
+                if not any(
+                    covers(mark, (ln.bbox.x, ln.bbox.y, ln.bbox.w, ln.bbox.h))
+                    for mark in stamp_marks
+                )
+            ]
+            if not lines:
+                for col in self.columns():
+                    record.fields[col.key] = FieldValue(key=col.key)
+                return record
+
         consumed: set[str] = set()
         values: dict[str, tuple[str, float, BBox | None, list[str]]] = {}
 
-        # Deletion tracking
-        is_deleted = "No"
-        deletion_reason = ""
-
-        if header_meta.get("is_deletions_page"):
-            is_deleted = "Yes"
-            deletion_reason = "நீக்கல் பட்டியல் (Deletions List)"
-
-        # Check for watermark / overlay text inside cell
+        # Deletion signals. The stamp arrives as geometry from the image because
+        # OCR never returns it as a line; the reason code is read below, out of
+        # the serial box, and recorded even when the two disagree.
+        reason_code: str | None = None
+        stamp_found = bool(stamp_marks)
         for ln in lines:
-            t_upper = ln.text.upper()
-            if any(term in t_upper for term in ("DELETED", "நீக்கப்பட்டது", "CANCELLED")):
-                is_deleted = "Yes"
-                if not deletion_reason or deletion_reason == "நீக்கல் பட்டியல் (Deletions List)":
-                    deletion_reason = "DELETED"
+            if any(
+                term in ln.text.upper()
+                for term in ("DELETED", "நீக்கப்பட்டது", "CANCELLED")
+            ):
+                stamp_found = True
                 break
 
         def put(key: str, value: str, line: OcrLine) -> None:
@@ -400,57 +669,52 @@ class ElectoralRollTamilTemplate:
 
         # --- pass 1: serial + EPIC, identified by shape and position -------
         top_band = cell.y + cell.h * 0.45
+        serial_boxes: list[tuple[OcrLine, str]] = []
         for idx_line, line in enumerate(lines):
             text = normalize(line.text)
             if line.bbox.cy > top_band:
                 continue
 
-            code_prefix = ""
-            if idx_line > 0:
-                prev_text = normalize(lines[idx_line - 1].text).strip().upper()
-                if prev_text in ("S", "E", "R", "M", "Q", "W"):
-                    code_prefix = prev_text
+            # The reason code is usually printed on its own, left of the serial.
+            # It has to be claimed before the serial patterns see it: `S2` run
+            # through them yields serial 2, silently renumbering the elector.
+            standalone_code = STANDALONE_CODE_RE.match(text.strip())
+            if standalone_code:
+                reason_code = standalone_code.group(1).upper()
+                consumed.add(line.id)
+                continue
+
+            code_prefix = parse_reason_code(text) or ""
 
             ident = clean_identifier(text)
             if EPIC_PERMISSIVE_RE.match(ident) and "epic" not in values:
                 put("epic", ident, line)
                 consumed.add(line.id)
                 if "serial" not in values:
-                    m_ser = re.match(r"^\s*\[?\s*([SERMQWsermqw])?\s*[\.\-:\s]*(\d{1,4})\s*\]?\s*", text)
+                    m_ser = SERIAL_WITH_CODE_RE.match(text)
                     if m_ser:
-                        code_prefix = m_ser.group(1).upper() if m_ser.group(1) else code_prefix
                         put("serial", m_ser.group(2), line)
-                        if code_prefix:
-                            is_deleted = "Yes"
-                            reason_map = {
-                                "S": "S - Shifted (இடம் மாறியவர்)",
-                                "E": "E - Expired (இறந்தவர்)",
-                                "R": "R - Repeated (இரட்டைப் பதிவு)",
-                                "M": "M - Missing (காணாமல் போனவர்)",
-                                "Q": "Q - Disqualified (தகுதியின்மை)",
-                                "W": "W - Withdrawn (விலக்கப்பட்டவர்)",
-                            }
-                            deletion_reason = reason_map.get(code_prefix, f"{code_prefix} - Deleted")
                 continue
 
-            m_ser_bare = re.match(r"^\s*\[?\s*([SERMQWsermqw])?\s*[\.\-:\s]*(\d{1,4})\s*\]?\s*$", text)
+            m_ser_bare = SERIAL_BARE_RE.match(text)
             if m_ser_bare:
-                code_prefix = m_ser_bare.group(1).upper() if m_ser_bare.group(1) else code_prefix
-                digits = m_ser_bare.group(2)
-                if "serial" not in values:
-                    put("serial", digits, line)
-                    consumed.add(line.id)
-                    if code_prefix:
-                        is_deleted = "Yes"
-                        reason_map = {
-                            "S": "S - Shifted (இடம் மாறியவர்)",
-                            "E": "E - Expired (இறந்தவர்)",
-                            "R": "R - Repeated (இரட்டைப் பதிவு)",
-                            "M": "M - Missing (காணாமல் போனவர்)",
-                            "Q": "Q - Disqualified (தகுதியின்மை)",
-                            "W": "W - Withdrawn (விலக்கப்பட்டவர்)",
-                        }
-                        deletion_reason = reason_map.get(code_prefix, f"{code_prefix} - Deleted")
+                serial_boxes.append((line, m_ser_bare.group(2)))
+
+            reason_code = reason_code or code_prefix or None
+
+        # A supplement card prints two numbered boxes on its top row: the
+        # elector's serial on the left and the supplement's own number on the
+        # right, the latter a constant `1` down the page. Taking whichever line
+        # came first stored the supplement number for half the electors on every
+        # such page -- the lines arrive sorted by `(round(cy / 8), cx)`, so two
+        # boxes a pixel apart can land in different bands and swap places.
+        #
+        # Position decides it instead of arrival order: the serial is the
+        # leftmost box. A base-list card has only one, and is unaffected.
+        if serial_boxes and "serial" not in values:
+            line, digits = min(serial_boxes, key=lambda pair: pair[0].bbox.x)
+            put("serial", digits, line)
+            consumed.add(line.id)
 
         def _is_noise(text: str) -> bool:
             lowered = text.lower()
@@ -558,10 +822,52 @@ class ElectoralRollTamilTemplate:
         ]
 
         # --- populate metadata & deletion status ---
-        if is_deleted == "Yes":
-            values["is_deleted"] = ("Yes", 1.0, None, [])
-        if deletion_reason:
-            values["deletion_reason"] = (deletion_reason, 1.0, None, [])
+        # Written on every cell, `"No"` included. Writing only on `"Yes"` left an
+        # evaluated live elector indistinguishable from a cell nothing had looked
+        # at -- the state all 632 records in the historical database are in.
+        verdict = assess_deletion(
+            reason_code=reason_code,
+            stamp_found=stamp_found,
+            on_deletions_page=bool(header_meta.get("is_deletions_page")),
+        )
+        # An age no elector can have is not their age. A lost leading digit
+        # turns 80 into 8 and 60 into 6, and the roll lists nobody under 18, so
+        # such a value is damage that reads as data. Dropped rather than stored:
+        # a blank can be recovered from the page image later, a plausible-looking
+        # wrong number cannot, because nobody knows to look.
+        if "age" in values:
+            digits = extract_digits(values["age"][0])
+            plausible = False
+            if digits:
+                try:
+                    plausible = MIN_AGE <= int(digits) <= MAX_AGE
+                except ValueError:
+                    plausible = False
+            if not plausible:
+                rejected = values.pop("age")[0]
+                record.issues.append(
+                    Issue(
+                        code=IssueCode.OUT_OF_RANGE,
+                        severity=IssueSeverity.WARNING,
+                        field="age",
+                        message=(
+                            f"'{rejected}' is not a possible age for an elector "
+                            f"({MIN_AGE}-{MAX_AGE}); dropped rather than stored"
+                        ),
+                    )
+                )
+
+        values["is_deleted"] = (verdict.flag, 1.0, None, [])
+        if verdict.reason:
+            values["deletion_reason"] = (verdict.reason, 1.0, None, [])
+        # Which readers fired, kept because either one alone is enough to strike
+        # an elector off. Without it a wrong reading is indistinguishable from a
+        # real deletion, and the two signals cannot be reconciled after the fact.
+        if verdict.signals:
+            values["deletion_signals"] = ("+".join(verdict.signals), 1.0, None, [])
+
+        if header_meta.get("constituency"):
+            values["constituency"] = (header_meta.get("constituency"), 1.0, None, [])
         if header_meta.get("section_name"):
             values["section_name"] = (header_meta.get("section_name"), 1.0, None, [])
         if header_meta.get("part_number"):
@@ -582,6 +888,8 @@ class ElectoralRollTamilTemplate:
                 )
             else:
                 record.fields[col.key] = FieldValue(key=col.key)
+
+        self._flag_suspect_house_number(record, stamped=bool(stamp_marks))
 
         if unparsed:
             record.issues.append(

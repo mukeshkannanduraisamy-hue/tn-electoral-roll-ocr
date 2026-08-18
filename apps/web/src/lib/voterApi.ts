@@ -36,6 +36,10 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
   onUnauthorized = handler;
 }
 
+export function notifyUnauthorized() {
+  onUnauthorized?.();
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -69,7 +73,7 @@ function describe(status: number, body: unknown): string {
 const API_BASE = (
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.NEXT_PUBLIC_API_BASE ||
-  "https://tn-electoral-ocr-api.onrender.com"
+  ""
 ).replace(/\/$/, "");
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -277,6 +281,7 @@ export function promoteRecords(payload: {
   record_ids?: string[];
   file_id?: string;
   page_id?: string;
+  all_documents?: boolean;
   only_clean?: boolean;
   on_conflict?: "skip" | "update";
 }): Promise<PromotionResult> {
@@ -322,3 +327,118 @@ export async function downloadVoterExport(
   anchor.remove();
   URL.revokeObjectURL(url);
 }
+
+export function resetDatabase(): Promise<{ status: string; message: string }> {
+  return request<{ status: string; message: string }>("/api/voters/reset-database", {
+    method: "POST",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Validation & Audit API
+// ---------------------------------------------------------------------------
+
+export interface ValidationSummary {
+  total_pdfs: number;
+  total_pdf_records: number;
+  total_db_records: number;
+  matched: number;
+  missing_in_db: number;
+  extra_in_db: number;
+  incorrect: number;
+  duplicates: number;
+  passed_pdfs: number;
+  failed_pdfs: number;
+  overall_pass_pct: number;
+  overall_status: "PASS" | "FAIL" | "PARTIAL";
+  audited_at: string;
+}
+
+export interface ValidationReport {
+  pdf_file: string;
+  ac_number: string;
+  part_number: string;
+  file_id: string | null;
+  total_pdf_records: number;
+  total_db_records: number;
+  matched: number;
+  missing_in_db: number;
+  extra_in_db: number;
+  incorrect: number;
+  duplicates: number;
+  pass_percentage: number;
+  status: "PASS" | "FAIL" | "PARTIAL";
+  mismatches_count: number;
+  audit_time_s: number;
+}
+
+export interface ValidationMismatch {
+  pdf_file: string;
+  ac_number?: string;
+  part_number?: string;
+  page_number: number;
+  serial_number: number;
+  field_name: string;
+  pdf_value: string;
+  db_value: string;
+  difference: string;
+}
+
+export interface MismatchResponse {
+  total: number;
+  offset: number;
+  limit: number;
+  items: ValidationMismatch[];
+}
+
+export function getValidationSummary(): Promise<ValidationSummary> {
+  return request<ValidationSummary>("/api/validation/summary");
+}
+
+export function getValidationReports(params: {
+  status?: string;
+  search?: string;
+  ac?: string;
+} = {}): Promise<ValidationReport[]> {
+  const q = new URLSearchParams();
+  if (params.status) q.set("status", params.status);
+  if (params.search) q.set("search", params.search);
+  if (params.ac) q.set("ac", params.ac);
+  const qs = q.toString() ? `?${q.toString()}` : "";
+  return request<ValidationReport[]>(`/api/validation/reports${qs}`);
+}
+
+export function getValidationMismatches(params: {
+  pdf_file?: string;
+  part_number?: string;
+  field_name?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<MismatchResponse> {
+  const q = new URLSearchParams();
+  if (params.pdf_file) q.set("pdf_file", params.pdf_file);
+  if (params.part_number) q.set("part_number", params.part_number);
+  if (params.field_name) q.set("field_name", params.field_name);
+  if (params.q) q.set("q", params.q);
+  if (params.limit !== undefined) q.set("limit", String(params.limit));
+  if (params.offset !== undefined) q.set("offset", String(params.offset));
+  const qs = q.toString() ? `?${q.toString()}` : "";
+  return request<MismatchResponse>(`/api/validation/mismatches${qs}`);
+}
+
+export function triggerValidationScan(ac?: string): Promise<{
+  status: string;
+  summary: ValidationSummary;
+  total_reports: number;
+  total_mismatches: number;
+}> {
+  const q = ac ? `?ac=${ac}` : "";
+  return request<{
+    status: string;
+    summary: ValidationSummary;
+    total_reports: number;
+    total_mismatches: number;
+  }>(`/api/validation/scan${q}`, { method: "POST" });
+}
+

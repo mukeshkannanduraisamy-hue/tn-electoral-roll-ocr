@@ -1,0 +1,49 @@
+INFO: Could not find files for the given pattern(s).
+D:\OCR\apps\api\.venv\Lib\site-packages\paddle\utils\cpp_extension\extension_utils.py:715: UserWarning: No ccache found. Please be aware that recompiling all source files may be required. You can download and install ccache from: https://github.com/ccache/ccache/blob/master/doc/INSTALL.md
+  warnings.warn(warning_message)
+D:\OCR\apps\api\app\services\ocr_service.py:182: UserWarning: `lang` and `ocr_version` will be ignored when model names or model directories are not `None`.
+  engine = PaddleOCR(**kwargs)
+[32mCreating model: ('PP-OCRv5_mobile_det', None, None)[0m
+[32mModel files already exist. Using cached files. To redownload, please delete the directory manually: `C:\Users\Admin\.paddlex\official_models\PP-OCRv5_mobile_det`.[0m
+[32mCreating model: ('ta_PP-OCRv5_mobile_rec', None, None)[0m
+[32mModel files already exist. Using cached files. To redownload, please delete the directory manually: `C:\Users\Admin\.paddlex\official_models\ta_PP-OCRv5_mobile_rec`.[0m
+======================================================================
+  INGEST 31 PENN PDFs  ->  device: gpu:0
+======================================================================
+  Part   1:  238 voters,   0 deleted,  0 anomalies,  27.3s  (1.82s/pg)
+  Part   2:  100 voters,   0 deleted,  0 anomalies,  13.2s  (1.20s/pg)
+  Part   3:  304 voters,   4 deleted,  0 anomalies,  28.3s  (1.49s/pg)
+  Part   4:  798 voters,   1 deleted,  0 anomalies,  59.8s  (1.81s/pg)
+  Part   5: 1002 voters,   1 deleted,  0 anomalies,  80.6s  (1.92s/pg)
+  Part   6: 1140 voters,   5 deleted,  0 anomalies,  88.8s  (1.97s/pg)
+  Part   8:  830 voters,   0 deleted,  0 anomalies,  66.9s  (1.91s/pg)
+  Part  11: 1018 voters,   0 deleted,  0 anomalies,  80.9s  (1.97s/pg)
+  Part  12:  628 voters,   1 deleted,  0 anomalies,  53.9s  (1.80s/pg)
+  Part  13:  917 voters,   1 deleted,  0 anomalies,  75.2s  (2.03s/pg)
+  Part  14:  910 voters,   0 deleted,  0 anomalies,  75.1s  (1.98s/pg)
+  Part  15: 1093 voters, 146 deleted,  0 anomalies,  96.3s  (2.29s/pg)
+  Part  16:  779 voters, 233 deleted,  0 anomalies,  89.0s  (2.70s/pg)
+  Part  17:  615 voters,  19 deleted,  0 anomalies,  53.3s  (1.97s/pg)
+  Part  18:  940 voters,   4 deleted,  0 anomalies,  78.1s  (2.05s/pg)
+  Part  19:  805 voters,  52 deleted,  0 anomalies,  71.6s  (2.05s/pg)
+  Part  21:  728 voters,   1 deleted,  0 anomalies,  61.9s  (2.00s/pg)
+  Part  22:  707 voters,   1 deleted,  0 anomalies,  60.1s  (2.00s/pg)
+  Part  23:  594 voters,   0 deleted,  0 anomalies,  53.4s  (2.05s/pg)
+  Part  24:  577 voters,   0 deleted,  0 anomalies,  51.4s  (1.98s/pg)
+  Part  25:  603 voters,   2 deleted,  0 anomalies,  55.9s  (2.00s/pg)
+  Part  26:  585 voters,   1 deleted,  0 anomalies,  50.9s  (1.96s/pg)
+  Part  27:  552 voters,   0 deleted,  0 anomalies,  49.5s  (1.98s/pg)
+  Part  28:  669 voters,   0 deleted,  0 anomalies,  58.6s  (2.02s/pg)
+  Part  29:  592 voters,   2 deleted,  0 anomalies,  52.7s  (1.95s/pg)
+  Part  30:  882 voters,   8 deleted,  0 anomalies,  76.8s  (2.08s/pg)
+  Part  31:  751 voters,   0 deleted,  0 anomalies,  65.0s  (1.97s/pg)
+  Part  32:  671 voters,   1 deleted,  0 anomalies,  57.7s  (1.99s/pg)
+  Part  34: 1032 voters,   0 deleted,  0 anomalies,  88.3s  (2.15s/pg)
+  Part  35:  800 voters,   4 deleted,  0 anomalies,  68.7s  (2.08s/pg)
+  Part  38:  625 voters,   2 deleted,  0 anomalies,  54.5s  (2.02s/pg)
+======================================================================
+  22,485 voters extracted, 22,485 stored, 489 deleted, 0 anomalies in 32.5min
+  page types: {'cover_page': 31, 'blank_or_signature': 32, 'map_photo_page': 31, 'voter_list_page': 792, 'other': 5, 'summary_page': 31, 'legend_page': 31, 'supplement_page': 16}
+  report -> ingest_report.json
+======================================================================
+INGEST_EXIT=0

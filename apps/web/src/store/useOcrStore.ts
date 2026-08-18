@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner";
 
 import { pauseJobApi, resumeJobApi, cancelJobApi } from "@/lib/api";
+import { resetDatabase as apiResetDatabase } from "@/lib/voterApi";
 
 export type ViewTab = "dashboard" | "table" | "page" | "review" | "voters" | "settings" | "analytics" | "polling_stations";
 
@@ -98,6 +99,7 @@ interface OcrState {
   setIsShortcutsOpen: (val: boolean) => void;
 
   deleteFile: (id: string) => Promise<void>;
+  resetAllData: () => Promise<void>;
   setActiveJob: (jobId: string | null, status?: string | null) => void;
   updateJobProgress: (progress: number, status?: string) => void;
 
@@ -328,6 +330,18 @@ export const useOcrStore = create<OcrState>((set, get) => ({
     } catch (e) {
       console.error("Failed to delete file", e);
       toast.error("Failed to delete document");
+    }
+  },
+
+  resetAllData: async () => {
+    try {
+      await apiResetDatabase();
+      set({ files: [], activeFileId: null, activePageId: null, selectedRecordId: null, pages: [] });
+      await get().loadFiles();
+      toast.success("All data and database tables have been reset successfully");
+    } catch (e) {
+      console.error("Failed to reset database", e);
+      toast.error("Failed to reset database");
     }
   },
 

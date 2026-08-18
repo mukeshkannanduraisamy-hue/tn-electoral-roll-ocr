@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -68,14 +69,18 @@ def get_photo_image(
     photo_id: str,
     session: Session = Depends(get_session),
     _user: UserRow = Depends(require_user),
-) -> FileResponse:
+) -> Response:
     row = session.get(PhotoRow, photo_id)
     if row is None:
         raise HTTPException(404, "Photo not found")
 
-    # `file_path` is a bare filename written by the extractor. Resolving it
-    # against the photos directory and checking containment keeps a crafted
-    # value from reaching anything outside that directory.
+    if row.image_data:
+        try:
+            raw = base64.b64decode(row.image_data)
+            return Response(content=raw, media_type="image/png")
+        except Exception:
+            pass
+
     path = (settings.photos_dir / row.file_path).resolve()
     try:
         path.relative_to(settings.photos_dir.resolve())

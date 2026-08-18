@@ -84,9 +84,20 @@ def test_plausible_ages_accepted(age):
 
 
 @pytest.mark.parametrize("age", [0, 5, 17, 121, 999, -3])
-def test_implausible_ages_rejected(age):
-    with pytest.raises(ValidationError):
-        VoterCreate(**{**VALID, "age": age})
+def test_implausible_ages_become_unknown(age):
+    """An impossible age is recorded as unknown, not rejected.
+
+    This validator runs on read as well as write, and the promoted corpus
+    genuinely contains ages OCR mis-read as 0. Raising would turn one bad row
+    into a 400 for the whole list endpoint, so the age is dropped instead --
+    a missing age is honest, a wrong one is not.
+    """
+    assert VoterCreate(**{**VALID, "age": age}).age is None
+
+
+def test_a_non_numeric_age_becomes_unknown():
+    """OCR can emit anything; a value that is not a number is not an age."""
+    assert VoterCreate(**{**VALID, "age": "abc"}).age is None
 
 
 def test_age_may_be_absent():
@@ -148,10 +159,19 @@ def test_update_allows_partial():
 
 
 def test_update_still_validates():
-    with pytest.raises(ValidationError):
-        VoterUpdate(age=3)
+    """An edit is still checked -- a malformed EPIC is refused outright."""
     with pytest.raises(ValidationError):
         VoterUpdate(epic="nonsense")
+
+
+def test_update_drops_an_implausible_age_rather_than_refusing():
+    """Same coercion as create: the age is dropped, the edit still applies.
+
+    Worth knowing when reviewing an edit screen: typing 3 does not raise, it
+    silently clears the age. That follows from one shared validator serving
+    create, read and update.
+    """
+    assert VoterUpdate(age=3).age is None
 
 
 def test_update_can_clear_optional_age():

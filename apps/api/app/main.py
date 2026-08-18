@@ -12,14 +12,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse
 
 from .config import settings
 from .db import init_db, reconcile_interrupted_work
 from .auth import ensure_admin_user, require_user
 from .routers import (
     ai_chat, auth, export, files, jobs, pages, photos, polling_stations, records,
-    templates, voters,
+    templates, validation, voters,
 )
 # Aliased: `settings` is already the config object imported above.
 from .routers import settings as settings_router
@@ -35,16 +35,18 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     settings.ensure_dirs()
+    init_db()
+    # Jobs cannot outlive the process that runs them, so anything still
+    # marked in-flight at boot was orphaned by a restart. Clear it before
+    # serving traffic, or the UI shows work that will never complete.
     try:
-        init_db()
-        # Jobs cannot outlive the process that runs them, so anything still
-        # marked in-flight at boot was orphaned by a restart. Clear it before
-        # serving traffic, or the UI shows work that will never complete.
         reconcile_interrupted_work()
-        # Creates the admin account on first boot and prunes expired sessions.
+    except Exception as exc:
+        logger.warning("Startup reconciliation skipped: %s", exc)
+    try:
         ensure_admin_user()
-    except Exception as e:
-        logger.error("Database connection/init warning: %s", e)
+    except Exception as exc:
+        logger.warning("Startup admin user check skipped: %s", exc)
     logger.info("Data directory: %s", settings.data_dir)
     logger.info(
         "OCR: lang=%s version=%s device=%s workers=%d",
@@ -153,14 +155,12 @@ app.include_router(templates.router, prefix="/api/templates", tags=["templates"]
 app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"],
                    dependencies=PROTECTED)
 app.include_router(ai_chat.router, prefix="/api/ai", tags=["ai"], dependencies=PROTECTED)
+app.include_router(validation.router, prefix="/api/validation", tags=["validation"], dependencies=PROTECTED)
 
 
 @app.get("/", tags=["meta"])
-def root():
+def root() -> dict:
     """Root endpoint welcoming visitors and providing system links."""
-    static_index = _static_dir / "index.html"
-    if static_index.exists():
-        return FileResponse(static_index)
     return {
         "service": "Tamil Nadu Electoral Roll OCR API",
         "status": "online",
@@ -207,9 +207,16 @@ async def value_error_handler(_request, exc: ValueError):
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
-# If bundled static frontend exists, mount it at root
-from pathlib import Path
-from fastapi.staticfiles import StaticFiles
-_static_dir = Path(__file__).resolve().parent.parent / "static"
-if _static_dir.exists():
-    app.mount("/", StaticFiles(directory=str(_static_dir), html=True), name="static")
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(_request, exc: Exception):
+    """Return a JSON 500 instead of dropping the TCP connection.
+
+    Without this, an unhandled exception in a synchronous endpoint causes
+    uvicorn to close the socket before sending a response, which the Next.js
+    proxy reports as ECONNRESET / 'socket hang up'.
+    """
+    logger.exception("Unhandled exception: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {type(exc).__name__}: {exc}"},
+    )

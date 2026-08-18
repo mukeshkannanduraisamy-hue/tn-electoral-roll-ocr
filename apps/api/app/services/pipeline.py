@@ -46,7 +46,7 @@ def process_page(
     file_id: str,
     template_id: str = "auto",
     lang: str | None = None,
-    save_image: bool = True,
+    save_image: bool = False,
     page_id: str | None = None,
 ) -> Page:
     """Process one page of one PDF into a fully populated `Page`."""
@@ -75,10 +75,15 @@ def process_page(
     page.height = display.shape[0]
 
     if save_image:
+        import threading
         out_path = settings.pages_dir / f"{page_id}.png"
-        # cv2 writes BGR; our arrays are RGB.
-        cv2.imwrite(str(out_path), display[:, :, ::-1])
         page.image_path = out_path.name
+        # cv2 writes BGR; our arrays are RGB. Defer disk I/O to a background thread
+        threading.Thread(
+            target=cv2.imwrite,
+            args=(str(out_path), display[:, :, ::-1]),
+            daemon=True
+        ).start()
 
     # ------------------------------------------------------------- 3. OCR
     try:
@@ -195,26 +200,7 @@ def process_page(
         )
 
     page.records = records
-
-    # A crop is attempted per record but kept only when the box holds an
-    # actual photograph; on a final SIR roll every box is the printed words
-    # "Photo is available", so this legitimately yields nothing.
-    try:
-        cells = layout.cells or []
-        page.photos = [
-            photo
-            for record in records
-            if record.index < len(cells)
-            for photo in [
-                photo_service.extract_voter_photo(
-                    cells[record.index], page.lines, display,
-                    page.id, record.id, settings.photos_dir,
-                )
-            ]
-            if photo is not None
-        ]
-    except Exception:  # noqa: BLE001 - never fail a page over a thumbnail
-        logger.exception("Voter photo extraction failed on page %s", page_id)
+    page.photos = []
 
     if grid:
         # The number of slots this page actually has, which for a part-full
@@ -274,7 +260,7 @@ def process_page_with_retry(
     file_id: str,
     template_id: str = "auto",
     lang: str | None = None,
-    save_image: bool = True,
+    save_image: bool = False,
     page_id: str | None = None,
     max_retries: int | None = None,
 ) -> Page:
@@ -314,7 +300,7 @@ def process_pdf(
     file_id: str,
     template_id: str = "auto",
     lang: str | None = None,
-    save_image: bool = True,
+    save_image: bool = False,
 ):
     """Process every page of a PDF, yielding pages as they complete."""
     info = pdf_service.inspect(pdf_path)

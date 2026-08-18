@@ -19,6 +19,7 @@ Those denormalised columns are recomputed on every write in
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import uuid
@@ -96,6 +97,16 @@ class FileRow(Base):
     template_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     languages: Mapped[list] = mapped_column(JSON, default=list)
     stored_path: Mapped[str] = mapped_column(String(1024), default="")
+    file_data: Mapped[str | None] = mapped_column(Text, nullable=True, deferred=True)
+    """Base64 of the whole PDF, written on upload; no reader yet.
+
+    Deferred because it is ~1.33x a source document (16 MB each here), so a
+    plain ``select(FileRow)`` streamed tens of MB per row out of Postgres for
+    callers that only want metadata. The file list did exactly that and, over
+    the remote pooler, hung until the connection was dropped ("SSL connection
+    has been closed unexpectedly"). Loaded on attribute access, so the writer
+    and any future reader keep working.
+    """
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
 
@@ -110,6 +121,21 @@ class PageRow(Base):
     page_number: Mapped[int] = mapped_column(Integer, index=True)
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     image_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    image_data: Mapped[str | None] = mapped_column(Text, nullable=True, deferred=True)
+    """Base64 PNG of the rendered page.
+
+    Deferred for the same reason as ``FileRow.file_data``: every bulk reader of
+    this table throws these bytes away. ``Page`` has no ``image_data`` field, so
+    ``_page_from_row`` cannot pass them on, and the page index, export
+    collection, record promotion and the agent's page listing all select whole
+    rows -- a 100-page file meant 100 base64 page images crossing the wire only
+    to be discarded, which is what turned "Failed to fetch page index" into a
+    dropped connection rather than a slow response.
+
+    Unlike ``file_data`` this column has real readers, but each wants exactly one
+    page: ``GET /pages/{id}/image`` undefers it in the same query, and
+    ``save_page`` tests for its presence without loading it.
+    """
     width: Mapped[int] = mapped_column(Integer, default=0)
     height: Mapped[int] = mapped_column(Integer, default=0)
     template_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -241,7 +267,7 @@ class VoterRow(Base):
     # Page furniture, denormalised so a voter row stands alone in an export.
     part_number: Mapped[str] = mapped_column(String(32), default="", index=True)
     constituency: Mapped[str] = mapped_column(String(255), default="")
-    section_name: Mapped[str] = mapped_column(String(512), default="")
+    section_name: Mapped[str] = mapped_column(Text, default="")
 
     # --- provenance ------------------------------------------------------
     source_record_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -348,6 +374,7 @@ class PhotoRow(Base):
     polling_station_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     photo_type: Mapped[str] = mapped_column(String(64), default="voter_crop", index=True)  # voter_crop | station_front | nazri_naksha | google_map | cad_map | thumbnail
     file_path: Mapped[str] = mapped_column(String(1024), default="")
+    image_data: Mapped[str | None] = mapped_column(Text, nullable=True)
     width: Mapped[int] = mapped_column(Integer, default=0)
     height: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
@@ -527,24 +554,44 @@ def database_url() -> str:
     copy in `alembic.ini` is how a migration ends up applied to a different
     database than the one the app is using.
     """
-    import os
-    url = settings.database_url or os.getenv("DATABASE_URL") or os.getenv("OCR_DATABASE_URL") or ""
-    if url:
-        if url.startswith("postgres://"):
-            url = "postgresql://" + url[len("postgres://"):]
-        return url
+    if settings.database_url:
+        return settings.database_url
     settings.ensure_dirs()
     return f"sqlite:///{(settings.data_dir / 'ocr.sqlite').as_posix()}"
 
 
 _is_sqlite = database_url().startswith("sqlite")
-_connect_args = {"check_same_thread": False, "timeout": 60} if _is_sqlite else {}
+
+if _is_sqlite:
+    _connect_args: dict = {"check_same_thread": False, "timeout": 60}
+    _engine_kwargs: dict = {}
+else:
+    # PostgreSQL / Supabase pooler: enable TCP keepalives so the connection
+    # is not silently dropped by the pooler or NAT during long promote
+    # operations, and pool_pre_ping so SQLAlchemy recycles stale connections
+    # before a request rather than failing mid-operation.
+    _connect_args = {
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5,
+        "connect_timeout": 30,
+        "prepare_threshold": None,
+    }
+    _engine_kwargs = {
+        "pool_pre_ping": True,
+        "pool_size": 10,
+        "max_overflow": 20,
+        "pool_timeout": 30,
+        "pool_recycle": 300,
+    }
 
 engine = create_engine(
     database_url(),
     echo=False,
     future=True,
     connect_args=_connect_args,
+    **_engine_kwargs,
 )
 
 
@@ -735,13 +782,13 @@ def _add_missing_columns() -> None:
     may hold NULL on rows written before it existed. Everything else --
     renames, drops, type changes, backfills -- is alembic's job now.
     """
+    from sqlalchemy import inspect
     with engine.begin() as conn:
+        inspector = inspect(conn)
         for table_name, table in Base.metadata.tables.items():
-            existing = {
-                row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table_name})")
-            }
-            if not existing:
+            if not inspector.has_table(table_name):
                 continue  # table itself is absent; create_all owns it
+            existing = {col["name"] for col in inspector.get_columns(table_name)}
 
             for column in table.columns:
                 if column.name in existing:
@@ -896,6 +943,21 @@ def row_to_record(row: RecordRow) -> Record:
     )
 
 
+def _stored_page_image_present(session: Session, page_id: str) -> bool:
+    """Whether a page already holds base64 image bytes, without loading them.
+
+    ``PageRow.image_data`` is deferred, so reading the attribute to test it for
+    null would fetch the whole base64 PNG -- on the OCR write path, for every
+    page, only to discard it. The predicate is evaluated in Postgres instead, so
+    what comes back is one boolean.
+    """
+    return bool(
+        session.execute(
+            select(PageRow.image_data.is_not(None)).where(PageRow.id == page_id)
+        ).scalar()
+    )
+
+
 def save_page(session: Session, page: Page, file_id: str) -> None:
     """Upsert a page and replace its records."""
     if session.get(FileRow, file_id) is None:
@@ -933,7 +995,8 @@ def save_page(session: Session, page: Page, file_id: str) -> None:
         session.delete(stale_row)
 
     row = session.get(PageRow, page.id)
-    if row is None:
+    is_new_row = row is None
+    if is_new_row:
         row = PageRow(id=page.id)
         session.add(row)
 
@@ -941,6 +1004,7 @@ def save_page(session: Session, page: Page, file_id: str) -> None:
     row.page_number = page.page_number
     row.status = page.status if isinstance(page.status, str) else page.status.value
     row.image_path = page.image_path
+    row.image_data = None
     row.width = page.width
     row.height = page.height
     row.template_id = page.template_id
@@ -955,30 +1019,9 @@ def save_page(session: Session, page: Page, file_id: str) -> None:
     session.query(RecordRow).filter(RecordRow.page_id == page.id).delete(
         synchronize_session=False
     )
-    session.query(OCRBlockRow).filter(OCRBlockRow.page_id == page.id).delete(
-        synchronize_session=False
-    )
-    session.query(PhotoRow).filter(PhotoRow.page_id == page.id).delete(
-        synchronize_session=False
-    )
-    for photo in page.photos:
-        session.add(
-            PhotoRow(
-                id=uuid.uuid4().hex[:12],
-                file_id=file_id,
-                page_id=page.id,
-                record_id=photo.record_id,
-                photo_type=photo.photo_type,
-                file_path=photo.file_path,
-                width=photo.width,
-                height=photo.height,
-            )
-        )
-
     for record in page.records:
         session.add(RecordRow(**record_to_row(record, file_id, page.page_number)))
-        for block in _ocr_blocks_for(record, page):
-            session.add(block)
+
 
 
 def _ocr_blocks_for(record: Record, page: Page) -> Iterator[OCRBlockRow]:
@@ -1214,3 +1257,4 @@ if _is_sqlite:
     @event.listens_for(engine, "begin")
     def _code_begin_immediate(conn):
         conn.exec_driver_sql("BEGIN IMMEDIATE")
+

@@ -1,0 +1,115 @@
+D:\OCR\apps\api\app\services\ocr_service.py:149: UserWarning: `lang` and `ocr_version` will be ignored when model names or model directories are not `None`.
+  engine = PaddleOCR(**kwargs)
+[32mCreating model: ('PP-OCRv5_mobile_det', None, None)[0m
+[32mModel files already exist. Using cached files. To redownload, please delete the directory manually: `C:\Users\Admin\.paddlex\official_models\PP-OCRv5_mobile_det`.[0m
+INFO: Could not find files for the given pattern(s).
+D:\OCR\apps\api\.venv\Lib\site-packages\paddle\utils\cpp_extension\extension_utils.py:715: UserWarning: No ccache found. Please be aware that recompiling all source files may be required. You can download and install ccache from: https://github.com/ccache/ccache/blob/master/doc/INSTALL.md
+  warnings.warn(warning_message)
+[32mCreating model: ('ta_PP-OCRv5_mobile_rec', None, None)[0m
+[32mModel files already exist. Using cached files. To redownload, please delete the directory manually: `C:\Users\Admin\.paddlex\official_models\ta_PP-OCRv5_mobile_rec`.[0m
+Sampling ~200 records from Penn PDF, pages [4, 5, 6, 7]
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-1-WI.pdf p4: +3 records (3 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-11-WI (1).pdf p4: +3 records (6 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-12-WI (1).pdf p4: +3 records (9 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-13-WI (1).pdf p4: +3 records (12 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-14-WI (1).pdf p4: +3 records (15 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-15-WI (1).pdf p4: +3 records (18 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-16-WI (1).pdf p4: +3 records (21 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-17-WI (1).pdf p4: +3 records (24 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-18-WI (1).pdf p4: +3 records (27 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-19-WI (1).pdf p4: +3 records (30 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-2-WI.pdf p4: +3 records (33 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-21-WI.pdf p4: +3 records (36 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-22-WI.pdf p4: +3 records (39 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-23-WI.pdf p4: +3 records (42 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-24-WI.pdf p4: +3 records (45 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-25-WI.pdf p4: +3 records (48 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-26-WI.pdf p4: +3 records (51 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-27-WI.pdf p4: +3 records (54 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-28-WI.pdf p4: +3 records (57 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-29-WI.pdf p4: +3 records (60 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-3-WI.pdf p4: +3 records (63 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-30-WI.pdf p4: +3 records (66 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-31-WI.pdf p4: +3 records (69 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-32-WI.pdf p4: +3 records (72 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-34-WI.pdf p4: +3 records (75 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-35-WI.pdf p4: +3 records (78 total)
+MuPDF error: format error: object out of range (100 0 R); xref size 100
+
+MuPDF error: format error: object out of range (100 0 R); xref size 100
+
+MuPDF error: format error: object out of range (100 0 R); xref size 100
+
+MuPDF error: format error: object out of range (100 0 R); xref size 100
+
+MuPDF error: format error: object out of range (100 0 R); xref size 100
+
+MuPDF error: format error: object out of range (100 0 R); xref size 100
+
+MuPDF error: format error: object out of range (100 0 R); xref size 100
+
+MuPDF error: syntax error: no XObject subtype specified
+
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-38-WI.pdf p4: +3 records (81 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-4-WI.pdf p4: +3 records (84 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-5-WI.pdf p4: +3 records (87 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-6-WI.pdf p4: +3 records (90 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-8-WI.pdf p4: +3 records (93 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-1-WI.pdf p5: +3 records (96 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-11-WI (1).pdf p5: +3 records (99 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-12-WI (1).pdf p5: +3 records (102 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-13-WI (1).pdf p5: +3 records (105 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-14-WI (1).pdf p5: +3 records (108 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-15-WI (1).pdf p5: +3 records (111 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-16-WI (1).pdf p5: +3 records (114 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-17-WI (1).pdf p5: +3 records (117 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-18-WI (1).pdf p5: +3 records (120 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-19-WI (1).pdf p5: +3 records (123 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-2-WI.pdf p5: +3 records (126 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-21-WI.pdf p5: +3 records (129 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-22-WI.pdf p5: +3 records (132 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-23-WI.pdf p5: +3 records (135 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-24-WI.pdf p5: +3 records (138 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-25-WI.pdf p5: +3 records (141 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-26-WI.pdf p5: +3 records (144 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-27-WI.pdf p5: +3 records (147 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-28-WI.pdf p5: +3 records (150 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-29-WI.pdf p5: +3 records (153 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-3-WI.pdf p5: +3 records (156 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-30-WI.pdf p5: +3 records (159 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-31-WI.pdf p5: +3 records (162 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-32-WI.pdf p5: +3 records (165 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-34-WI.pdf p5: +3 records (168 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-35-WI.pdf p5: +3 records (171 total)
+MuPDF error: format error: object out of range (101 0 R); xref size 100
+
+MuPDF error: format error: object out of range (101 0 R); xref size 100
+
+MuPDF error: format error: object out of range (101 0 R); xref size 100
+
+MuPDF error: format error: object out of range (101 0 R); xref size 100
+
+MuPDF error: format error: object out of range (101 0 R); xref size 100
+
+MuPDF error: format error: object out of range (101 0 R); xref size 100
+
+MuPDF error: format error: object out of range (101 0 R); xref size 100
+
+MuPDF error: syntax error: no XObject subtype specified
+
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-38-WI.pdf p5: +3 records (174 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-4-WI.pdf p5: +3 records (177 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-5-WI.pdf p5: +3 records (180 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-6-WI.pdf p5: +3 records (183 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-8-WI.pdf p5: +3 records (186 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-1-WI.pdf p6: +3 records (189 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-11-WI (1).pdf p6: +3 records (192 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-12-WI (1).pdf p6: +3 records (195 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-13-WI (1).pdf p6: +3 records (198 total)
+  2026-FC-EROLLGEN-S22-58-SIR-FinalRoll-Revision2-TAM-14-WI (1).pdf p6: +3 records (200 total)
+
+Wrote gt_full.html (200 records, 1598 fields)
+Wrote gt_full_manifest.json (manifest for scoring)
+
+Open the HTML, correct any wrong boxes, click Download, then run:
+  .venv/Scripts/python.exe score_ground_truth.py gt_full_manifest.json gt_corrections.json
