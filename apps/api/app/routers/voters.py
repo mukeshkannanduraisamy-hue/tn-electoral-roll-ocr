@@ -7,7 +7,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 import shutil
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -906,6 +906,50 @@ class PromotionCandidate:
     is_supplement: bool
     page_number: int
     index: int
+    is_clean: bool = True
+    deletion_reason: str = ""
+
+
+def _latest_revision_per_epic(
+    candidates: Sequence[PromotionCandidate],
+) -> dict[str, int]:
+    latest: dict[str, int] = {}
+    for c in candidates:
+        if c.revision > latest.get(c.epic, -1):
+            latest[c.epic] = c.revision
+    return latest
+
+
+def resolve_deletions(
+    candidates: Iterable[PromotionCandidate],
+) -> dict[str, str]:
+    """Which electors are struck off. Returns epic -> deletion reason.
+
+    Separate from `resolve_duplicate_epics` because a deletion is a *status*,
+    and the record carrying it is often the worst copy of the elector's
+    details. A struck-through cell reads badly -- the stamp costs the age line
+    a digit -- so it routinely fails validation, and 187 such records on the
+    Penn corpus were dropped by `only_clean` before ever being considered.
+    That left 160 electors the roll had struck off sitting active in the
+    curated table. Deciding the deletion here lets the clean main-roll entry
+    keep supplying the name and age while the deletion still lands.
+
+    Only the highest revision present for an elector gets a vote, so a
+    Revision 2 that lists them as active overrides a Revision 1 deletion --
+    that is a reinstatement, and it has to be representable.
+
+    Presence in the mapping is the deletion; the reason may be empty.
+    """
+    candidates = list(candidates)
+    latest = _latest_revision_per_epic(candidates)
+    deletions: dict[str, str] = {}
+    for c in candidates:
+        if not c.is_deleted or c.revision != latest[c.epic]:
+            continue
+        # First stated reason wins; a later blank must not erase it.
+        if not deletions.get(c.epic):
+            deletions[c.epic] = c.deletion_reason
+    return deletions
 
 
 def resolve_duplicate_epics(
@@ -920,9 +964,16 @@ def resolve_duplicate_epics(
     beats the supplement's deletion, because the supplement is further into
     the document. That silently dropped 184 deletions on this corpus.
 
-    Precedence, highest first: later revision, then a deletion, then a
-    supplement, then the earlier entry. See the module test for why each
-    rung is where it is.
+    Precedence, highest first: later revision, then a record that passes
+    validation, then a deletion, then a supplement, then the earlier entry.
+    See the module test for why each rung is where it is.
+
+    Cleanliness sits below the revision but above everything else on purpose.
+    A later revision is the current roll whatever its OCR quality, but within
+    one revision the readable copy of an elector should supply their details
+    -- the struck-off reprint is the one most likely to be garbled. The
+    deletion it carries is not lost by ranking it here; `resolve_deletions`
+    applies that independently of who wins the fields.
     """
     best: dict[str, tuple[tuple, str]] = {}
     for c in candidates:
@@ -930,7 +981,8 @@ def resolve_duplicate_epics(
         # the earliest rather than the latest -- two misreads of one EPIC on a
         # page are indistinguishable, and keeping the first is the behaviour
         # that was here before precedence existed.
-        key = (c.revision, c.is_deleted, c.is_supplement, -c.page_number, -c.index)
+        key = (c.revision, c.is_clean, c.is_deleted, c.is_supplement,
+               -c.page_number, -c.index)
         current = best.get(c.epic)
         if current is None or key > current[0]:
             best[c.epic] = (key, c.record_id)
@@ -961,9 +1013,9 @@ def promote_records(
     else:
         raise HTTPException(400, "Provide record_ids, page_id, file_id, or all_documents")
 
-    if payload.only_clean:
-        stmt = stmt.where(RecordRow.error_count == 0)
-
+    # `only_clean` is applied in Python rather than here, because the
+    # exception to it -- a deletion -- lives inside the JSON `fields` column,
+    # and reaching into that from SQL differs between SQLite and Postgres.
     rows = session.execute(stmt.order_by(RecordRow.page_number, RecordRow.index)).scalars().all()
     if not rows:
         raise HTTPException(404, "No matching records to promote")
@@ -1000,6 +1052,21 @@ def promote_records(
 
     # Pre-parse rows and pre-fetch all existing VoterRow instances by EPIC in batch
     row_records = [(row, row_to_record(row)) for row in rows]
+
+    if payload.only_clean:
+        # A record that fails validation is not fit to define an elector --
+        # unless it is the roll striking one off. A deletion is a status, not
+        # a reading, and a struck-through cell fails validation routinely
+        # because the stamp costs the age line a digit. Excluding those left
+        # 160 struck-off electors sitting active on the Penn corpus. They are
+        # admitted here so `resolve_deletions` can see them; the elector's
+        # actual details still come from a clean record wherever one exists.
+        row_records = [
+            (row, record) for row, record in row_records
+            if row.error_count == 0 or _field_value(record, "is_deleted") == "Yes"
+        ]
+        if not row_records:
+            raise HTTPException(404, "No matching records to promote")
     epic_list = list({
         normalise_epic(_field_value(rec, "epic"))
         for _, rec in row_records
@@ -1020,7 +1087,7 @@ def promote_records(
     # parts -- so decide which record represents each elector before promoting
     # any of them, rather than letting page order decide it. See
     # `resolve_duplicate_epics`.
-    winning_record_ids = resolve_duplicate_epics(
+    candidates = [
         PromotionCandidate(
             record_id=row.id,
             epic=normalise_epic(_field_value(record, "epic")),
@@ -1032,10 +1099,16 @@ def promote_records(
             ),
             page_number=row.page_number or 0,
             index=row.index or 0,
+            is_clean=row.error_count == 0,
+            deletion_reason=_field_value(record, "deletion_reason"),
         )
         for row, record in row_records
         if normalise_epic(_field_value(record, "epic"))
-    )
+    ]
+    winning_record_ids = resolve_duplicate_epics(candidates)
+    # Decided across every record for an elector, not just the winning one, so
+    # a deletion the roll printed on a page that reads badly still lands.
+    deleted_epics = resolve_deletions(candidates)
 
     result = PromotionResult()
     seen_in_batch: dict[str, str] = {}
@@ -1118,15 +1191,21 @@ def promote_records(
             "constituency": constituency,
             "polling_station_id": station.id if station else None,
             "is_supplement": is_supplement,
-            # Carry the extractor's deletion verdict through to storage. "Yes"
-            # is the template's marker for a struck-off cell; anything else,
-            # including an unread cell, is treated as active.
-            "is_deleted": _field_value(record, "is_deleted") == "Yes",
+            # Resolved across every record for this elector rather than read
+            # off this one, because the roll often strikes an elector off on a
+            # reprint that reads too badly to be the record promoted. An
+            # elector nobody deleted at their latest revision is active.
+            "is_deleted": epic in deleted_epics,
             "section_name": (
                 _field_value(record, "section_name")
                 or (page.payload or {}).get("section_name", "") if page else ""
             )[:500],
-            "deletion_reason": _field_value(record, "deletion_reason"),
+            # The reason comes from whichever record carried the deletion,
+            # which is frequently not this one.
+            "deletion_reason": (
+                deleted_epics.get(epic)
+                or _field_value(record, "deletion_reason")
+            ),
             "source_record_id": row.id,
             "source_page_id": row.page_id,
             "source_file_id": row.file_id,

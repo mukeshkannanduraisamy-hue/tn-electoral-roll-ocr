@@ -34,17 +34,20 @@ import pytest  # noqa: E402
 
 from app.routers.voters import (  # noqa: E402
     PromotionCandidate,
+    resolve_deletions,
     resolve_duplicate_epics,
     revision_of,
 )
 
 
 def candidate(record_id, *, epic="ABC1234567", revision=2, is_deleted=False,
-              is_supplement=False, page_number=4, index=0):
+              is_supplement=False, page_number=4, index=0, is_clean=True,
+              deletion_reason=""):
     return PromotionCandidate(
         record_id=record_id, epic=epic, revision=revision,
         is_deleted=is_deleted, is_supplement=is_supplement,
-        page_number=page_number, index=index,
+        page_number=page_number, index=index, is_clean=is_clean,
+        deletion_reason=deletion_reason,
     )
 
 
@@ -164,6 +167,101 @@ def test_distinct_electors_are_all_winners():
 
 def test_an_empty_batch_resolves_to_nothing():
     assert resolve_duplicate_epics([]) == {}
+
+
+# --------------------------------------------------------------- cleanliness
+
+
+def test_a_clean_record_supplies_the_fields_over_an_unclean_deletion():
+    """A struck-off cell reads badly -- the stamp costs the age line a digit.
+
+    So the deletion is trustworthy as a *status* and untrustworthy as data.
+    The clean main-roll entry keeps the name, age and house number; the
+    deletion is carried separately by `resolve_deletions`.
+    """
+    clean_main = candidate("r-clean", page_number=4, is_clean=True)
+    dirty_delete = candidate("r-dirty", page_number=20, is_deleted=True,
+                             is_supplement=True, is_clean=False)
+
+    assert resolve_duplicate_epics([clean_main, dirty_delete])["ABC1234567"] == "r-clean"
+
+
+def test_cleanliness_does_not_outrank_the_revision():
+    """Revision 2 is the current roll even where it reads worse."""
+    clean_old = candidate("r-old", revision=1, is_clean=True)
+    dirty_new = candidate("r-new", revision=2, is_clean=False)
+
+    assert resolve_duplicate_epics([clean_old, dirty_new])["ABC1234567"] == "r-new"
+
+
+def test_a_clean_deletion_still_wins_the_fields():
+    """Cleanliness only decides between records of differing quality."""
+    main = candidate("r-main", page_number=4)
+    struck = candidate("r-supp", page_number=20, is_deleted=True)
+
+    assert resolve_duplicate_epics([main, struck])["ABC1234567"] == "r-supp"
+
+
+# ----------------------------------------------------------- deletion status
+
+
+def test_an_unclean_deletion_still_marks_the_elector_deleted():
+    """The case this exists for.
+
+    187 records on the Penn corpus flag a deletion and fail validation. Under
+    `only_clean` they were dropped entirely, so 160 electors the roll had
+    struck off stayed active in the curated table.
+    """
+    clean_main = candidate("r-clean", page_number=4)
+    dirty_delete = candidate("r-dirty", page_number=20, is_deleted=True,
+                             is_clean=False, deletion_reason="S")
+
+    assert resolve_deletions([clean_main, dirty_delete]) == {"ABC1234567": "S"}
+
+
+def test_an_elector_nobody_deleted_is_absent_from_the_result():
+    assert resolve_deletions([candidate("r-1"), candidate("r-2", epic="ZZZ9999999")]) == {}
+
+
+def test_a_later_revision_reinstates_an_elector_deleted_earlier():
+    """The deletion must not outlive the revision that made it.
+
+    Revision 1 struck this elector off; Revision 2 lists them as active. Only
+    the highest revision present for an elector gets a say, or a reinstatement
+    could never be represented.
+    """
+    deleted_in_r1 = candidate("r-old", revision=1, is_deleted=True,
+                              deletion_reason="S", is_supplement=True)
+    active_in_r2 = candidate("r-new", revision=2)
+
+    assert resolve_deletions([deleted_in_r1, active_in_r2]) == {}
+
+
+def test_a_deletion_in_the_latest_revision_is_honoured():
+    active_in_r1 = candidate("r-old", revision=1)
+    deleted_in_r2 = candidate("r-new", revision=2, is_deleted=True,
+                              deletion_reason="E", is_supplement=True)
+
+    assert resolve_deletions([active_in_r1, deleted_in_r2]) == {"ABC1234567": "E"}
+
+
+def test_a_deletion_with_no_stated_reason_is_still_a_deletion():
+    """Presence in the mapping is the deletion; the reason is commentary."""
+    result = resolve_deletions([
+        candidate("r-1", is_deleted=True, deletion_reason=""),
+    ])
+    assert result == {"ABC1234567": ""}
+    assert "ABC1234567" in result
+
+
+def test_each_electors_deletion_is_decided_independently():
+    result = resolve_deletions([
+        candidate("a-main", epic="AAA0000001"),
+        candidate("a-del", epic="AAA0000001", is_deleted=True,
+                  is_clean=False, deletion_reason="R"),
+        candidate("b-main", epic="BBB0000002"),
+    ])
+    assert result == {"AAA0000001": "R"}
 
 
 def test_each_epic_is_resolved_independently():

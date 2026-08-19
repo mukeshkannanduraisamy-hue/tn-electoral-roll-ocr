@@ -19,7 +19,6 @@ Those denormalised columns are recomputed on every write in
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import uuid
@@ -967,6 +966,21 @@ def save_page(session: Session, page: Page, file_id: str) -> None:
     payload = json.loads(page.model_dump_json())
     # Records live in their own table; don't duplicate them in the blob.
     payload.pop("records", None)
+
+    # Line polygons are written by `ocr_service` and read by nothing. Cell
+    # assignment goes through `bbox.cx/cy`, the page overlay draws `bbox`, the
+    # text panel reads `text`; no path in the API or the web app touches the
+    # four raw detection corners. They cost 22.8% of the page payload on the
+    # Penn corpus -- 17.2 MB across 275,198 lines -- serialised on every save
+    # and re-read by every post-processing pass. Emptied rather than removed
+    # so the key is still there for the TypeScript wire type.
+    #
+    # Note this edits the freshly-deserialised payload, never `page.lines`:
+    # the caller goes on to hand the same object to consensus and section
+    # reconciliation, and a save that mutated it would be acting at a
+    # distance.
+    for line in payload.get("lines") or []:
+        line["polygon"] = []
 
     # A physical page must map to exactly one row. Anything else claiming the
     # same (file_id, page_number) is a stale row from an earlier run, and

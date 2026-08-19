@@ -27,7 +27,9 @@ from app.db import (  # noqa: E402
     save_page,
     session_scope,
 )
-from app.schemas.core import BBox, FieldValue, Page, Record, normalize_box  # noqa: E402
+from app.schemas.core import (  # noqa: E402
+    BBox, FieldValue, OcrLine, Page, Record, normalize_box,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +195,65 @@ def test_saving_a_page_does_not_persist_its_blocks(stored_file):
             RecordRow.page_id == page.id
         ).all()
         assert len(saved) == 1
+
+
+def test_line_polygons_are_not_persisted(stored_file):
+    """Four corners per line that nothing ever reads.
+
+    `ocr_service` records both a `bbox` and the raw detection `polygon` for
+    every line. Everything downstream uses the bbox -- cell assignment goes
+    through `bbox.cx/cy`, the page overlay draws `bbox`, the text panel reads
+    `text` -- and no code path in the API or the web app touches `polygon`.
+    On the Penn corpus it was 17.2 MB across 275,198 lines, 22.8% of the page
+    payload, serialised and written on every save and re-read by every
+    post-processing pass.
+
+    The field survives on the wire contract so the TypeScript type still
+    holds; it is the stored values that go.
+    """
+    page = make_page([])
+    page.id = "pg" + uuid.uuid4().hex[:10]
+    page.lines = [
+        OcrLine(
+            id="ln1", text="பிரேமா", confidence=0.94,
+            bbox=BBox(x=36, y=86, w=120, h=16),
+            polygon=[(36, 86), (156, 86), (156, 102), (36, 102)],
+        )
+    ]
+
+    with session_scope() as session:
+        save_page(session, page, stored_file)
+
+    with session_scope() as session:
+        row = session.get(PageRow, page.id)
+        stored_lines = (row.payload or {}).get("lines") or []
+        assert len(stored_lines) == 1
+        assert stored_lines[0]["polygon"] == []
+        # The parts the UI actually renders must survive untouched.
+        assert stored_lines[0]["text"] == "பிரேமா"
+        assert stored_lines[0]["bbox"]["x"] == 36
+        assert stored_lines[0]["bbox"]["w"] == 120
+
+
+def test_stripping_polygons_leaves_the_in_memory_page_alone(stored_file):
+    """Saving is not allowed to mutate what the caller handed over.
+
+    The job pipeline saves a page and then hands the same object to consensus
+    and section reconciliation. A save that reached into it would be a
+    spooky action at a distance.
+    """
+    page = make_page([])
+    page.id = "pg" + uuid.uuid4().hex[:10]
+    polygon = [(36, 86), (156, 86), (156, 102), (36, 102)]
+    page.lines = [
+        OcrLine(id="ln1", text="x", confidence=0.9,
+                bbox=BBox(x=36, y=86, w=120, h=16), polygon=list(polygon))
+    ]
+
+    with session_scope() as session:
+        save_page(session, page, stored_file)
+
+    assert [tuple(p) for p in page.lines[0].polygon] == polygon
 
 
 def test_reprocessing_a_page_cannot_accumulate_blocks(stored_file):
