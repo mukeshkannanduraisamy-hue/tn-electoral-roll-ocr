@@ -2,12 +2,15 @@
 
 Why a small thread pool
 -----------------------
-Pages run on a `ThreadPoolExecutor` of at most `CPU_WORKER_LIMIT` threads.
-Neither half of that is arbitrary: threads avoid the Windows process-spawn
-deadlocks and the second copy of the weights a process pool costs, and the
-limit is 2 because measurement shows the speedup stops there -- PaddleOCR
-already spreads one page across every core, so more workers contend rather
-than parallelise. See `CPU_WORKER_LIMIT` for the numbers.
+Pages run on a `ThreadPoolExecutor` of a few threads. Threads rather than
+processes because they avoid the Windows process-spawn deadlocks and the
+second copy of the weights a process pool costs; few of them because the
+measured gain from the second worker is 11-18% and from the third is 2%.
+
+Worth knowing before optimising anything here: the pool is not what decides
+throughput. The same page takes 16.6 s on the CPU and 2.3 s on a GTX 1650, so
+`ocr_service.resolve_device` outweighs every knob in this module put together.
+`CPU_WORKER_LIMIT` carries the full table.
 
 Why the workers are long-lived
 ------------------------------
@@ -74,19 +77,25 @@ logger = logging.getLogger(__name__)
 # since it is card memory that runs out first.
 GPU_WORKER_LIMIT = 3
 
-# The CPU limit is 2 because that is where the speedup stops. Measured on a
-# 16-core CPU box, 8 voter pages of the TAM-15 roll through `process_page`:
+# The CPU limit is 2 for the same reason, arrived at the same way. Eight voter
+# pages of the TAM-15 roll through `process_page`, device forced per run:
 #
-#     threads=1   18.68s   2.34 s/page   1.00x
-#     threads=2   16.13s   2.02 s/page   1.16x
-#     threads=4   16.22s   2.03 s/page   1.15x
+#                  1 worker      2 workers     3 workers
+#     cpu          16.60 s/pg    14.97 s/pg    14.74 s/pg     (1.00 / 1.11 / 1.13)
+#     gpu:0         2.33 s/pg     2.01 s/pg     1.98 s/pg     (1.00 / 1.16 / 1.18)
 #
-# Four threads are indistinguishable from two. PaddleOCR's native inference is
-# already parallel across every core via MKL-DNN, so one page saturates the box
-# on its own and extra threads only contend for the same cores. Since engines
-# are thread-local (~1 GB each, see `ocr_service`), a higher limit buys memory
-# pressure and nothing else -- the default `ocr_workers` of min(cpu_count, 8)
-# would otherwise stand up 8 engines for a 1.15x return.
+# Two things fall out. The device is worth 7x and the worker count is worth
+# 13-18%, so this constant is not where the performance of this pipeline is
+# decided -- `resolve_device` is. And on both devices the curve flattens after
+# the second worker: MKL-DNN already spreads a single page across every core,
+# and a GPU serialises compute whatever the caller does, so the third thread
+# competes with the first two rather than adding to them. Since engines are
+# thread-local (~1 GB of host memory each, see `ocr_service`), buying 2% with
+# a third CPU worker is not a trade worth making. The GPU keeps 3 because its
+# engines cost card memory instead, and 3 x 591 MiB still fits a 4 GB card.
+#
+# Output was identical at every setting (240 records), which is the point of
+# measuring accuracy alongside speed.
 CPU_WORKER_LIMIT = 2
 
 
@@ -174,10 +183,9 @@ class JobManager:
         Threads, not processes: page tasks start immediately, with no
         process-spawn deadlocks on Windows and no second copy of the weights.
 
-        Threads do NOT buy much page-level parallelism -- 1.16x at two workers
-        and nothing beyond that, because PaddleOCR is already using every core
-        for a single page. `CPU_WORKER_LIMIT` carries the measurement. They are
-        still the right choice; the reason is startup and memory, not speed.
+        Threads do NOT buy much page-level parallelism -- 11-18% at the second
+        worker and ~2% at the third, on either device. They are still the right
+        choice; the reason is startup and memory, not speed.
         """
         with self._lock:
             if self._executor is None:

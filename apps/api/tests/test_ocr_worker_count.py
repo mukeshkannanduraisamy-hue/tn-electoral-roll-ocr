@@ -19,10 +19,14 @@ half free.
 
 The CPU ceiling comes from the opposite direction. It was 8 -- effectively one
 worker per core -- on the assumption that threads parallelise pages. They do
-not: the measurement in `test_cpu_is_capped_where_the_speedup_stops` shows
-four threads matching two, because inference is already spread across every
-core before the pool adds any. The ceiling is 2 for the same reason the GPU's
-is 3: it is where the measured gain ends, not where the hardware runs out.
+not: the measurement in `test_cpu_is_capped_where_the_speedup_stops` shows the
+third worker earning 2%. The ceiling is 2 for the same reason the GPU's is 3:
+it is where the measured gain ends, not where the hardware runs out.
+
+Neither ceiling is where the time actually goes. The same eight pages take
+16.60 s/page on the CPU and 2.33 s/page on the GTX 1650 -- the device is worth
+7x, the worker count 11-18%. `ocr_workers` is deliberately left permissive so
+that these device limits, not the operator's guess at a thread count, decide.
 """
 
 from __future__ import annotations
@@ -56,12 +60,12 @@ def test_a_gpu_never_exceeds_what_was_configured():
 def test_cpu_is_capped_where_the_speedup_stops():
     """Two, not one per core.
 
-    Eight voter pages through `process_page` on a 16-core box: 18.68 s at one
-    worker, 16.13 s at two, 16.22 s at four. The fourth worker is not merely a
-    poor return, it is no return at all -- PaddleOCR's native inference already
-    spans every core, so a single page saturates the machine and further
-    threads contend for the cores the first one is using. Since each thread
-    caches its own ~1 GB engine, a higher ceiling buys memory pressure alone.
+    Eight voter pages through `process_page` with the device forced to CPU:
+    16.60 s/page at one worker, 14.97 s at two, 14.74 s at three. The second
+    worker earns 11%; the third earns 2%, and costs another ~1 GB of resident
+    weights to do it, because engines are cached per thread. MKL-DNN has
+    already spread a single page across every core by the time the pool adds
+    anything, so the threads compete rather than accumulate.
     """
     assert resolve_worker_count("cpu", configured=16) == 2
 

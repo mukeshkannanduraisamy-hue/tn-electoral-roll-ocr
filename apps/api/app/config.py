@@ -100,14 +100,15 @@ class Settings(BaseSettings):
     rasterisations, so the extra models cost time and add failure modes."""
 
     ocr_workers: int = Field(
-        default_factory=lambda: max(1, min(os.cpu_count() or 2, 2))
+        default_factory=lambda: max(1, min(os.cpu_count() or 2, 8))
     )
     """Concurrent OCR worker threads, each holding a warm PaddleOCR instance.
 
-    Capped at 2 on purpose. PaddleOCR already uses every core for a single
-    page, so a third thread measured no faster than the second while costing
-    another ~1 GB of resident weights. `job_queue.CPU_WORKER_LIMIT` enforces
-    the same ceiling and records the benchmark."""
+    This is a *ceiling the operator asks for*, not the count that runs. The
+    real limit is per device and lives in `job_queue`, because what a worker
+    costs and what it buys differ by an order of magnitude between a CPU and a
+    4 GB card. Lower this to force fewer workers than the device would allow;
+    raising it above the device limit has no effect."""
 
     max_retries: int = 3
     """Maximum automatic retry attempts per page if OCR or rendering encounters a transient error."""

@@ -181,12 +181,34 @@ prefix** — a bare `DATA_DIR` is silently ignored.
 
 ### GPU
 
+This is the single biggest lever in the project, by an order of magnitude.
+Eight voter pages, same corpus, same output (240 records either way):
+
+| Device | 1 worker | 2 workers | 3 workers |
+|---|---|---|---|
+| CPU | 16.60 s/page | 14.97 s/page | 14.74 s/page |
+| GTX 1650 | 2.33 s/page | 2.01 s/page | 1.98 s/page |
+
+**7x from the card; 11–18% from the worker count.** Tuning threads, upscale or
+preprocessing is rearranging the 13% while the 87% sits in which device ran the
+inference.
+
 ```bash
 pip uninstall -y paddlepaddle
 pip install paddlepaddle-gpu==3.1.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
 ```
 
-Then set `OCR_OCR_DEVICE=gpu:0`. Needs a CUDA 12.6-capable driver.
+You do **not** then have to set anything: `OCR_AUTO_GPU` is on by default, so a
+usable card is detected and preferred over the `cpu` default. Set
+`OCR_OCR_DEVICE=gpu:0` only to force it, or `OCR_AUTO_GPU=false` to force CPU on
+a machine that has a card. Needs a CUDA 12.6-capable driver.
+
+To confirm which device is actually in use — the config default reads `cpu`
+even when auto-detection has chosen the GPU, which is misleading:
+
+```bash
+cd apps/api && .venv/Scripts/python -c "from app.services import ocr_service; print(ocr_service.resolve_device())"
+```
 
 ---
 
