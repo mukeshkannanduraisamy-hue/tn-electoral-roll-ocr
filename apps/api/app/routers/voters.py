@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Iterable
 
 import shutil
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -876,6 +878,65 @@ def _field_value(record, key: str) -> str:
             else field.original_value) or ""
 
 
+_REVISION_RE = re.compile(r"revision\s*(\d+)", re.IGNORECASE)
+
+
+def revision_of(file_name: str | None) -> int:
+    """Which revision of a roll a file holds, read from its name.
+
+    The name is the only place this exists. The cover sheet gives a
+    `revision_year` -- 2026 for every document in the corpus -- and a
+    `revision_type` that is the Tamil for "year of revision"; neither
+    separates a first revision from a second. The publisher's file name does,
+    consistently. An unrecognised name yields 0 so it loses to every real
+    revision rather than silently outranking one.
+    """
+    match = _REVISION_RE.search(file_name or "")
+    return int(match.group(1)) if match else 0
+
+
+@dataclass(frozen=True)
+class PromotionCandidate:
+    """One record's claim to be *the* row for an elector."""
+
+    record_id: str
+    epic: str
+    revision: int
+    is_deleted: bool
+    is_supplement: bool
+    page_number: int
+    index: int
+
+
+def resolve_duplicate_epics(
+    candidates: Iterable[PromotionCandidate],
+) -> dict[str, str]:
+    """Pick one record per EPIC. Returns epic -> winning record id.
+
+    An EPIC repeating across a batch is normal, not a fault: a roll reprints
+    an elector in its supplement to strike them off, and the corpus holds two
+    revisions of some parts. Keeping whichever arrived first -- which is what
+    scanning in page order does -- means the main roll's active entry always
+    beats the supplement's deletion, because the supplement is further into
+    the document. That silently dropped 184 deletions on this corpus.
+
+    Precedence, highest first: later revision, then a deletion, then a
+    supplement, then the earlier entry. See the module test for why each
+    rung is where it is.
+    """
+    best: dict[str, tuple[tuple, str]] = {}
+    for c in candidates:
+        # Negated position so that, among otherwise equal claims, `max` picks
+        # the earliest rather than the latest -- two misreads of one EPIC on a
+        # page are indistinguishable, and keeping the first is the behaviour
+        # that was here before precedence existed.
+        key = (c.revision, c.is_deleted, c.is_supplement, -c.page_number, -c.index)
+        current = best.get(c.epic)
+        if current is None or key > current[0]:
+            best[c.epic] = (key, c.record_id)
+    return {epic: record_id for epic, (_key, record_id) in best.items()}
+
+
 @router.post("/promote", response_model=PromotionResult)
 def promote_records(
     payload: PromotionRequest,
@@ -954,6 +1015,28 @@ def promote_records(
             for v in v_rows:
                 existing_voters_map[v.epic] = v
 
+    # An EPIC repeating in the batch is normal -- a supplement reprints an
+    # elector to strike them off, and the corpus holds two revisions of some
+    # parts -- so decide which record represents each elector before promoting
+    # any of them, rather than letting page order decide it. See
+    # `resolve_duplicate_epics`.
+    winning_record_ids = resolve_duplicate_epics(
+        PromotionCandidate(
+            record_id=row.id,
+            epic=normalise_epic(_field_value(record, "epic")),
+            revision=revision_of(file_names.get(row.file_id, "")),
+            is_deleted=_field_value(record, "is_deleted") == "Yes",
+            is_supplement=bool(
+                (page := pages.get(row.page_id))
+                and page.page_type == "supplement_page"
+            ),
+            page_number=row.page_number or 0,
+            index=row.index or 0,
+        )
+        for row, record in row_records
+        if normalise_epic(_field_value(record, "epic"))
+    )
+
     result = PromotionResult()
     seen_in_batch: dict[str, str] = {}
 
@@ -968,8 +1051,22 @@ def promote_records(
             result.skipped += 1
             continue
 
-        # A page can contain the same misread EPIC twice; catch that before
-        # the database does, so the message is useful.
+        # This elector appears more than once in the batch and another record
+        # represents them better -- a later revision, or the supplement entry
+        # that struck them off. Reported rather than dropped silently, because
+        # the count is how you notice a part has been supplied twice.
+        winner_id = winning_record_ids.get(epic)
+        if winner_id is not None and winner_id != row.id:
+            result.conflicts.append(PromotionConflict(
+                record_id=row.id, epic=epic,
+                reason="Superseded by another record for this elector",
+                incoming_name=name))
+            result.skipped += 1
+            continue
+
+        # Belt and braces: two records cannot both be the winner, so reaching
+        # here twice for one EPIC would mean the resolution disagreed with the
+        # scan. Catch it before the database's unique index does.
         if epic in seen_in_batch:
             result.conflicts.append(PromotionConflict(
                 record_id=row.id, epic=epic,
