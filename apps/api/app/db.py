@@ -923,7 +923,21 @@ def record_to_row(record: Record, file_id: str, page_number: int) -> dict:
         "edited": any(f.is_edited for f in record.fields.values()),
         # Lower-cased so search can use a case-insensitive LIKE cheaply.
         "search_text": " ".join(values).lower(),
-        "fields": {k: json.loads(v.model_dump_json()) for k, v in record.fields.items()},
+        # Per-field geometry is dropped on the way in. `_ocr_blocks_for` is
+        # its only consumer, and that output has not been written since
+        # d521a23 -- `/voters/{id}/ocr-blocks` already returns an empty list
+        # for every elector -- so these boxes were being stored for a reader
+        # that no longer exists. The web app never touches them either: the
+        # page overlay draws line bboxes, and the voter profile crops the cell
+        # out using `record.bbox`, which is a different box and is kept below.
+        #
+        # Dropped from the serialised copy, never from `record.fields`, so a
+        # caller that goes on to use the record -- or `_ocr_blocks_for` itself,
+        # if the block write is ever restored -- still sees the geometry.
+        "fields": {
+            k: {**json.loads(v.model_dump_json()), "bbox": None}
+            for k, v in record.fields.items()
+        },
         "issues": [json.loads(i.model_dump_json()) for i in record.issues],
         "bbox": json.loads(record.bbox.model_dump_json()) if record.bbox else None,
     }

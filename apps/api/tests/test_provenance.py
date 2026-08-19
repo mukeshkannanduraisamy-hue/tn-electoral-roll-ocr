@@ -24,6 +24,7 @@ from app.db import (  # noqa: E402
     VoterRow,
     _ocr_blocks_for,
     record_audit,
+    row_to_record,
     save_page,
     session_scope,
 )
@@ -233,6 +234,83 @@ def test_line_polygons_are_not_persisted(stored_file):
         assert stored_lines[0]["text"] == "பிரேமா"
         assert stored_lines[0]["bbox"]["x"] == 36
         assert stored_lines[0]["bbox"]["w"] == 120
+
+
+def test_field_bboxes_are_not_persisted(stored_file):
+    """Per-field geometry with no reader left.
+
+    `_ocr_blocks_for` is the only thing that consumes it, and its output has
+    not been written since d521a23 -- so `/voters/{id}/ocr-blocks` already
+    returns an empty list for every elector, and the boxes feeding it went
+    nowhere. Nothing in the web app reads them either; the page overlay works
+    off line bboxes and the cell box below.
+
+    The cell box on the record itself is a different thing and is kept: the
+    voter profile crops the elector's cell out of the page with it.
+    """
+    record = make_record(
+        epic=FieldValue(key="epic", original_value="ZHT0149526", confidence=0.99,
+                        bbox=BBox(x=306, y=61, w=90, h=16)),
+        name=FieldValue(key="name", original_value="பிரேமா", confidence=0.94,
+                        bbox=BBox(x=36, y=86, w=120, h=16)),
+    )
+    record.bbox = BBox(x=20, y=50, w=380, h=150)
+    page = make_page([record])
+    page.id = "pg" + uuid.uuid4().hex[:10]
+    record.page_id = page.id
+
+    with session_scope() as session:
+        save_page(session, page, stored_file)
+
+    with session_scope() as session:
+        row = session.query(RecordRow).filter(RecordRow.page_id == page.id).one()
+        assert row.fields["epic"]["bbox"] is None
+        assert row.fields["name"]["bbox"] is None
+        # Everything the review workflow reads survives.
+        assert row.fields["epic"]["original_value"] == "ZHT0149526"
+        assert row.fields["name"]["original_value"] == "பிரேமா"
+        assert row.fields["name"]["confidence"] == 0.94
+        # The cell box is a separate column and is still stored.
+        assert row.bbox is not None
+        assert row.bbox["x"] == 20 and row.bbox["w"] == 380
+
+
+def test_a_record_survives_the_round_trip_without_field_bboxes(stored_file):
+    """Reload has to work, since consensus and promotion both go through it."""
+    record = make_record(
+        name=FieldValue(key="name", original_value="பிரேமா", confidence=0.94,
+                        bbox=BBox(x=36, y=86, w=120, h=16)),
+    )
+    page = make_page([record])
+    page.id = "pg" + uuid.uuid4().hex[:10]
+    record.page_id = page.id
+
+    with session_scope() as session:
+        save_page(session, page, stored_file)
+
+    with session_scope() as session:
+        row = session.query(RecordRow).filter(RecordRow.page_id == page.id).one()
+        restored = row_to_record(row)
+
+    assert restored.fields["name"].original_value == "பிரேமா"
+    assert restored.fields["name"].bbox is None
+
+
+def test_stripping_field_bboxes_leaves_the_in_memory_record_alone(stored_file):
+    """Same contract as the polygons: saving must not reach into the caller."""
+    record = make_record(
+        name=FieldValue(key="name", original_value="x", confidence=0.9,
+                        bbox=BBox(x=36, y=86, w=120, h=16)),
+    )
+    page = make_page([record])
+    page.id = "pg" + uuid.uuid4().hex[:10]
+    record.page_id = page.id
+
+    with session_scope() as session:
+        save_page(session, page, stored_file)
+
+    assert record.fields["name"].bbox is not None
+    assert record.fields["name"].bbox.x == 36
 
 
 def test_stripping_polygons_leaves_the_in_memory_page_alone(stored_file):
