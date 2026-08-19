@@ -16,6 +16,13 @@ weaker than they sound:
 
 So the GPU is capped rather than pinned to one, low enough to leave the card
 half free.
+
+The CPU ceiling comes from the opposite direction. It was 8 -- effectively one
+worker per core -- on the assumption that threads parallelise pages. They do
+not: the measurement in `test_cpu_is_capped_where_the_speedup_stops` shows
+four threads matching two, because inference is already spread across every
+core before the pool adds any. The ceiling is 2 for the same reason the GPU's
+is 3: it is where the measured gain ends, not where the hardware runs out.
 """
 
 from __future__ import annotations
@@ -46,9 +53,22 @@ def test_a_gpu_never_exceeds_what_was_configured():
     assert resolve_worker_count("gpu:0", configured=2) == 2
 
 
-def test_cpu_keeps_its_existing_ceiling():
-    assert resolve_worker_count("cpu", configured=16) == 8
-    assert resolve_worker_count("cpu", configured=4) == 4
+def test_cpu_is_capped_where_the_speedup_stops():
+    """Two, not one per core.
+
+    Eight voter pages through `process_page` on a 16-core box: 18.68 s at one
+    worker, 16.13 s at two, 16.22 s at four. The fourth worker is not merely a
+    poor return, it is no return at all -- PaddleOCR's native inference already
+    spans every core, so a single page saturates the machine and further
+    threads contend for the cores the first one is using. Since each thread
+    caches its own ~1 GB engine, a higher ceiling buys memory pressure alone.
+    """
+    assert resolve_worker_count("cpu", configured=16) == 2
+
+
+def test_a_cpu_never_exceeds_what_was_configured():
+    """Asking for one worker means one, here as on the GPU."""
+    assert resolve_worker_count("cpu", configured=1) == 1
 
 
 @pytest.mark.parametrize("configured", [0, -1])

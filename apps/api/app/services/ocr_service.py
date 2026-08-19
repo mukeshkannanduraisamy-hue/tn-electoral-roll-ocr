@@ -15,7 +15,6 @@ can't silently break extraction.
 
 from __future__ import annotations
 
-import os
 import functools
 import logging
 import threading
@@ -369,20 +368,4 @@ def run_ocr(
     return OcrPageResult(lines=lines, elapsed_ms=elapsed_ms, engine_lang=lang)
 
 
-def run_ocr_batch(
-    images: list[np.ndarray],
-    scales: list[float] | None = None,
-    lang: str | None = None,
-) -> list[OcrPageResult]:
-    """Run OCR on a batch of preprocessed RGB images for maximum throughput."""
-    if not images:
-        return []
-    if scales is None:
-        scales = [1.0] * len(images)
-    
-    # Process sequentially or in batch feed depending on PaddleOCR capabilities
-    out_results: list[OcrPageResult] = []
-    for img, scale in zip(images, scales):
-        out_results.append(run_ocr(img, scale=scale, lang=lang))
-    return out_results
 

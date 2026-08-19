@@ -155,7 +155,18 @@ def stored_file():
         )
 
 
-def test_saving_a_page_writes_its_blocks(stored_file):
+def test_saving_a_page_does_not_persist_its_blocks(stored_file):
+    """Blocks are built but not stored, and that is deliberate.
+
+    `save_page` wrote one `OCRBlockRow` per located field until d521a23 took
+    the write out: at thirty records a page and seven fields a record it was
+    the bulk of what a roll cost to ingest, for a table nothing reads. The
+    provenance the review workflow actually uses -- original value, edited
+    value, confidence, bbox -- lives on the record itself and is unaffected.
+
+    `_ocr_blocks_for` is deliberately left intact and still tested above, so
+    restoring persistence is re-adding the write, not rebuilding the mapping.
+    """
     record = make_record(
         epic=FieldValue(key="epic", original_value="ZHT0149526", confidence=0.99,
                         bbox=BBox(x=306, y=61, w=90, h=16)),
@@ -173,11 +184,24 @@ def test_saving_a_page_writes_its_blocks(stored_file):
         blocks = session.query(OCRBlockRow).filter(
             OCRBlockRow.page_id == page.id
         ).all()
-        assert len(blocks) == 2
+        assert blocks == []
+
+    # The values themselves still survive the round trip -- this is a storage
+    # decision about the blocks table, not about provenance as such.
+    with session_scope() as session:
+        saved = session.query(RecordRow).filter(
+            RecordRow.page_id == page.id
+        ).all()
+        assert len(saved) == 1
 
 
-def test_reprocessing_a_page_replaces_its_blocks(stored_file):
-    """Regression risk: blocks accumulating on every re-run, like records."""
+def test_reprocessing_a_page_cannot_accumulate_blocks(stored_file):
+    """The original risk was blocks piling up on every re-run.
+
+    With the write gone the count is zero rather than one, but the property
+    worth holding is the same: re-processing a page must not leave the blocks
+    table growing behind it.
+    """
     page_id = "pg" + uuid.uuid4().hex[:10]
 
     for _ in range(3):
@@ -195,7 +219,7 @@ def test_reprocessing_a_page_replaces_its_blocks(stored_file):
         blocks = session.query(OCRBlockRow).filter(
             OCRBlockRow.page_id == page_id
         ).all()
-        assert len(blocks) == 1, "blocks accumulated across re-processing"
+        assert blocks == [], "blocks accumulated across re-processing"
 
 
 # ---------------------------------------------------------------------------

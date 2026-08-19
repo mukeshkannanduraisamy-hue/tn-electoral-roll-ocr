@@ -100,21 +100,20 @@ class Settings(BaseSettings):
     rasterisations, so the extra models cost time and add failure modes."""
 
     ocr_workers: int = Field(
-        default_factory=lambda: max(1, min(os.cpu_count() or 2, 8))
+        default_factory=lambda: max(1, min(os.cpu_count() or 2, 2))
     )
-    """Persistent worker processes, each holding a warm PaddleOCR instance."""
+    """Concurrent OCR worker threads, each holding a warm PaddleOCR instance.
+
+    Capped at 2 on purpose. PaddleOCR already uses every core for a single
+    page, so a third thread measured no faster than the second while costing
+    another ~1 GB of resident weights. `job_queue.CPU_WORKER_LIMIT` enforces
+    the same ceiling and records the benchmark."""
 
     max_retries: int = 3
     """Maximum automatic retry attempts per page if OCR or rendering encounters a transient error."""
 
-    enable_caching: bool = True
-    """Skip re-extracting pages whose file hash and page parameters match cached extraction outputs."""
-
     auto_gpu: bool = True
     """Automatically detect CUDA GPU availability and switch PaddleOCR device to GPU when present."""
-
-    batch_ocr_size: int = 4
-    """Batch size for processing image crops / pages in parallel."""
 
     ocr_det_model: str = "PP-OCRv5_mobile_det"
     """Override the text-detection model to `PP-OCRv5_mobile_det` for low memory footprint."""

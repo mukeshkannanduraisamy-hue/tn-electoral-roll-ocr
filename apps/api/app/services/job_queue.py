@@ -1,17 +1,20 @@
 """Background OCR job execution with live progress.
 
-Why a process pool
-------------------
-PaddleOCR inference is CPU-bound Python plus native code that does not
-release the GIL predictably, so threads would serialise. Processes give real
-parallelism.
+Why a small thread pool
+-----------------------
+Pages run on a `ThreadPoolExecutor` of at most `CPU_WORKER_LIMIT` threads.
+Neither half of that is arbitrary: threads avoid the Windows process-spawn
+deadlocks and the second copy of the weights a process pool costs, and the
+limit is 2 because measurement shows the speedup stops there -- PaddleOCR
+already spreads one page across every core, so more workers contend rather
+than parallelise. See `CPU_WORKER_LIMIT` for the numbers.
 
 Why the workers are long-lived
 ------------------------------
 Constructing a `PaddleOCR` costs ~8 seconds. A pool that respawned workers
-per task would spend more time loading weights than doing OCR, so workers
-are created once with an initialiser that warms the model and are then
-reused for every page in every job.
+per task would spend more time loading weights than doing OCR, so the pool
+is created once, warmed at startup by `warmup_workers`, and reused for every
+page in every job.
 
 Progress delivery
 -----------------
@@ -70,7 +73,21 @@ logger = logging.getLogger(__name__)
 # Raising these should follow a VRAM measurement rather than the CPU core count,
 # since it is card memory that runs out first.
 GPU_WORKER_LIMIT = 3
-CPU_WORKER_LIMIT = 8
+
+# The CPU limit is 2 because that is where the speedup stops. Measured on a
+# 16-core CPU box, 8 voter pages of the TAM-15 roll through `process_page`:
+#
+#     threads=1   18.68s   2.34 s/page   1.00x
+#     threads=2   16.13s   2.02 s/page   1.16x
+#     threads=4   16.22s   2.03 s/page   1.15x
+#
+# Four threads are indistinguishable from two. PaddleOCR's native inference is
+# already parallel across every core via MKL-DNN, so one page saturates the box
+# on its own and extra threads only contend for the same cores. Since engines
+# are thread-local (~1 GB each, see `ocr_service`), a higher limit buys memory
+# pressure and nothing else -- the default `ocr_workers` of min(cpu_count, 8)
+# would otherwise stand up 8 engines for a 1.15x return.
+CPU_WORKER_LIMIT = 2
 
 
 def resolve_worker_count(device: str, configured: int) -> int:
@@ -154,9 +171,13 @@ class JobManager:
     def executor(self) -> Executor:
         """The execution pool jobs run on.
 
-        Uses ThreadPoolExecutor to start page tasks immediately with zero
-        process-spawn deadlocks on Windows or memory bloat. Native C++ in
-        PaddleOCR releases the GIL during inference for real multi-threaded speed.
+        Threads, not processes: page tasks start immediately, with no
+        process-spawn deadlocks on Windows and no second copy of the weights.
+
+        Threads do NOT buy much page-level parallelism -- 1.16x at two workers
+        and nothing beyond that, because PaddleOCR is already using every core
+        for a single page. `CPU_WORKER_LIMIT` carries the measurement. They are
+        still the right choice; the reason is startup and memory, not speed.
         """
         with self._lock:
             if self._executor is None:

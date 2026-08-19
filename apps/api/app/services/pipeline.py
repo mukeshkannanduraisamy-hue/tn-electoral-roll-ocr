@@ -33,7 +33,6 @@ from . import (
     ocr_service,
     page_classifier,
     pdf_service,
-    photo_service,
     preprocess,
 )
 
@@ -85,6 +84,20 @@ def process_page(
             daemon=True
         ).start()
 
+    # ------------------------------------------------- 2b. blank-page escape
+    # A blank page has nothing for OCR to find, but costs the same ~1.6s of
+    # inference as a full grid to discover that. Corrupt PDFs render whole
+    # runs of pure white (Part 37 in this corpus), so this is not a rare case.
+    # Checked on `display` because that is the space the mean is meaningful
+    # in -- CLAHE on the OCR copy stretches contrast and moves the mean.
+    if preprocess.is_blank_page(display):
+        logger.info("Page %s p%d is blank -- skipping OCR", file_id, page_number)
+        page.page_type = page_classifier.PageType.BLANK_OR_SIGNATURE.value
+        page.classification_confidence = 1.0
+        page.layout = LayoutInfo(source=GridSource.NONE, confidence=0.0, cells=[])
+        page.status = PageStatus.COMPLETED
+        return page
+
     # ------------------------------------------------------------- 3. OCR
     try:
         ocr_result = ocr_service.run_ocr(pre.image, scale=pre.scale, lang=lang)
@@ -124,16 +137,9 @@ def process_page(
             file_id, page_number, page.page_type,
             classification.confidence, classification.reason,
         )
-        # The map sheet holds no records but is the only visual record of
-        # where an elector votes, so its panels are still worth cropping.
-        if classification.page_type is page_classifier.PageType.MAP_PHOTO_PAGE:
-            try:
-                page.photos = photo_service.extract_station_photos(
-                    page.lines, display, page.id, settings.photos_dir
-                )
-            except Exception:  # noqa: BLE001 - imagery is not worth failing a page over
-                logger.exception("Station photo extraction failed on page %s", page_id)
-
+        # The map sheet's panels used to be cropped here. Image extraction is
+        # off -- see `photo_service` -- so the page keeps its text and nothing
+        # else.
         page.layout = LayoutInfo(source=GridSource.NONE, confidence=0.0, cells=[])
         page.header_text = " ".join(ln.text for ln in page.lines[:2])
         page.status = PageStatus.COMPLETED
