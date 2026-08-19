@@ -20,6 +20,7 @@ import logging
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -88,6 +89,33 @@ class OcrError(Exception):
 _INIT_LOCK = threading.Lock()
 
 
+@contextmanager
+def preserved_root_log_level():
+    """Undo the root logger level that importing paddle sets.
+
+    Importing paddle raises the root logger from INFO to WARNING as a side
+    effect. Every `logger.info` in this application afterwards goes nowhere:
+    the OCR line in the startup banner, the page classifications, the
+    consensus corrections, the per-file job progress. Nothing errors, the log
+    simply stops part-way through boot and stays stopped, which reads as a
+    hung service rather than a logging change.
+
+    Restoring the level rather than pinning it to INFO, so a deployment that
+    deliberately runs at WARNING keeps what it asked for.
+    """
+    root = logging.getLogger()
+    level = root.level
+    try:
+        yield
+    finally:
+        if root.level != level:
+            logger.debug(
+                "Restoring root log level to %s; an import moved it to %s",
+                level, root.level,
+            )
+            root.setLevel(level)
+
+
 @functools.lru_cache(maxsize=1)
 def _cuda_available() -> bool:
     """Whether this PaddlePaddle build can actually run on a CUDA GPU.
@@ -98,7 +126,8 @@ def _cuda_available() -> bool:
     probe must never be the thing that takes OCR down.
     """
     try:
-        import paddle
+        with preserved_root_log_level():
+            import paddle
 
         return paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0
     except Exception:  # pragma: no cover - environment-dependent
@@ -140,7 +169,11 @@ def get_engine(
         return cache[key]
 
     try:
-        from paddleocr import PaddleOCR
+        # Same reason as `_cuda_available`: this import moves the root log
+        # level and would otherwise silence the rest of the application's
+        # INFO output from the first page onwards.
+        with preserved_root_log_level():
+            from paddleocr import PaddleOCR
     except ImportError as exc:  # pragma: no cover - environment problem
         raise OcrError(
             "paddleocr is not installed. Run scripts/bootstrap.ps1 first."
