@@ -231,7 +231,16 @@ export const BulkExtractModal: React.FC<BulkExtractModalProps> = ({
                   <FileText className={`w-4 h-4 shrink-0 ${getStatusColor(file)}`} />
 
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{file.name}</div>
+                    {/* `break-all`, not `truncate`: the part number that
+                        identifies these rolls is at the end of the name, so
+                        clipping the tail makes every row look the same.
+                        Wrapping keeps the whole name readable. */}
+                    <div
+                      className="text-xs font-semibold text-slate-800 dark:text-slate-200 break-all"
+                      title={file.name}
+                    >
+                      {file.name}
+                    </div>
                     <div className="flex items-center gap-3 mt-0.5">
                       <span className="text-[10px] text-slate-400">{file.page_count} page(s)</span>
                       <span className={`text-[10px] capitalize font-semibold ${getStatusColor(file)}`}>

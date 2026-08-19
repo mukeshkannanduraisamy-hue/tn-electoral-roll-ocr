@@ -368,6 +368,17 @@ class JobManager:
             completed = failed = 0
             touched_files: set[str] = set()
 
+            # Per-file totals and tallies, alongside the job-wide ones. The
+            # progress event used to carry only the job-wide figures, and the
+            # UI stored those against each file -- so on a multi-file job every
+            # file showed the whole job's numbers, and a file's bar filled as
+            # other files completed.
+            file_page_totals: dict[str, int] = {}
+            for _f, f_id, _name, _pno in futures:
+                file_page_totals[f_id] = file_page_totals.get(f_id, 0) + 1
+            file_done: dict[str, int] = {f_id: 0 for f_id in file_page_totals}
+            file_failed: dict[str, int] = {f_id: 0 for f_id in file_page_totals}
+
             future_map = {
                 future: (file_id, file_name, page_number)
                 for future, file_id, file_name, page_number in futures
@@ -404,8 +415,10 @@ class JobManager:
                     page_status = page.status if isinstance(page.status, str) else page.status.value
                     if page_status == PageStatus.ERROR.value:
                         failed += 1
+                        file_failed[file_id] = file_failed.get(file_id, 0) + 1
                     else:
                         completed += 1
+                        file_done[file_id] = file_done.get(file_id, 0) + 1
 
                     touched_files.add(file_id)
                     self._publish(
@@ -447,6 +460,14 @@ class JobManager:
                                    "file_id": file_id,
                                    "file_name": file_name,
                                    "page_number": page_number,
+                                   # This file's own tally, so a row in the UI
+                                   # can show its own progress rather than the
+                                   # job's. Named distinctly from the job-wide
+                                   # keys above precisely so the two cannot be
+                                   # confused again.
+                                   "file_completed": file_done.get(file_id, 0),
+                                   "file_failed": file_failed.get(file_id, 0),
+                                   "file_total": file_page_totals.get(file_id, 0),
                                    "pages_per_sec": pages_per_sec,
                                    "eta_seconds": eta_seconds})
                 )

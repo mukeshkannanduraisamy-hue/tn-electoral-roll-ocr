@@ -1298,8 +1298,29 @@ def job_to_schema(row: JobRow) -> Job:
     )
 
 
-if _is_sqlite:
-    @event.listens_for(engine, "begin")
-    def _code_begin_immediate(conn):
-        conn.exec_driver_sql("BEGIN IMMEDIATE")
+# A `begin` listener here used to issue `BEGIN IMMEDIATE` on every
+# transaction. It is deliberately not reinstated.
+#
+# `BEGIN IMMEDIATE` takes SQLite's RESERVED lock -- the writer's lock -- at the
+# start of the transaction, whether or not the transaction goes on to write. So
+# every read took the write lock over the whole database, which undid WAL (see
+# `_configure_sqlite`: readers are supposed to stay unblocked while a worker
+# writes) and serialised the API against the extraction workers.
+#
+# It also deadlocked any endpoint that streams. `require_user` is a
+# router-level dependency and a dependency holds its session for the whole
+# request; a streaming response is not finished until the stream is. So
+# `GET /api/jobs/{id}/events` held a write lock, opened a second session for
+# its snapshot, and waited for a lock only its own completion would release.
+# A single request to it hung the entire server until restart -- the reason
+# the extraction progress bar sat at 0%.
+#
+# What it was presumably guarding against is real: with deferred transactions,
+# two connections can both read and then both try to upgrade to a write, which
+# is a deadlock `busy_timeout` cannot break. That is a hazard for *concurrent
+# writers*, and the writers here are the job queue's worker threads saving
+# pages -- short transactions, on one process. Paying for it with a
+# database-wide lock on every read was the wrong trade.
+#
+# `tests/test_sqlite_concurrency.py` holds the property this restores.
 
