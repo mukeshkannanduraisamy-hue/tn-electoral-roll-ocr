@@ -90,8 +90,37 @@ The compose file pins `platform: linux/amd64` because PaddlePaddle ships
 manylinux x86_64 wheels only; on Apple Silicon the build runs under emulation
 and is slow but works.
 
-> The compose stack is reviewed and statically validated, but has not been
-> executed end-to-end. The native setup above is the tested path.
+#### With a GPU
+
+The default image is CPU-only, which is ~7x slower than the card. If you have
+an NVIDIA GPU, add the overlay — it swaps in `Dockerfile.gpu`, passes the
+device through, and selects `gpu:0`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+```
+
+Needs the NVIDIA Container Toolkit on the host, a driver supporting CUDA 12.6
+or newer, and — on Docker Desktop — the **WSL2 backend**, since Hyper-V cannot
+pass a GPU through. Check that containers can see the card *before* starting a
+multi-gigabyte build:
+
+```bash
+docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu22.04 nvidia-smi
+```
+
+The image pins `paddlepaddle-gpu==3.1.0` against a CUDA 12.6 / cuDNN 9 base,
+because those are a matched pair: a mismatch fails at the first inference with
+a missing-symbol error rather than at build time. `requirements-gpu.txt`
+replaces `requirements.txt` in that image and must never be installed
+alongside it — both distributions own the `paddle` namespace, and whichever
+lands last wins, so mixing them yields a GPU image silently running on the CPU.
+
+> Neither compose stack has been executed end-to-end; both are reviewed and
+> statically validated (YAML parsed, overlay merge checked, dependency split
+> verified to resolve to the same 23 packages). The native setup above is the
+> tested path, and the GPU numbers quoted here were measured natively, not in
+> a container.
 
 ---
 

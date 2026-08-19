@@ -1,56 +1,15 @@
 # ---------------------------------------------------------------------------
-# OCR backend dependencies (Python 3.10 / 3.11).
+# OCR backend dependencies, CPU build (Python 3.10 / 3.11). The default.
+#
+# This is `requirements-base.txt` plus the CPU framework. For the CUDA build
+# see `requirements-gpu.txt`; the two are mutually exclusive, and why is
+# explained in the base file.
 #
 # Install order matters on a cold environment: paddlepaddle (the framework)
 # must land before paddleocr (the toolkit), or pip may resolve an
 # incompatible pair. scripts/bootstrap.ps1 handles that.
-#
-# NOTE: cv2 is deliberately absent. paddleocr depends on
-# `opencv-contrib-python`; adding `opencv-python(-headless)` alongside it
-# installs a second package into the same `cv2` namespace and whichever lands
-# last wins. Let paddleocr own it.
 # ---------------------------------------------------------------------------
 
-# --- OCR -------------------------------------------------------------------
 paddlepaddle>=3.0.0b0,<3.2.0
-paddleocr>=3.0.0,<4.0.0
-PyMuPDF>=1.24.0
-numpy>=1.26,<2.2
-Pillow>=10.3
-rapidfuzz>=3.0.0
 
-# --- Web API ---------------------------------------------------------------
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
-python-multipart>=0.0.20
-pydantic>=2.10.0
-pydantic-settings>=2.7.0
-sse-starlette>=2.2.0
-
-# --- Persistence -----------------------------------------------------------
-SQLAlchemy>=2.0.0
-# Schema migrations. `create_all` only ever creates missing tables, so
-# without this any change to an existing column -- a rename, a type change,
-# a backfill -- has no way to reach a database that already exists.
-alembic>=1.14.0
-psycopg[binary]>=3.1.0
-
-# --- Authentication --------------------------------------------------------
-bcrypt>=4.2.0,<5
-
-# --- Export / reports ------------------------------------------------------
-openpyxl>=3.1.0
-reportlab>=4.2.0,<5
-# Confirms the chosen PDF font actually contains Tamil glyphs. Without this
-# check a report renders every name as an empty box while remaining a
-# structurally valid PDF -- a failure that looks like success.
-fonttools>=4.55.0
-
-# --- Dev / test ------------------------------------------------------------
-httpx>=0.28.0
-pytest>=8.3.0
-pypdf>=5.1.0  # verifies exported PDFs really contain Tamil text
-# Catches undefined names (a missing `import` reads fine and imports fine, then
-# raises NameError mid-job once the line finally runs). See
-# tests/test_no_undefined_names.py.
-pyflakes>=3.2.0
+-r requirements-base.txt

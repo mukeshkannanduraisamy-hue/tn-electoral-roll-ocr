@@ -1,0 +1,87 @@
+# =============================================================================
+# OCR API - FastAPI + PaddleOCR, CUDA build.
+#
+# The CPU image (`Dockerfile`) is the default and works everywhere. This one
+# exists because the device is the single largest factor in extraction time:
+# the same page takes ~16.6 s on CPU and ~2.3 s on a GTX 1650. Everything else
+# in this project -- worker counts, upscale factor, preprocessing -- moves the
+# remaining 13%.
+#
+# Build context is the REPOSITORY ROOT, not this directory:
+#     docker build -f apps/api/Dockerfile.gpu -t ocr-api:gpu .
+#
+# Normally driven through compose, which also passes the card through:
+#     docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+#
+# Requires the NVIDIA Container Toolkit on the host, and on Docker Desktop the
+# WSL2 backend. Without those the image builds fine and then falls back to CPU
+# at runtime, which is the failure mode to watch for -- see the README.
+# =============================================================================
+
+# CUDA 12.6 + cuDNN 9, because that is what paddlepaddle-gpu 3.1.0 is built
+# against (`paddle.version.cuda()` / `.cudnn()` report 12.6 and 9.5.1). The two
+# are a matched pair: a mismatch surfaces as a missing-symbol error at the
+# first inference, not at build time. Overridable because NVIDIA re-tags these
+# images and a patch version can disappear from the registry.
+ARG CUDA_IMAGE=nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
+FROM ${CUDA_IMAGE} AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    # Paddle spawns one OpenMP thread per core. Inference is on the card, but
+    # rendering, deskew and preprocessing are not, so this still applies.
+    OMP_NUM_THREADS=2
+
+# Ubuntu 22.04 ships Python 3.10, which this project supports (see the
+# requirements header). Using the distro interpreter avoids adding a PPA to a
+# CUDA base image for a version difference nothing here depends on.
+#
+# 22.04 rather than 24.04 for a second reason: 24.04 enforces PEP 668, so a
+# plain `pip install` into the system interpreter is refused and every install
+# line needs a venv or --break-system-packages. If you move this image forward
+# to 24.04, that is the change you will have to make.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 \
+        python3-pip \
+        # PaddleOCR pulls in opencv, which needs these even in its headless
+        # form. libgomp1 is required by paddle itself.
+        libgl1 \
+        libglib2.0-0 \
+        libgomp1 \
+        curl \
+        # PDF reports embed a Tamil font. Without it ReportLab falls back to a
+        # Latin-only face and every name renders as an empty box, so this
+        # package is a functional requirement, not a nicety.
+        fonts-noto-core \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3 /usr/local/bin/python
+
+WORKDIR /app
+
+# Dependencies first so the large paddle layer is cached across code changes.
+# `requirements-gpu.txt`, never `requirements.txt`: the two frameworks share
+# the `paddle` namespace and installing both leaves the CPU build in charge,
+# which would make this whole image pointless while still appearing to work.
+COPY apps/api/requirements-gpu.txt apps/api/requirements-base.txt ./
+RUN python -m pip install --upgrade pip && python -m pip install -r requirements-gpu.txt
+
+COPY apps/api/ ./
+
+# Data (SQLite, uploads, rendered pages) and the model cache both belong on a
+# mounted volume; these are only sane defaults if none is provided.
+ENV OCR_DATA_DIR=/var/data \
+    PADDLE_PDX_CACHE_HOME=/var/data/.paddlex
+RUN mkdir -p /var/data
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+    CMD curl -fsS http://localhost:8000/api/health || exit 1
+
+# One uvicorn worker on purpose: page-level concurrency is the job pool's
+# business (`OCR_OCR_WORKERS`), and a second uvicorn worker would be a second
+# process holding its own copy of the weights on the card.
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]

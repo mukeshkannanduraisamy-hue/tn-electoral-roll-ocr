@@ -33,6 +33,12 @@ services:
 
       OCR_OCR_LANG: ta
       OCR_OCR_VERSION: PP-OCRv5 # the version with a published Tamil model
+
+      # CPU, because this file has to run on any machine. If you have an
+      # NVIDIA card this is the slow path by a factor of seven -- 16.6 s/page
+      # against 2.3 -- and `docker-compose.gpu.yml` is the overlay that fixes
+      # it:
+      #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
       OCR_OCR_DEVICE: cpu
 
       # 0 = run jobs on a thread inside the API process, reusing the one copy
