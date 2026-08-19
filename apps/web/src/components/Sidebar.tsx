@@ -35,8 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "voters", stepNum: "05", label: "Voter Roll", icon: Users, group: "stage3" },
   { id: "polling_stations", stepNum: "06", label: "Polling Stations", icon: Building2, group: "stage3" },
   { id: "analytics", stepNum: "07", label: "Analytics", icon: BarChart3, group: "stage4" },
-  { id: "validation", stepNum: "08", label: "Verification & Audit", icon: ShieldCheck, group: "stage4" },
-  { id: "settings", stepNum: "09", label: "Settings", icon: Settings, group: "stage4" },
+  { id: "settings", stepNum: "08", label: "Settings", icon: Settings, group: "stage4" },
 ];
 
 const GROUP_LABELS: Record<string, string> = {

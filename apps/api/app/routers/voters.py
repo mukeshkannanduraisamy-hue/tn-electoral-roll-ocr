@@ -1264,9 +1264,17 @@ def reset_database(
 ) -> dict:
     """Truncate all data tables and clean cached files."""
     try:
-        session.execute(
-            text("TRUNCATE TABLE voters, records, pages, files, polling_stations, summaries, photos, ocr_blocks, audit_logs, jobs CASCADE;")
-        )
+        tables = [
+            "audit_logs", "ocr_blocks", "photos", "records", "summaries",
+            "polling_stations", "pages", "files", "voters", "jobs"
+        ]
+        if session.bind.dialect.name == "sqlite":
+            for table in tables:
+                session.execute(text(f"DELETE FROM {table};"))
+        else:
+            session.execute(
+                text("TRUNCATE TABLE voters, records, pages, files, polling_stations, summaries, photos, ocr_blocks, audit_logs, jobs CASCADE;")
+            )
         session.commit()
 
         for sub in ["pages", "photos", "uploads"]:
