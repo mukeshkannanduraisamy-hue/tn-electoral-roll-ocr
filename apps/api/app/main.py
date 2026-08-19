@@ -8,6 +8,7 @@ Run with::
 from __future__ import annotations
 
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -55,6 +56,14 @@ async def lifespan(_app: FastAPI):
         settings.ocr_device,
         settings.ocr_workers,
     )
+    # Load every worker thread's PaddleOCR engine now instead of on the first
+    # job's first page. Backgrounded so /api/health and static assets are
+    # reachable immediately instead of waiting on ~8s per worker.
+    threading.Thread(
+        target=manager.warmup_workers,
+        name="ocr-warmup",
+        daemon=True,
+    ).start()
     yield
     # The pool holds several GB of model weights; release it deterministically.
     manager.shutdown()

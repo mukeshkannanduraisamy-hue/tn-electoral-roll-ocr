@@ -183,6 +183,27 @@ class JobManager:
                 self._executor.shutdown(wait=False, cancel_futures=True)
                 self._executor = None
 
+    def warmup_workers(self) -> None:
+        """Force every pool thread to build and warm its OCR engine now.
+
+        Each thread builds its engine lazily on its first page (engines are
+        thread-local -- see `ocr_service`), so without this the cost lands
+        inside the first job's latency after every boot or deploy. One task
+        per worker, all submitted together, guarantees every thread in the
+        pool gets a turn rather than the pool's own scheduler running a few
+        tasks back-to-back on the same thread.
+        """
+        from . import ocr_service
+
+        executor = self.executor()
+        workers = getattr(executor, "_max_workers", 1)
+        futures = [executor.submit(ocr_service.warmup) for _ in range(workers)]
+        for future in futures:
+            try:
+                future.result()
+            except Exception:  # noqa: BLE001 - a cold pool still beats a dead one
+                logger.exception("OCR worker warmup failed")
+
     # ------------------------------------------------------------ pub / sub
 
     def subscribe(self, job_id: str) -> asyncio.Queue:
