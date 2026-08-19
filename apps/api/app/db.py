@@ -562,8 +562,25 @@ def database_url() -> str:
 _is_sqlite = database_url().startswith("sqlite")
 
 if _is_sqlite:
+    # 60s of lock patience is deliberate: a bulk extraction has three workers
+    # writing pages, and a request that gives up early during one is worse
+    # than a slow one. Left alone.
     _connect_args: dict = {"check_same_thread": False, "timeout": 60}
-    _engine_kwargs: dict = {}
+    _engine_kwargs: dict = {
+        # Stated rather than defaulted, because the defaults are the reason a
+        # streaming endpoint could take the server down. A response that
+        # streams keeps its request open, and a request holds its dependency's
+        # connection for its whole life -- so long-lived streams retire
+        # connections from the pool one at a time until nothing is left, and
+        # then every request blocks on checkout with no error and no log.
+        "pool_size": 10,
+        "max_overflow": 20,
+        # The important one: never wait indefinitely for a connection. An
+        # exhausted pool now raises within 10s, naming itself in the
+        # traceback, instead of freezing the process.
+        "pool_timeout": 10,
+        "pool_pre_ping": True,
+    }
 else:
     # PostgreSQL / Supabase pooler: enable TCP keepalives so the connection
     # is not silently dropped by the pooler or NAT during long promote

@@ -112,13 +112,25 @@ async def job_events(job_id: str):
     connects late -- or reconnects after a page refresh -- immediately has
     the truth instead of waiting for the next page to finish.
     """
+    from starlette.concurrency import run_in_threadpool
+
     from ..db import session_scope
 
-    with session_scope() as session:
-        row = session.get(JobRow, job_id)
-        if row is None:
-            raise HTTPException(404, "Job not found")
-        snapshot = job_to_schema(row)
+    def _snapshot() -> Job | None:
+        with session_scope() as session:
+            row = session.get(JobRow, job_id)
+            return job_to_schema(row) if row is not None else None
+
+    # Off the event loop. This handler is `async def`, so a synchronous
+    # database call here runs *on* the loop and stalls every other request
+    # while it waits -- and on SQLite it can wait `timeout` seconds for a
+    # lock. That is how a single request to this endpoint used to freeze the
+    # whole API; see the commit note in `auth._lookup_user` for the write that
+    # held the lock. The threadpool keeps a slow or contended read local to
+    # this request instead of taking the server with it.
+    snapshot = await run_in_threadpool(_snapshot)
+    if snapshot is None:
+        raise HTTPException(404, "Job not found")
 
     queue = manager.subscribe(job_id)
 

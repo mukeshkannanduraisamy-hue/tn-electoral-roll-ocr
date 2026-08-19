@@ -181,6 +181,15 @@ class Settings(BaseSettings):
     """Send the session cookie only over HTTPS. MUST be true in production;
     false locally because dev runs on plain http://localhost."""
 
+    # ------------------------------------------------------- verification
+    validation_pdf_dir: Path = Field(default=REPO_ROOT / "PDF" / "Penn PDF")
+    """Folder the Verification & Audit scan reads source PDFs from.
+
+    Was hard-coded to an absolute path on one machine, which made the feature
+    silently report nothing anywhere else -- `run_audit_scan` returns an empty
+    result when the directory is missing, so the panel looked empty rather
+    than misconfigured. Non-recursive: it globs `*.pdf` in this folder."""
+
     # ---------------------------------------------------------- reports
     pdf_font_path: str = ""
     """TTF/TTC with Tamil coverage, for PDF export.
