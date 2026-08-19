@@ -14,7 +14,6 @@ import json
 import logging
 import re
 import time
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy import create_engine, text
@@ -24,7 +23,7 @@ from ..db import database_url
 
 logger = logging.getLogger(__name__)
 
-PDF_DIR = Path(r"D:\OCR\PDF\Penn PDF")
+PDF_DIR = settings.validation_pdf_dir
 CACHE_FILE = settings.data_dir / "validation_audit_results.json"
 
 
@@ -36,11 +35,83 @@ def parse_pdf_info(filename: str) -> tuple[str, str]:
     return ac_no, part_no
 
 
+def file_match_pattern(filename: str) -> str | None:
+    """SQL LIKE pattern identifying one document, or None if it cannot.
+
+    The fallback used to be `%{stem[:30]}%`, which does not identify anything
+    here: thirty characters of these names is `2026-FC-EROLLGEN-S22-58-SIR-Fi`,
+    a prefix 35 of the 47 documents share. What separates them -- the part
+    number -- is at the end, so the audit matched one database file to every
+    document sharing its prefix and counted that file's electors once per
+    document.
+
+    Both halves are pinned, because part 2 of AC 30 and part 2 of AC 58 are
+    different documents, and the part number is followed by its delimiter so
+    `-TAM-2-` cannot match `-TAM-286-`.
+
+    None rather than a loose pattern when the name carries no part number: a
+    fallback that matches everything is worse than no fallback, since it
+    silently attributes some arbitrary file's electors to this document.
+    """
+    ac_match = re.search(r"-S22-(\d+)-", filename)
+    part_match = re.search(r"-TAM-(\d+)-", filename)
+    if not part_match:
+        return None
+    part = part_match.group(1)
+    if not ac_match:
+        return f"%-TAM-{part}-%"
+    return f"%-S22-{ac_match.group(1)}-%-TAM-{part}-%"
+
+
+def audit_fingerprint(*, files: int, records: int, voters: int) -> str:
+    """Identifies the data an audit was computed against.
+
+    Cheap on purpose -- three counts, not a checksum of every row. It is here
+    to catch "the data changed since this verdict was written", which is what
+    a re-extraction or a promotion does, and those move at least one count.
+    """
+    return f"f{files}:r{records}:v{voters}"
+
+
+def cache_is_current(cached: dict[str, Any], fingerprint: str) -> bool:
+    """Whether a cached audit still describes the database.
+
+    A cache with no fingerprint is never current: it predates this check, so
+    there is no way to tell what it was computed against, and serving it is
+    how the panel came to show a 99.01% PASS while a fresh scan of the same
+    database returned 93.42% FAIL.
+    """
+    stored = cached.get("fingerprint")
+    return bool(stored) and stored == fingerprint
+
+
+def current_fingerprint(conn) -> str:
+    counts = []
+    for table in ("files", "records", "voters"):
+        try:
+            counts.append(int(conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0))
+        except Exception:  # noqa: BLE001 - a missing table is not a reason to fail the audit
+            counts.append(0)
+    return audit_fingerprint(files=counts[0], records=counts[1], voters=counts[2])
+
+
 def run_audit_scan(filter_ac: str | None = None) -> dict[str, Any]:
     """Perform a full verification scan across all PDFs in PDF_DIR."""
     if not PDF_DIR.exists():
-        logger.warning("PDF_DIR does not exist: %s", PDF_DIR)
-        return {"summary": {}, "reports": [], "mismatches": [], "total_mismatches": 0}
+        # Say so in the payload, not only the log. An empty summary renders as
+        # a panel with nothing in it, which looks like "audit found no
+        # problems" rather than "the folder to audit was never found".
+        logger.warning("Validation PDF directory does not exist: %s", PDF_DIR)
+        return {
+            "summary": {},
+            "reports": [],
+            "mismatches": [],
+            "total_mismatches": 0,
+            "error": (
+                f"Source PDF folder not found: {PDF_DIR}. "
+                f"Set OCR_VALIDATION_PDF_DIR to the folder holding the rolls."
+            ),
+        }
 
     pdfs = sorted(
         [p for p in PDF_DIR.glob("*.pdf")],
@@ -84,10 +155,17 @@ def run_audit_scan(filter_ac: str | None = None) -> dict[str, Any]:
             ).fetchone()
 
             if not f_row:
-                f_row = conn.execute(
-                    text("SELECT id, name, page_count, status FROM files WHERE name LIKE :name"),
-                    {"name": f"%{pdf_path.stem[:30]}%"},
-                ).fetchone()
+                # Constituency + part, not a prefix of the name. See
+                # `file_match_pattern` for what the prefix matched instead.
+                pattern = file_match_pattern(filename)
+                if pattern:
+                    f_row = conn.execute(
+                        text(
+                            "SELECT id, name, page_count, status FROM files "
+                            "WHERE name LIKE :name"
+                        ),
+                        {"name": pattern},
+                    ).fetchone()
 
             fid = f_row[0] if f_row else None
 
@@ -390,11 +468,22 @@ def run_audit_scan(filter_ac: str | None = None) -> dict[str, Any]:
         "PASS" if overall_summary["overall_pass_pct"] >= 98.0 and overall_summary["missing_in_db"] == 0 else "FAIL"
     )
 
+    # Recorded so a later read can tell whether this verdict still describes
+    # the database. Taken after the scan rather than before, because the scan
+    # only reads -- anything that changed underneath it invalidates the result
+    # either way, and the later value is the one a subsequent read compares to.
+    try:
+        with engine.connect() as conn:
+            fingerprint = current_fingerprint(conn)
+    except Exception:  # noqa: BLE001
+        fingerprint = ""
+
     output_payload = {
         "summary": overall_summary,
         "reports": pdf_reports,
         "mismatches": all_mismatches,
         "total_mismatches": len(all_mismatches),
+        "fingerprint": fingerprint,
     }
 
     try:
@@ -408,19 +497,38 @@ def run_audit_scan(filter_ac: str | None = None) -> dict[str, Any]:
 
 
 def get_cached_audit() -> dict[str, Any]:
-    """Return cached audit if available, else run fresh audit."""
-    if CACHE_FILE.exists():
-        try:
-            with open(CACHE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    # Fallback to scratch cache if exists
-    scratch_file = Path(r"d:\OCR\scratch\validation_audit_results.json")
-    if scratch_file.exists():
-        try:
-            with open(scratch_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
+    """The audit for the data as it stands, from cache when that is honest.
+
+    The cache used to be served whenever the file existed, with nothing to
+    invalidate it, so the panel kept reporting a verdict from before the last
+    extraction -- 99.01% PASS from cache while a fresh scan of the same
+    database returned 93.42% FAIL. It is now served only when its fingerprint
+    still matches the database, and re-computed when it does not.
+
+    There was also a fallback to an absolute path under `scratch/`. That is
+    gone: it pointed at one machine's working directory, and a file there
+    would have overridden the real result indefinitely.
+    """
+    if not CACHE_FILE.exists():
+        return run_audit_scan()
+
+    try:
+        with open(CACHE_FILE, "r", encoding="utf-8") as f:
+            cached = json.load(f)
+    except Exception:  # noqa: BLE001 - a damaged cache is a reason to rescan
+        logger.warning("Validation cache unreadable; rescanning")
+        return run_audit_scan()
+
+    try:
+        engine = create_engine(database_url(), pool_pre_ping=True)
+        with engine.connect() as conn:
+            fingerprint = current_fingerprint(conn)
+    except Exception:  # noqa: BLE001 - cannot verify, so do not trust
+        logger.warning("Could not fingerprint the database; rescanning")
+        return run_audit_scan()
+
+    if cache_is_current(cached, fingerprint):
+        return cached
+
+    logger.info("Validation cache is stale (data changed); rescanning")
     return run_audit_scan()

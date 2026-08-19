@@ -1,17 +1,23 @@
 """Background OCR job execution with live progress.
 
-Why a process pool
-------------------
-PaddleOCR inference is CPU-bound Python plus native code that does not
-release the GIL predictably, so threads would serialise. Processes give real
-parallelism.
+Why a small thread pool
+-----------------------
+Pages run on a `ThreadPoolExecutor` of a few threads. Threads rather than
+processes because they avoid the Windows process-spawn deadlocks and the
+second copy of the weights a process pool costs; few of them because the
+measured gain from the second worker is 11-18% and from the third is 2%.
+
+Worth knowing before optimising anything here: the pool is not what decides
+throughput. The same page takes 16.6 s on the CPU and 2.3 s on a GTX 1650, so
+`ocr_service.resolve_device` outweighs every knob in this module put together.
+`CPU_WORKER_LIMIT` carries the full table.
 
 Why the workers are long-lived
 ------------------------------
 Constructing a `PaddleOCR` costs ~8 seconds. A pool that respawned workers
-per task would spend more time loading weights than doing OCR, so workers
-are created once with an initialiser that warms the model and are then
-reused for every page in every job.
+per task would spend more time loading weights than doing OCR, so the pool
+is created once, warmed at startup by `warmup_workers`, and reused for every
+page in every job.
 
 Progress delivery
 -----------------
@@ -70,7 +76,27 @@ logger = logging.getLogger(__name__)
 # Raising these should follow a VRAM measurement rather than the CPU core count,
 # since it is card memory that runs out first.
 GPU_WORKER_LIMIT = 3
-CPU_WORKER_LIMIT = 8
+
+# The CPU limit is 2 for the same reason, arrived at the same way. Eight voter
+# pages of the TAM-15 roll through `process_page`, device forced per run:
+#
+#                  1 worker      2 workers     3 workers
+#     cpu          16.60 s/pg    14.97 s/pg    14.74 s/pg     (1.00 / 1.11 / 1.13)
+#     gpu:0         2.33 s/pg     2.01 s/pg     1.98 s/pg     (1.00 / 1.16 / 1.18)
+#
+# Two things fall out. The device is worth 7x and the worker count is worth
+# 13-18%, so this constant is not where the performance of this pipeline is
+# decided -- `resolve_device` is. And on both devices the curve flattens after
+# the second worker: MKL-DNN already spreads a single page across every core,
+# and a GPU serialises compute whatever the caller does, so the third thread
+# competes with the first two rather than adding to them. Since engines are
+# thread-local (~1 GB of host memory each, see `ocr_service`), buying 2% with
+# a third CPU worker is not a trade worth making. The GPU keeps 3 because its
+# engines cost card memory instead, and 3 x 591 MiB still fits a 4 GB card.
+#
+# Output was identical at every setting (240 records), which is the point of
+# measuring accuracy alongside speed.
+CPU_WORKER_LIMIT = 2
 
 
 def resolve_worker_count(device: str, configured: int) -> int:
@@ -154,9 +180,12 @@ class JobManager:
     def executor(self) -> Executor:
         """The execution pool jobs run on.
 
-        Uses ThreadPoolExecutor to start page tasks immediately with zero
-        process-spawn deadlocks on Windows or memory bloat. Native C++ in
-        PaddleOCR releases the GIL during inference for real multi-threaded speed.
+        Threads, not processes: page tasks start immediately, with no
+        process-spawn deadlocks on Windows and no second copy of the weights.
+
+        Threads do NOT buy much page-level parallelism -- 11-18% at the second
+        worker and ~2% at the third, on either device. They are still the right
+        choice; the reason is startup and memory, not speed.
         """
         with self._lock:
             if self._executor is None:
@@ -182,6 +211,27 @@ class JobManager:
             if self._executor is not None:
                 self._executor.shutdown(wait=False, cancel_futures=True)
                 self._executor = None
+
+    def warmup_workers(self) -> None:
+        """Force every pool thread to build and warm its OCR engine now.
+
+        Each thread builds its engine lazily on its first page (engines are
+        thread-local -- see `ocr_service`), so without this the cost lands
+        inside the first job's latency after every boot or deploy. One task
+        per worker, all submitted together, guarantees every thread in the
+        pool gets a turn rather than the pool's own scheduler running a few
+        tasks back-to-back on the same thread.
+        """
+        from . import ocr_service
+
+        executor = self.executor()
+        workers = getattr(executor, "_max_workers", 1)
+        futures = [executor.submit(ocr_service.warmup) for _ in range(workers)]
+        for future in futures:
+            try:
+                future.result()
+            except Exception:  # noqa: BLE001 - a cold pool still beats a dead one
+                logger.exception("OCR worker warmup failed")
 
     # ------------------------------------------------------------ pub / sub
 
@@ -318,6 +368,17 @@ class JobManager:
             completed = failed = 0
             touched_files: set[str] = set()
 
+            # Per-file totals and tallies, alongside the job-wide ones. The
+            # progress event used to carry only the job-wide figures, and the
+            # UI stored those against each file -- so on a multi-file job every
+            # file showed the whole job's numbers, and a file's bar filled as
+            # other files completed.
+            file_page_totals: dict[str, int] = {}
+            for _f, f_id, _name, _pno in futures:
+                file_page_totals[f_id] = file_page_totals.get(f_id, 0) + 1
+            file_done: dict[str, int] = {f_id: 0 for f_id in file_page_totals}
+            file_failed: dict[str, int] = {f_id: 0 for f_id in file_page_totals}
+
             future_map = {
                 future: (file_id, file_name, page_number)
                 for future, file_id, file_name, page_number in futures
@@ -354,8 +415,10 @@ class JobManager:
                     page_status = page.status if isinstance(page.status, str) else page.status.value
                     if page_status == PageStatus.ERROR.value:
                         failed += 1
+                        file_failed[file_id] = file_failed.get(file_id, 0) + 1
                     else:
                         completed += 1
+                        file_done[file_id] = file_done.get(file_id, 0) + 1
 
                     touched_files.add(file_id)
                     self._publish(
@@ -397,6 +460,14 @@ class JobManager:
                                    "file_id": file_id,
                                    "file_name": file_name,
                                    "page_number": page_number,
+                                   # This file's own tally, so a row in the UI
+                                   # can show its own progress rather than the
+                                   # job's. Named distinctly from the job-wide
+                                   # keys above precisely so the two cannot be
+                                   # confused again.
+                                   "file_completed": file_done.get(file_id, 0),
+                                   "file_failed": file_failed.get(file_id, 0),
+                                   "file_total": file_page_totals.get(file_id, 0),
                                    "pages_per_sec": pages_per_sec,
                                    "eta_seconds": eta_seconds})
                 )

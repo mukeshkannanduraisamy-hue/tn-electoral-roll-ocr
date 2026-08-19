@@ -19,7 +19,6 @@ Those denormalised columns are recomputed on every write in
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import uuid
@@ -563,8 +562,25 @@ def database_url() -> str:
 _is_sqlite = database_url().startswith("sqlite")
 
 if _is_sqlite:
+    # 60s of lock patience is deliberate: a bulk extraction has three workers
+    # writing pages, and a request that gives up early during one is worse
+    # than a slow one. Left alone.
     _connect_args: dict = {"check_same_thread": False, "timeout": 60}
-    _engine_kwargs: dict = {}
+    _engine_kwargs: dict = {
+        # Stated rather than defaulted, because the defaults are the reason a
+        # streaming endpoint could take the server down. A response that
+        # streams keeps its request open, and a request holds its dependency's
+        # connection for its whole life -- so long-lived streams retire
+        # connections from the pool one at a time until nothing is left, and
+        # then every request blocks on checkout with no error and no log.
+        "pool_size": 10,
+        "max_overflow": 20,
+        # The important one: never wait indefinitely for a connection. An
+        # exhausted pool now raises within 10s, naming itself in the
+        # traceback, instead of freezing the process.
+        "pool_timeout": 10,
+        "pool_pre_ping": True,
+    }
 else:
     # PostgreSQL / Supabase pooler: enable TCP keepalives so the connection
     # is not silently dropped by the pooler or NAT during long promote
@@ -924,7 +940,21 @@ def record_to_row(record: Record, file_id: str, page_number: int) -> dict:
         "edited": any(f.is_edited for f in record.fields.values()),
         # Lower-cased so search can use a case-insensitive LIKE cheaply.
         "search_text": " ".join(values).lower(),
-        "fields": {k: json.loads(v.model_dump_json()) for k, v in record.fields.items()},
+        # Per-field geometry is dropped on the way in. `_ocr_blocks_for` is
+        # its only consumer, and that output has not been written since
+        # d521a23 -- `/voters/{id}/ocr-blocks` already returns an empty list
+        # for every elector -- so these boxes were being stored for a reader
+        # that no longer exists. The web app never touches them either: the
+        # page overlay draws line bboxes, and the voter profile crops the cell
+        # out using `record.bbox`, which is a different box and is kept below.
+        #
+        # Dropped from the serialised copy, never from `record.fields`, so a
+        # caller that goes on to use the record -- or `_ocr_blocks_for` itself,
+        # if the block write is ever restored -- still sees the geometry.
+        "fields": {
+            k: {**json.loads(v.model_dump_json()), "bbox": None}
+            for k, v in record.fields.items()
+        },
         "issues": [json.loads(i.model_dump_json()) for i in record.issues],
         "bbox": json.loads(record.bbox.model_dump_json()) if record.bbox else None,
     }
@@ -967,6 +997,21 @@ def save_page(session: Session, page: Page, file_id: str) -> None:
     payload = json.loads(page.model_dump_json())
     # Records live in their own table; don't duplicate them in the blob.
     payload.pop("records", None)
+
+    # Line polygons are written by `ocr_service` and read by nothing. Cell
+    # assignment goes through `bbox.cx/cy`, the page overlay draws `bbox`, the
+    # text panel reads `text`; no path in the API or the web app touches the
+    # four raw detection corners. They cost 22.8% of the page payload on the
+    # Penn corpus -- 17.2 MB across 275,198 lines -- serialised on every save
+    # and re-read by every post-processing pass. Emptied rather than removed
+    # so the key is still there for the TypeScript wire type.
+    #
+    # Note this edits the freshly-deserialised payload, never `page.lines`:
+    # the caller goes on to hand the same object to consensus and section
+    # reconciliation, and a save that mutated it would be acting at a
+    # distance.
+    for line in payload.get("lines") or []:
+        line["polygon"] = []
 
     # A physical page must map to exactly one row. Anything else claiming the
     # same (file_id, page_number) is a stale row from an earlier run, and
@@ -1253,8 +1298,29 @@ def job_to_schema(row: JobRow) -> Job:
     )
 
 
-if _is_sqlite:
-    @event.listens_for(engine, "begin")
-    def _code_begin_immediate(conn):
-        conn.exec_driver_sql("BEGIN IMMEDIATE")
+# A `begin` listener here used to issue `BEGIN IMMEDIATE` on every
+# transaction. It is deliberately not reinstated.
+#
+# `BEGIN IMMEDIATE` takes SQLite's RESERVED lock -- the writer's lock -- at the
+# start of the transaction, whether or not the transaction goes on to write. So
+# every read took the write lock over the whole database, which undid WAL (see
+# `_configure_sqlite`: readers are supposed to stay unblocked while a worker
+# writes) and serialised the API against the extraction workers.
+#
+# It also deadlocked any endpoint that streams. `require_user` is a
+# router-level dependency and a dependency holds its session for the whole
+# request; a streaming response is not finished until the stream is. So
+# `GET /api/jobs/{id}/events` held a write lock, opened a second session for
+# its snapshot, and waited for a lock only its own completion would release.
+# A single request to it hung the entire server until restart -- the reason
+# the extraction progress bar sat at 0%.
+#
+# What it was presumably guarding against is real: with deferred transactions,
+# two connections can both read and then both try to upgrade to a write, which
+# is a deadlock `busy_timeout` cannot break. That is a hazard for *concurrent
+# writers*, and the writers here are the job queue's worker threads saving
+# pages -- short transactions, on one process. Paying for it with a
+# database-wide lock on every read was the wrong trade.
+#
+# `tests/test_sqlite_concurrency.py` holds the property this restores.
 

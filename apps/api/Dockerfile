@@ -35,7 +35,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Dependencies first so the ~1 GB paddle layer is cached across code changes.
-COPY apps/api/requirements.txt ./requirements.txt
+# Both files: `requirements.txt` is the CPU framework plus `-r` on the shared
+# base, so copying only the former breaks the build at pip time.
+COPY apps/api/requirements.txt apps/api/requirements-base.txt ./
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY apps/api/ ./

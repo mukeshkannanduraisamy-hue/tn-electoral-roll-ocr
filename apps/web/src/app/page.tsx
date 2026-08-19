@@ -21,7 +21,6 @@ import { DashboardView } from "@/components/DashboardView";
 import { SettingsView } from "@/components/SettingsView";
 import { AnalyticsView } from "@/components/AnalyticsView";
 import { PollingStationsView } from "@/components/PollingStationsView";
-import ValidationView from "@/components/ValidationView";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
 import { FloatingAiChatbot } from "@/components/FloatingAiChatbot";
 
@@ -138,7 +137,6 @@ export default function Home() {
             {activeTab === "polling_stations" && <PollingStationsView />}
             {activeTab === "table"            && <DocumentView />}
             {activeTab === "analytics"        && <AnalyticsView />}
-            {activeTab === "validation"       && <ValidationView />}
             {activeTab === "page"             && <PageView />}
             {activeTab === "review"           && <ReviewQueue />}
             {activeTab === "settings"         && <SettingsView />}

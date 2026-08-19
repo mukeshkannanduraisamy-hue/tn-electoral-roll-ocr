@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { pauseJobApi, resumeJobApi, cancelJobApi } from "@/lib/api";
 import { resetDatabase as apiResetDatabase } from "@/lib/voterApi";
 
-export type ViewTab = "dashboard" | "table" | "page" | "review" | "voters" | "settings" | "analytics" | "polling_stations";
+export type ViewTab = "dashboard" | "table" | "page" | "review" | "voters" | "settings" | "analytics" | "polling_stations" | "validation";
 
 // Per-file extraction progress tracked from SSE
 export interface FileJobProgress {
@@ -131,7 +131,16 @@ function attachJobSSE(
     try {
       const data = JSON.parse(e.data);
       const { completed = 0, failed = 0, total = 1, file_id, file_name, pages_per_sec = 0, eta_seconds = 0 } = data;
+      // Job-wide, for the overall bar.
       const pct = total > 0 ? ((completed + failed) / total) * 100 : 0;
+      // This file's own counts. `completed`/`total` above are the whole job's,
+      // so using them per file made every row show the job's progress and a
+      // single file's bar advance as *other* files finished. Older servers do
+      // not send these, so fall back to the job-wide numbers rather than
+      // rendering an empty bar.
+      const fileCompleted = data.file_completed ?? completed;
+      const fileFailed = data.file_failed ?? failed;
+      const fileTotal = data.file_total ?? total;
 
       set((state) => {
         const prev = state.fileJobProgress[file_id] || {
@@ -151,9 +160,10 @@ function attachJobSSE(
                 ...state.fileJobProgress,
                 [file_id]: {
                   ...prev,
-                  pagesCompleted: completed,
-                  pagesFailed: failed,
-                  pagesTotal: total,
+                  fileName: file_name || prev.fileName,
+                  pagesCompleted: fileCompleted,
+                  pagesFailed: fileFailed,
+                  pagesTotal: fileTotal,
                 },
               }
             : state.fileJobProgress,
@@ -336,7 +346,7 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   resetAllData: async () => {
     try {
       await apiResetDatabase();
-      set({ files: [], activeFileId: null, activePageId: null, selectedRecordId: null, pages: [] });
+      set({ files: [], activeFileId: null, activePageId: null, selectedRecordId: null });
       await get().loadFiles();
       toast.success("All data and database tables have been reset successfully");
     } catch (e) {

@@ -102,19 +102,19 @@ class Settings(BaseSettings):
     ocr_workers: int = Field(
         default_factory=lambda: max(1, min(os.cpu_count() or 2, 8))
     )
-    """Persistent worker processes, each holding a warm PaddleOCR instance."""
+    """Concurrent OCR worker threads, each holding a warm PaddleOCR instance.
+
+    This is a *ceiling the operator asks for*, not the count that runs. The
+    real limit is per device and lives in `job_queue`, because what a worker
+    costs and what it buys differ by an order of magnitude between a CPU and a
+    4 GB card. Lower this to force fewer workers than the device would allow;
+    raising it above the device limit has no effect."""
 
     max_retries: int = 3
     """Maximum automatic retry attempts per page if OCR or rendering encounters a transient error."""
 
-    enable_caching: bool = True
-    """Skip re-extracting pages whose file hash and page parameters match cached extraction outputs."""
-
     auto_gpu: bool = True
     """Automatically detect CUDA GPU availability and switch PaddleOCR device to GPU when present."""
-
-    batch_ocr_size: int = 4
-    """Batch size for processing image crops / pages in parallel."""
 
     ocr_det_model: str = "PP-OCRv5_mobile_det"
     """Override the text-detection model to `PP-OCRv5_mobile_det` for low memory footprint."""
@@ -180,6 +180,15 @@ class Settings(BaseSettings):
     auth_cookie_secure: bool = False
     """Send the session cookie only over HTTPS. MUST be true in production;
     false locally because dev runs on plain http://localhost."""
+
+    # ------------------------------------------------------- verification
+    validation_pdf_dir: Path = Field(default=REPO_ROOT / "PDF" / "Penn PDF")
+    """Folder the Verification & Audit scan reads source PDFs from.
+
+    Was hard-coded to an absolute path on one machine, which made the feature
+    silently report nothing anywhere else -- `run_audit_scan` returns an empty
+    result when the directory is missing, so the panel looked empty rather
+    than misconfigured. Non-recursive: it globs `*.pdf` in this folder."""
 
     # ---------------------------------------------------------- reports
     pdf_font_path: str = ""

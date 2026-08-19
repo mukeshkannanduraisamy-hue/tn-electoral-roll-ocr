@@ -1,0 +1,28 @@
+# ---------------------------------------------------------------------------
+# OCR backend dependencies, CUDA build.
+#
+# Use this INSTEAD of `requirements.txt`, never alongside it: paddlepaddle and
+# paddlepaddle-gpu are separate distributions that both own the `paddle`
+# namespace, so installing both silently leaves whichever landed last in
+# charge. See `requirements-base.txt`.
+#
+#     pip install -r requirements-gpu.txt
+#
+# The version and CUDA build are not free choices -- they have to match the
+# runtime the image provides. This pair is what the project runs on:
+#
+#     paddlepaddle-gpu 3.1.0   built against CUDA 12.6 / cuDNN 9.5.1
+#
+# so `Dockerfile.gpu` bases on a CUDA 12.6 + cuDNN 9 runtime image. Change one
+# and you must change the other; a mismatch fails at first inference with a
+# missing-symbol error rather than at install time.
+#
+# Needs a driver new enough for CUDA 12.6. `nvidia-smi` reports the maximum
+# CUDA version a driver supports in its header, and it must be >= 12.6.
+# ---------------------------------------------------------------------------
+
+--extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+
+paddlepaddle-gpu==3.1.0
+
+-r requirements-base.txt

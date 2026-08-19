@@ -1,0 +1,74 @@
+# =============================================================================
+# GPU overlay. Use WITH the base file, never instead of it:
+#
+#     docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+#
+# Why this is a separate file rather than a flag in the base one: requesting a
+# device that is not there is a hard failure, so folding GPU support into
+# docker-compose.yml would break `docker compose up` for everyone without an
+# NVIDIA card. The default stays CPU and runs anywhere; this is opt-in.
+#
+# What it buys, measured on 8 voter pages of the TAM-15 roll (identical output,
+# 240 records either way):
+#
+#     CPU        16.60 s/page
+#     GTX 1650    2.33 s/page      ~7x
+#
+# Host requirements:
+#   * NVIDIA driver supporting CUDA >= 12.6 (`nvidia-smi` prints its maximum
+#     in the header)
+#   * NVIDIA Container Toolkit
+#   * on Docker Desktop, the WSL2 backend -- the Hyper-V backend cannot pass a
+#     GPU through
+#
+# Verify the card is actually visible to containers BEFORE building this, or
+# you will wait out a multi-GB build to discover it is not:
+#
+#     docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu22.04 nvidia-smi
+# =============================================================================
+
+services:
+  api:
+    build:
+      dockerfile: apps/api/Dockerfile.gpu
+
+    # `deploy.resources.reservations.devices` is the portable way to request a
+    # GPU. The base file deliberately avoids `deploy` for memory limits because
+    # legacy docker-compose (v1) ignores it silently -- that reasoning does not
+    # apply here, since v1 cannot pass a GPU through at all, so there is no
+    # version in which this quietly does nothing.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    environment:
+      # The base file pins `cpu`, which would win over auto-detection. Naming
+      # the device explicitly is also the better failure mode: if the card is
+      # not reachable the run is visibly misconfigured rather than quietly
+      # falling back to CPU and merely being slow.
+      OCR_OCR_DEVICE: gpu:0
+
+      # Two, not the three `job_queue.GPU_WORKER_LIMIT` allows. Each worker
+      # holds its own engine on the card (~591 MiB measured), and the third
+      # buys 1.5% -- 2.01 vs 1.98 s/page -- which is not worth assuming every
+      # user's card has the headroom a 4 GB one does. Raise to 3 if yours has.
+      OCR_OCR_WORKERS: "2"
+
+      # Inference moved to the card but rendering, deskew and preprocessing did
+      # not, so the OpenMP cap still matters.
+      OMP_NUM_THREADS: "2"
+
+    # Above the base file's 3 GB: the CUDA context and the pinned host-side
+    # staging buffers are additional to the weights, and this is host RAM, not
+    # card memory. The card needs its own headroom separately -- roughly
+    # 600 MiB per worker.
+    mem_limit: 4g
+    mem_reservation: 2g
+
+    # ~2.3 s/page rather than the CPU's ~17, but a page already in flight
+    # should still be allowed to finish rather than be SIGKILLed.
+    stop_grace_period: 30s

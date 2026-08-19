@@ -8,6 +8,8 @@ Run with::
 from __future__ import annotations
 
 import logging
+import re
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -15,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import settings
-from .db import init_db, reconcile_interrupted_work
+from .db import database_url as _database_url, init_db, reconcile_interrupted_work
 from .auth import ensure_admin_user, require_user
 from .routers import (
     ai_chat, auth, export, files, jobs, pages, photos, polling_stations, records,
@@ -48,13 +50,34 @@ async def lifespan(_app: FastAPI):
     except Exception as exc:
         logger.warning("Startup admin user check skipped: %s", exc)
     logger.info("Data directory: %s", settings.data_dir)
+    # Which database, in the log, every time. It is the setting most likely to
+    # be pointed somewhere unintended, and the failure that causes -- reading
+    # an empty or stale database while everything appears healthy -- is
+    # otherwise silent. Credentials are stripped in case it is ever remote.
+    logger.info(
+        "Database: %s",
+        re.sub(r"(://[^:]+:)[^@]+@", r"\1***@", _database_url()),
+    )
+
+    # Resolved, not raw -- see `_resolved_ocr`. Logging the configured values
+    # here reported `cpu`/`8` on a machine about to run `gpu:0` with 3, which
+    # has already cost one debugging session.
+    _device, _workers = _resolved_ocr()
     logger.info(
         "OCR: lang=%s version=%s device=%s workers=%d",
         settings.ocr_lang,
         settings.ocr_version,
-        settings.ocr_device,
-        settings.ocr_workers,
+        _device,
+        _workers,
     )
+    # Load every worker thread's PaddleOCR engine now instead of on the first
+    # job's first page. Backgrounded so /api/health and static assets are
+    # reachable immediately instead of waiting on ~8s per worker.
+    threading.Thread(
+        target=manager.warmup_workers,
+        name="ocr-warmup",
+        daemon=True,
+    ).start()
     yield
     # The pool holds several GB of model weights; release it deterministically.
     manager.shutdown()
@@ -170,14 +193,36 @@ def root() -> dict:
     }
 
 
+def _resolved_ocr() -> tuple[str, int]:
+    """The device and worker count OCR will actually use.
+
+    `settings.ocr_device` is the *default*, not the answer: it reads `cpu`
+    even where auto-detection has picked a GPU. `settings.ocr_workers` is a
+    ceiling the per-device limit cuts down. Reporting the raw pair tells an
+    operator the service is on CPU with 8 workers when it is on gpu:0 with 3,
+    which is a slow thing to discover from a dashboard.
+    """
+    from .services import ocr_service
+    from .services.job_queue import resolve_worker_count
+
+    device = ocr_service.resolve_device()
+    return device, resolve_worker_count(device, settings.ocr_workers)
+
+
 @app.get("/api/health", tags=["meta"])
 def health() -> dict:
+    device, workers = _resolved_ocr()
     return {
         "status": "ok",
         "ocr_lang": settings.ocr_lang,
         "ocr_version": settings.ocr_version,
-        "ocr_device": settings.ocr_device,
-        "workers": settings.ocr_workers,
+        "ocr_device": device,
+        "workers": workers,
+        # What the operator configured, kept alongside so a machine that fell
+        # back to CPU is distinguishable from one that was told to use it.
+        "ocr_device_configured": settings.ocr_device,
+        "ocr_workers_configured": settings.ocr_workers,
+        "database": re.sub(r"(://[^:]+:)[^@]+@", r"\1***@", _database_url()),
         "consensus_enabled": settings.consensus_enabled,
     }
 
@@ -188,7 +233,8 @@ def read_settings() -> dict:
     return {
         "ocr_lang": settings.ocr_lang,
         "ocr_version": settings.ocr_version,
-        "ocr_device": settings.ocr_device,
+        # Resolved, for the same reason as /api/health.
+        "ocr_device": _resolved_ocr()[0],
         "render_dpi": settings.render_dpi,
         "upscale_factor": settings.upscale_factor,
         "ocr_text_score_thresh": settings.ocr_text_score_thresh,

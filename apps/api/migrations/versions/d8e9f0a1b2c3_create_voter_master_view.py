@@ -134,9 +134,31 @@ DROP VIEW IF EXISTS public.view_voter_master CASCADE;
 """
 
 
+# These views are PostgreSQL-only, and not by preference: they select through
+# `payload->>'key'` JSON operators, cast with `::int`, qualify every table with
+# the `public.` schema and drop with `CASCADE`. SQLite has none of those, so the
+# statements are not merely unsupported there, they are unparseable -- the first
+# `DROP VIEW ... CASCADE` fails with a syntax error and takes the whole
+# migration run down.
+#
+# That matters because SQLite is the *default* database and the one the Render
+# blueprint deploys, so an unguarded `op.execute` here means a fresh install
+# cannot build its schema at all. Skipping on SQLite is the honest behaviour:
+# the views are a reporting convenience for Postgres deployments. No code
+# selects from them -- `validator_service` names them in its docstring but its
+# queries go to `polling_stations`, `voters` and `files` directly -- so their
+# absence on SQLite costs the application nothing.
+def _is_postgres() -> bool:
+    return op.get_bind().dialect.name == "postgresql"
+
+
 def upgrade() -> None:
+    if not _is_postgres():
+        return
     op.execute(CREATE_VIEWS_SQL)
 
 
 def downgrade() -> None:
+    if not _is_postgres():
+        return
     op.execute(DROP_VIEWS_SQL)

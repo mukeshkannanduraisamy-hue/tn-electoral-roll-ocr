@@ -175,6 +175,22 @@ def _lookup_user(session: Session, token: str | None) -> UserRow | None:
     target_expiry = _utcnow() + timedelta(hours=settings.auth_session_hours)
     if (target_expiry - expires).total_seconds() > 3600:
         row.expires_at = target_expiry
+        # Committed here rather than left for the request to flush.
+        #
+        # This runs as a router-level dependency, so its session stays open
+        # until the response is finished -- and a streaming response is never
+        # finished. On SQLite a pending write locks the whole database, so the
+        # uncommitted slide blocked every later connection for `timeout`
+        # seconds (60). `GET /api/jobs/{id}/events` opens its own session, so
+        # it deadlocked against the very dependency that authenticated it, and
+        # because that handler is `async def` the wait ran on the event loop
+        # and froze the entire API -- one request to that endpoint took the
+        # server down until it was restarted. It is what the extraction
+        # progress bar was waiting on when it sat at 0%.
+        #
+        # The slide is independent of whatever the request goes on to do, so
+        # committing it immediately is also the honest transaction boundary.
+        session.commit()
     return user
 
 

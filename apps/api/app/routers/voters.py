@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Iterable, Sequence
 
 import shutil
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -876,6 +878,117 @@ def _field_value(record, key: str) -> str:
             else field.original_value) or ""
 
 
+_REVISION_RE = re.compile(r"revision\s*(\d+)", re.IGNORECASE)
+
+
+def revision_of(file_name: str | None) -> int:
+    """Which revision of a roll a file holds, read from its name.
+
+    The name is the only place this exists. The cover sheet gives a
+    `revision_year` -- 2026 for every document in the corpus -- and a
+    `revision_type` that is the Tamil for "year of revision"; neither
+    separates a first revision from a second. The publisher's file name does,
+    consistently. An unrecognised name yields 0 so it loses to every real
+    revision rather than silently outranking one.
+    """
+    match = _REVISION_RE.search(file_name or "")
+    return int(match.group(1)) if match else 0
+
+
+@dataclass(frozen=True)
+class PromotionCandidate:
+    """One record's claim to be *the* row for an elector."""
+
+    record_id: str
+    epic: str
+    revision: int
+    is_deleted: bool
+    is_supplement: bool
+    page_number: int
+    index: int
+    is_clean: bool = True
+    deletion_reason: str = ""
+
+
+def _latest_revision_per_epic(
+    candidates: Sequence[PromotionCandidate],
+) -> dict[str, int]:
+    latest: dict[str, int] = {}
+    for c in candidates:
+        if c.revision > latest.get(c.epic, -1):
+            latest[c.epic] = c.revision
+    return latest
+
+
+def resolve_deletions(
+    candidates: Iterable[PromotionCandidate],
+) -> dict[str, str]:
+    """Which electors are struck off. Returns epic -> deletion reason.
+
+    Separate from `resolve_duplicate_epics` because a deletion is a *status*,
+    and the record carrying it is often the worst copy of the elector's
+    details. A struck-through cell reads badly -- the stamp costs the age line
+    a digit -- so it routinely fails validation, and 187 such records on the
+    Penn corpus were dropped by `only_clean` before ever being considered.
+    That left 160 electors the roll had struck off sitting active in the
+    curated table. Deciding the deletion here lets the clean main-roll entry
+    keep supplying the name and age while the deletion still lands.
+
+    Only the highest revision present for an elector gets a vote, so a
+    Revision 2 that lists them as active overrides a Revision 1 deletion --
+    that is a reinstatement, and it has to be representable.
+
+    Presence in the mapping is the deletion; the reason may be empty.
+    """
+    candidates = list(candidates)
+    latest = _latest_revision_per_epic(candidates)
+    deletions: dict[str, str] = {}
+    for c in candidates:
+        if not c.is_deleted or c.revision != latest[c.epic]:
+            continue
+        # First stated reason wins; a later blank must not erase it.
+        if not deletions.get(c.epic):
+            deletions[c.epic] = c.deletion_reason
+    return deletions
+
+
+def resolve_duplicate_epics(
+    candidates: Iterable[PromotionCandidate],
+) -> dict[str, str]:
+    """Pick one record per EPIC. Returns epic -> winning record id.
+
+    An EPIC repeating across a batch is normal, not a fault: a roll reprints
+    an elector in its supplement to strike them off, and the corpus holds two
+    revisions of some parts. Keeping whichever arrived first -- which is what
+    scanning in page order does -- means the main roll's active entry always
+    beats the supplement's deletion, because the supplement is further into
+    the document. That silently dropped 184 deletions on this corpus.
+
+    Precedence, highest first: later revision, then a record that passes
+    validation, then a deletion, then a supplement, then the earlier entry.
+    See the module test for why each rung is where it is.
+
+    Cleanliness sits below the revision but above everything else on purpose.
+    A later revision is the current roll whatever its OCR quality, but within
+    one revision the readable copy of an elector should supply their details
+    -- the struck-off reprint is the one most likely to be garbled. The
+    deletion it carries is not lost by ranking it here; `resolve_deletions`
+    applies that independently of who wins the fields.
+    """
+    best: dict[str, tuple[tuple, str]] = {}
+    for c in candidates:
+        # Negated position so that, among otherwise equal claims, `max` picks
+        # the earliest rather than the latest -- two misreads of one EPIC on a
+        # page are indistinguishable, and keeping the first is the behaviour
+        # that was here before precedence existed.
+        key = (c.revision, c.is_clean, c.is_deleted, c.is_supplement,
+               -c.page_number, -c.index)
+        current = best.get(c.epic)
+        if current is None or key > current[0]:
+            best[c.epic] = (key, c.record_id)
+    return {epic: record_id for epic, (_key, record_id) in best.items()}
+
+
 @router.post("/promote", response_model=PromotionResult)
 def promote_records(
     payload: PromotionRequest,
@@ -900,9 +1013,9 @@ def promote_records(
     else:
         raise HTTPException(400, "Provide record_ids, page_id, file_id, or all_documents")
 
-    if payload.only_clean:
-        stmt = stmt.where(RecordRow.error_count == 0)
-
+    # `only_clean` is applied in Python rather than here, because the
+    # exception to it -- a deletion -- lives inside the JSON `fields` column,
+    # and reaching into that from SQL differs between SQLite and Postgres.
     rows = session.execute(stmt.order_by(RecordRow.page_number, RecordRow.index)).scalars().all()
     if not rows:
         raise HTTPException(404, "No matching records to promote")
@@ -939,6 +1052,21 @@ def promote_records(
 
     # Pre-parse rows and pre-fetch all existing VoterRow instances by EPIC in batch
     row_records = [(row, row_to_record(row)) for row in rows]
+
+    if payload.only_clean:
+        # A record that fails validation is not fit to define an elector --
+        # unless it is the roll striking one off. A deletion is a status, not
+        # a reading, and a struck-through cell fails validation routinely
+        # because the stamp costs the age line a digit. Excluding those left
+        # 160 struck-off electors sitting active on the Penn corpus. They are
+        # admitted here so `resolve_deletions` can see them; the elector's
+        # actual details still come from a clean record wherever one exists.
+        row_records = [
+            (row, record) for row, record in row_records
+            if row.error_count == 0 or _field_value(record, "is_deleted") == "Yes"
+        ]
+        if not row_records:
+            raise HTTPException(404, "No matching records to promote")
     epic_list = list({
         normalise_epic(_field_value(rec, "epic"))
         for _, rec in row_records
@@ -954,6 +1082,34 @@ def promote_records(
             for v in v_rows:
                 existing_voters_map[v.epic] = v
 
+    # An EPIC repeating in the batch is normal -- a supplement reprints an
+    # elector to strike them off, and the corpus holds two revisions of some
+    # parts -- so decide which record represents each elector before promoting
+    # any of them, rather than letting page order decide it. See
+    # `resolve_duplicate_epics`.
+    candidates = [
+        PromotionCandidate(
+            record_id=row.id,
+            epic=normalise_epic(_field_value(record, "epic")),
+            revision=revision_of(file_names.get(row.file_id, "")),
+            is_deleted=_field_value(record, "is_deleted") == "Yes",
+            is_supplement=bool(
+                (page := pages.get(row.page_id))
+                and page.page_type == "supplement_page"
+            ),
+            page_number=row.page_number or 0,
+            index=row.index or 0,
+            is_clean=row.error_count == 0,
+            deletion_reason=_field_value(record, "deletion_reason"),
+        )
+        for row, record in row_records
+        if normalise_epic(_field_value(record, "epic"))
+    ]
+    winning_record_ids = resolve_duplicate_epics(candidates)
+    # Decided across every record for an elector, not just the winning one, so
+    # a deletion the roll printed on a page that reads badly still lands.
+    deleted_epics = resolve_deletions(candidates)
+
     result = PromotionResult()
     seen_in_batch: dict[str, str] = {}
 
@@ -968,8 +1124,22 @@ def promote_records(
             result.skipped += 1
             continue
 
-        # A page can contain the same misread EPIC twice; catch that before
-        # the database does, so the message is useful.
+        # This elector appears more than once in the batch and another record
+        # represents them better -- a later revision, or the supplement entry
+        # that struck them off. Reported rather than dropped silently, because
+        # the count is how you notice a part has been supplied twice.
+        winner_id = winning_record_ids.get(epic)
+        if winner_id is not None and winner_id != row.id:
+            result.conflicts.append(PromotionConflict(
+                record_id=row.id, epic=epic,
+                reason="Superseded by another record for this elector",
+                incoming_name=name))
+            result.skipped += 1
+            continue
+
+        # Belt and braces: two records cannot both be the winner, so reaching
+        # here twice for one EPIC would mean the resolution disagreed with the
+        # scan. Catch it before the database's unique index does.
         if epic in seen_in_batch:
             result.conflicts.append(PromotionConflict(
                 record_id=row.id, epic=epic,
@@ -1021,15 +1191,21 @@ def promote_records(
             "constituency": constituency,
             "polling_station_id": station.id if station else None,
             "is_supplement": is_supplement,
-            # Carry the extractor's deletion verdict through to storage. "Yes"
-            # is the template's marker for a struck-off cell; anything else,
-            # including an unread cell, is treated as active.
-            "is_deleted": _field_value(record, "is_deleted") == "Yes",
+            # Resolved across every record for this elector rather than read
+            # off this one, because the roll often strikes an elector off on a
+            # reprint that reads too badly to be the record promoted. An
+            # elector nobody deleted at their latest revision is active.
+            "is_deleted": epic in deleted_epics,
             "section_name": (
                 _field_value(record, "section_name")
                 or (page.payload or {}).get("section_name", "") if page else ""
             )[:500],
-            "deletion_reason": _field_value(record, "deletion_reason"),
+            # The reason comes from whichever record carried the deletion,
+            # which is frequently not this one.
+            "deletion_reason": (
+                deleted_epics.get(epic)
+                or _field_value(record, "deletion_reason")
+            ),
             "source_record_id": row.id,
             "source_page_id": row.page_id,
             "source_file_id": row.file_id,
@@ -1088,9 +1264,17 @@ def reset_database(
 ) -> dict:
     """Truncate all data tables and clean cached files."""
     try:
-        session.execute(
-            text("TRUNCATE TABLE voters, records, pages, files, polling_stations, summaries, photos, ocr_blocks, audit_logs, jobs CASCADE;")
-        )
+        tables = [
+            "audit_logs", "ocr_blocks", "photos", "records", "summaries",
+            "polling_stations", "pages", "files", "voters", "jobs"
+        ]
+        if session.bind.dialect.name == "sqlite":
+            for table in tables:
+                session.execute(text(f"DELETE FROM {table};"))
+        else:
+            session.execute(
+                text("TRUNCATE TABLE voters, records, pages, files, polling_stations, summaries, photos, ocr_blocks, audit_logs, jobs CASCADE;")
+            )
         session.commit()
 
         for sub in ["pages", "photos", "uploads"]:

@@ -16,6 +16,17 @@ weaker than they sound:
 
 So the GPU is capped rather than pinned to one, low enough to leave the card
 half free.
+
+The CPU ceiling comes from the opposite direction. It was 8 -- effectively one
+worker per core -- on the assumption that threads parallelise pages. They do
+not: the measurement in `test_cpu_is_capped_where_the_speedup_stops` shows the
+third worker earning 2%. The ceiling is 2 for the same reason the GPU's is 3:
+it is where the measured gain ends, not where the hardware runs out.
+
+Neither ceiling is where the time actually goes. The same eight pages take
+16.60 s/page on the CPU and 2.33 s/page on the GTX 1650 -- the device is worth
+7x, the worker count 11-18%. `ocr_workers` is deliberately left permissive so
+that these device limits, not the operator's guess at a thread count, decide.
 """
 
 from __future__ import annotations
@@ -46,9 +57,22 @@ def test_a_gpu_never_exceeds_what_was_configured():
     assert resolve_worker_count("gpu:0", configured=2) == 2
 
 
-def test_cpu_keeps_its_existing_ceiling():
-    assert resolve_worker_count("cpu", configured=16) == 8
-    assert resolve_worker_count("cpu", configured=4) == 4
+def test_cpu_is_capped_where_the_speedup_stops():
+    """Two, not one per core.
+
+    Eight voter pages through `process_page` with the device forced to CPU:
+    16.60 s/page at one worker, 14.97 s at two, 14.74 s at three. The second
+    worker earns 11%; the third earns 2%, and costs another ~1 GB of resident
+    weights to do it, because engines are cached per thread. MKL-DNN has
+    already spread a single page across every core by the time the pool adds
+    anything, so the threads compete rather than accumulate.
+    """
+    assert resolve_worker_count("cpu", configured=16) == 2
+
+
+def test_a_cpu_never_exceeds_what_was_configured():
+    """Asking for one worker means one, here as on the GPU."""
+    assert resolve_worker_count("cpu", configured=1) == 1
 
 
 @pytest.mark.parametrize("configured", [0, -1])

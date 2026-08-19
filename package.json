@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "powershell -ExecutionPolicy Bypass -File ./scripts/dev.ps1",
-    "bootstrap": "powershell -ExecutionPolicy Bypass -File ./scripts/bootstrap.ps1",
-    "test:backend": "cd apps/api && .venv/Scripts/python.exe -m pytest"
+    "dev": "node ./scripts/dev.js",
+    "bootstrap": "node ./scripts/bootstrap.js",
+    "test:backend": "node ./scripts/test-backend.js",
+    "test:web": "npm run typecheck --workspace @ocr-workspace/web",
+    "build:web": "npm run build --workspace @ocr-workspace/web"
   },
   "workspaces": [
     "apps/*",

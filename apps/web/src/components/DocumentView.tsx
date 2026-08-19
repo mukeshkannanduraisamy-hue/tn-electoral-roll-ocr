@@ -409,9 +409,16 @@ export const DocumentView: React.FC = () => {
             className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
             title={file?.name}
           >
+            {/* The full name, not a 26-character prefix of it. These
+                documents are named `…-S22-58-SIR-FinalRoll-Revision2-TAM-15-WI`
+                and what tells two of them apart -- the part number -- is at
+                the end, so cutting the tail left every option reading
+                identically. A native <option> cannot be styled to ellipsize,
+                and the browser already handles an over-long one; `title`
+                gives the whole string on hover either way. */}
             {files.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name.length > 28 ? `${f.name.slice(0, 26)}…` : f.name}
+              <option key={f.id} value={f.id} title={f.name}>
+                {f.name}
                 {f.status === "completed" ? "" : ` (${f.status})`}
               </option>
             ))}

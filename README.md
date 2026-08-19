@@ -42,36 +42,48 @@ OCR alone is sufficient.
 
 ## Quick start (local)
 
-Requires **Node 20+**. Python 3.11 is installed for you if missing.
+Requires **Node 20+**. Python 3.11 is installed for you on Windows if missing.
 
 ```bash
-git clone https://github.com/mukeshkannanduraisamy-hue/tn-electoral-roll-ocr.git OCR && cd OCR
+git clone https://github.com/mukeshkannanduraisamy-hue/tn-electoral-roll-ocr.git OCR
+cd OCR
 ```
 
+### Windows (1-Click)
+```cmd
+setup.bat
+run.bat
+```
+*(Or via PowerShell: `pwsh -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1` and `npm run dev`)*
+
+### Linux / macOS / WSL (1-Click)
 ```bash
-pwsh -File scripts/bootstrap.ps1
+chmod +x setup.sh run.sh scripts/*.sh
+./setup.sh
+./run.sh
 ```
 
-Then run both services:
-
-```bash
-npm run dev
-```
-
-- Frontend → <http://localhost:3000>
-- API docs → <http://localhost:8000/docs>
+- Frontend UI → <http://localhost:3000>
+- API Docs → <http://localhost:8000/docs>
+- Default Login → `admin` / `Admin@123456`
+- See [SETUP_GUIDE.md](file:///d:/OCR/SETUP_GUIDE.md) for full step-by-step instructions, dependencies, and troubleshooting.
 
 <details>
 <summary>Manual setup, if you prefer</summary>
 
 ```bash
+# Backend
 python -m venv apps/api/.venv
-apps/api/.venv/Scripts/pip install -r apps/api/requirements.txt
-apps/api/.venv/Scripts/python -m uvicorn app.main:app --reload --port 8000
+# Windows: apps/api/.venv/Scripts/pip install -r apps/api/requirements.txt
+# Linux/Mac: apps/api/.venv/bin/pip install -r apps/api/requirements.txt
+# Windows: apps/api/.venv/Scripts/python -m uvicorn app.main:app --port 8000
+# Linux/Mac: apps/api/.venv/bin/python -m uvicorn app.main:app --port 8000
 ```
 
 ```bash
-npm ci && npm run build --workspace @ocr-workspace/web && npm run start --workspace @ocr-workspace/web
+# Frontend
+npm install
+npm run dev --workspace @ocr-workspace/web
 ```
 
 </details>
@@ -90,8 +102,37 @@ The compose file pins `platform: linux/amd64` because PaddlePaddle ships
 manylinux x86_64 wheels only; on Apple Silicon the build runs under emulation
 and is slow but works.
 
-> The compose stack is reviewed and statically validated, but has not been
-> executed end-to-end. The native setup above is the tested path.
+#### With a GPU
+
+The default image is CPU-only, which is ~7x slower than the card. If you have
+an NVIDIA GPU, add the overlay — it swaps in `Dockerfile.gpu`, passes the
+device through, and selects `gpu:0`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+```
+
+Needs the NVIDIA Container Toolkit on the host, a driver supporting CUDA 12.6
+or newer, and — on Docker Desktop — the **WSL2 backend**, since Hyper-V cannot
+pass a GPU through. Check that containers can see the card *before* starting a
+multi-gigabyte build:
+
+```bash
+docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu22.04 nvidia-smi
+```
+
+The image pins `paddlepaddle-gpu==3.1.0` against a CUDA 12.6 / cuDNN 9 base,
+because those are a matched pair: a mismatch fails at the first inference with
+a missing-symbol error rather than at build time. `requirements-gpu.txt`
+replaces `requirements.txt` in that image and must never be installed
+alongside it — both distributions own the `paddle` namespace, and whichever
+lands last wins, so mixing them yields a GPU image silently running on the CPU.
+
+> Neither compose stack has been executed end-to-end; both are reviewed and
+> statically validated (YAML parsed, overlay merge checked, dependency split
+> verified to resolve to the same 23 packages). The native setup above is the
+> tested path, and the GPU numbers quoted here were measured natively, not in
+> a container.
 
 ---
 
@@ -181,12 +222,34 @@ prefix** — a bare `DATA_DIR` is silently ignored.
 
 ### GPU
 
+This is the single biggest lever in the project, by an order of magnitude.
+Eight voter pages, same corpus, same output (240 records either way):
+
+| Device | 1 worker | 2 workers | 3 workers |
+|---|---|---|---|
+| CPU | 16.60 s/page | 14.97 s/page | 14.74 s/page |
+| GTX 1650 | 2.33 s/page | 2.01 s/page | 1.98 s/page |
+
+**7x from the card; 11–18% from the worker count.** Tuning threads, upscale or
+preprocessing is rearranging the 13% while the 87% sits in which device ran the
+inference.
+
 ```bash
 pip uninstall -y paddlepaddle
 pip install paddlepaddle-gpu==3.1.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
 ```
 
-Then set `OCR_OCR_DEVICE=gpu:0`. Needs a CUDA 12.6-capable driver.
+You do **not** then have to set anything: `OCR_AUTO_GPU` is on by default, so a
+usable card is detected and preferred over the `cpu` default. Set
+`OCR_OCR_DEVICE=gpu:0` only to force it, or `OCR_AUTO_GPU=false` to force CPU on
+a machine that has a card. Needs a CUDA 12.6-capable driver.
+
+To confirm which device is actually in use — the config default reads `cpu`
+even when auto-detection has chosen the GPU, which is misleading:
+
+```bash
+cd apps/api && .venv/Scripts/python -c "from app.services import ocr_service; print(ocr_service.resolve_device())"
+```
 
 ---
 
@@ -255,14 +318,44 @@ here: the service also writes page images to that same disk, and the job queue
 runs in-process, so it is single-instance by construction. Postgres would add
 an operational dependency without removing that constraint.
 
-Switch only if you need multiple instances — and note that would also require
-moving the job queue out of the process (Redis/RQ or Render Background
-Workers). `OCR_DATABASE_URL` is already honoured by SQLAlchemy:
+This was tried the other way round. The project ran on a hosted Supabase
+Postgres for a while and it cost throughput on every bulk operation, because
+the work here is row-per-elector: promoting 31k electors takes ~24 s against
+local SQLite, and each of those rows is a network round trip against a remote
+pooler. It also made the service depend on a host being reachable to do
+anything at all. `scripts/migrate_supabase_to_sqlite.py` is the way back.
 
+Switch to Postgres only if you need multiple instances — and note that would
+also require moving the job queue out of the process (Redis/RQ or Render
+Background Workers). `OCR_DATABASE_URL` is honoured by SQLAlchemy, so it is
+two steps:
+
+```bash
+pip install "psycopg[binary]"
+```
 ```
 OCR_DATABASE_URL=postgresql+psycopg://user:pass@host/db
 ```
-(add `psycopg[binary]` to `requirements.txt`).
+
+The driver is deliberately not in `requirements.txt` — leaving it out is what
+keeps "which database is this" answerable by looking at one variable.
+
+### Migrating an existing Postgres database to SQLite
+
+Non-destructive: it refuses to write into a file that already holds rows
+unless `--force` is passed.
+
+```bash
+apps/api/.venv/Scripts/python scripts/migrate_supabase_to_sqlite.py \
+  --source-env .env.backup-XXXX --target data/ocr.sqlite
+```
+
+`--source-env` reads `OCR_DATABASE_URL` out of a dotenv file so the password
+stays off the command line. Rows go through the SQLAlchemy models, so JSON,
+boolean and timestamp columns are converted rather than copied verbatim, and
+the source's alembic revision is carried across so the copy is recognised as
+up to date rather than as a pre-alembic database. Every table's row count is
+verified against the source before it reports success.
 
 ### Deployment checklist
 
