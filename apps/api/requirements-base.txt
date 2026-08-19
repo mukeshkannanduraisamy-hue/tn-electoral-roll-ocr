@@ -41,7 +41,15 @@ SQLAlchemy>=2.0.0
 # without this any change to an existing column -- a rename, a type change,
 # a backfill -- has no way to reach a database that already exists.
 alembic>=1.14.0
-psycopg[binary]>=3.1.0
+# No PostgreSQL driver. This project runs on SQLite: the service writes page
+# images to the data directory and runs its job queue in-process, so it is
+# single-instance by construction and Postgres bought a network round trip per
+# row without removing that constraint. `OCR_DATABASE_URL` is still honoured
+# by SQLAlchemy, so switching back is installing `psycopg[binary]` and setting
+# the variable -- which is what the README has always said.
+#
+# `scripts/migrate_supabase_to_sqlite.py` reads from PostgreSQL and therefore
+# needs that driver present; install it for the length of the migration.
 
 # --- Authentication --------------------------------------------------------
 bcrypt>=4.2.0,<5

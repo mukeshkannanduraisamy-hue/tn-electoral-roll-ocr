@@ -306,14 +306,44 @@ here: the service also writes page images to that same disk, and the job queue
 runs in-process, so it is single-instance by construction. Postgres would add
 an operational dependency without removing that constraint.
 
-Switch only if you need multiple instances — and note that would also require
-moving the job queue out of the process (Redis/RQ or Render Background
-Workers). `OCR_DATABASE_URL` is already honoured by SQLAlchemy:
+This was tried the other way round. The project ran on a hosted Supabase
+Postgres for a while and it cost throughput on every bulk operation, because
+the work here is row-per-elector: promoting 31k electors takes ~24 s against
+local SQLite, and each of those rows is a network round trip against a remote
+pooler. It also made the service depend on a host being reachable to do
+anything at all. `scripts/migrate_supabase_to_sqlite.py` is the way back.
 
+Switch to Postgres only if you need multiple instances — and note that would
+also require moving the job queue out of the process (Redis/RQ or Render
+Background Workers). `OCR_DATABASE_URL` is honoured by SQLAlchemy, so it is
+two steps:
+
+```bash
+pip install "psycopg[binary]"
+```
 ```
 OCR_DATABASE_URL=postgresql+psycopg://user:pass@host/db
 ```
-(add `psycopg[binary]` to `requirements.txt`).
+
+The driver is deliberately not in `requirements.txt` — leaving it out is what
+keeps "which database is this" answerable by looking at one variable.
+
+### Migrating an existing Postgres database to SQLite
+
+Non-destructive: it refuses to write into a file that already holds rows
+unless `--force` is passed.
+
+```bash
+apps/api/.venv/Scripts/python scripts/migrate_supabase_to_sqlite.py \
+  --source-env .env.backup-XXXX --target data/ocr.sqlite
+```
+
+`--source-env` reads `OCR_DATABASE_URL` out of a dotenv file so the password
+stays off the command line. Rows go through the SQLAlchemy models, so JSON,
+boolean and timestamp columns are converted rather than copied verbatim, and
+the source's alembic revision is carried across so the copy is recognised as
+up to date rather than as a pre-alembic database. Every table's row count is
+verified against the source before it reports success.
 
 ### Deployment checklist
 

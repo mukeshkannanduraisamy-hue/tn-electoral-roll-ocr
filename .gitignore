@@ -40,6 +40,10 @@ dist/
 .env
 .env.local
 .env*.local
+# `.env` itself is ignored but `.env.backup-20260819-163100` was not, and it
+# holds a live database password. Any sibling of .env is a secret unless it is
+# the example.
+.env.*
 !.env.example
 
 # ---- Editors / OS ----
