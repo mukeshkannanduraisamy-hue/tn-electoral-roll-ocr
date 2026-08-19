@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { pauseJobApi, resumeJobApi, cancelJobApi } from "@/lib/api";
 import { resetDatabase as apiResetDatabase } from "@/lib/voterApi";
 
-export type ViewTab = "dashboard" | "table" | "page" | "review" | "voters" | "settings" | "analytics" | "polling_stations";
+export type ViewTab = "dashboard" | "table" | "page" | "review" | "voters" | "settings" | "analytics" | "polling_stations" | "validation";
 
 // Per-file extraction progress tracked from SSE
 export interface FileJobProgress {
@@ -336,7 +336,7 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   resetAllData: async () => {
     try {
       await apiResetDatabase();
-      set({ files: [], activeFileId: null, activePageId: null, selectedRecordId: null, pages: [] });
+      set({ files: [], activeFileId: null, activePageId: null, selectedRecordId: null });
       await get().loadFiles();
       toast.success("All data and database tables have been reset successfully");
     } catch (e) {

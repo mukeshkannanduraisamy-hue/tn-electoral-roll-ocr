@@ -112,34 +112,29 @@ Write-Host '  This downloads ~2-3 GB and takes several minutes on a cold cache.'
 # Order matters: the framework must land before the toolkit so pip does not
 # resolve an incompatible paddlepaddle/paddleocr pair.
 if ($Gpu) {
-    Write-Host '  [1/3] paddlepaddle-gpu (CUDA 12.6)...'
+    Write-Host '  [1/2] paddlepaddle-gpu (CUDA 12.6)...'
     & $VenvPy -m pip install paddlepaddle-gpu==3.1.0 `
         -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
 } else {
-    Write-Host '  [1/3] paddlepaddle (CPU)...'
+    Write-Host '  [1/2] paddlepaddle (CPU)...'
     & $VenvPy -m pip install paddlepaddle==3.1.0
 }
 if ($LASTEXITCODE -ne 0) { throw 'paddlepaddle install failed' }
 
-Write-Host '  [2/3] paddleocr...'
-& $VenvPy -m pip install paddleocr==3.7.0
-if ($LASTEXITCODE -ne 0) { throw 'paddleocr install failed' }
-
-Write-Host '  [3/3] application dependencies...'
-& $VenvPy -m pip install `
-    'PyMuPDF==1.24.14' 'rapidfuzz==3.10.1' 'fastapi==0.115.6' `
-    'uvicorn[standard]==0.34.0' 'python-multipart==0.0.20' `
-    'pydantic-settings==2.7.0' 'sse-starlette==2.2.1' `
-    'SQLAlchemy==2.0.36' 'openpyxl==3.1.5' 'pytest==8.3.4' 'httpx==0.28.1'
+Write-Host '  [2/2] application dependencies (from requirements-base.txt)...'
+$reqBase = Join-Path $ApiDir 'requirements-base.txt'
+& $VenvPy -m pip install -r $reqBase
 if ($LASTEXITCODE -ne 0) { throw 'application dependency install failed' }
 
 Write-Step 'Verifying imports'
 & $VenvPy -c @'
-import paddle, cv2, fitz, rapidfuzz, fastapi, numpy, paddleocr
+import paddle, cv2, fitz, rapidfuzz, fastapi, numpy, paddleocr, sqlalchemy, alembic, bcrypt
 print(f"  paddle      {paddle.__version__}")
 print(f"  paddleocr   {paddleocr.__version__}")
 print(f"  opencv      {cv2.__version__}")
 print(f"  numpy       {numpy.__version__}")
+print(f"  fastapi     {fastapi.__version__}")
+print(f"  sqlalchemy  {sqlalchemy.__version__}")
 '@
 if ($LASTEXITCODE -ne 0) { throw 'Import verification failed' }
 Write-Ok 'All imports resolve'
@@ -162,25 +157,25 @@ if (-not $SkipModels) {
 
 # -------------------------------------------------------------------- 5. web
 if (-not $SkipWeb) {
-    Write-Step 'Installing web dependencies'
-    if (Test-Path (Join-Path $WebDir 'package.json')) {
-        Push-Location $WebDir
+    Write-Step 'Installing web & workspace dependencies'
+    if (Test-Path (Join-Path $RepoRoot 'package.json')) {
+        Push-Location $RepoRoot
         try {
             npm install
             if ($LASTEXITCODE -ne 0) { throw 'npm install failed' }
-            Write-Ok 'Web dependencies installed'
+            Write-Ok 'Web and workspace dependencies installed'
         } finally {
             Pop-Location
         }
     } else {
-        Write-Warn 'apps/web/package.json not found; skipping'
+        Write-Warn 'package.json not found; skipping'
     }
 } else {
     Write-Warn 'Skipping web install (-SkipWeb)'
 }
 
-# ------------------------------------------------------------------ 6. .env
-Write-Step 'Configuration'
+# ------------------------------------------------------------------ 6. .env & data
+Write-Step 'Configuration & Storage'
 $envFile    = Join-Path $RepoRoot '.env'
 $envExample = Join-Path $RepoRoot '.env.example'
 if ((Test-Path $envExample) -and (-not (Test-Path $envFile))) {
@@ -190,12 +185,20 @@ if ((Test-Path $envExample) -and (-not (Test-Path $envFile))) {
     Write-Ok '.env already present (or no template to copy)'
 }
 
+$dataDir = Join-Path $RepoRoot 'data'
+if (-not (Test-Path $dataDir)) {
+    New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+    Write-Ok 'Created data/ directory'
+} else {
+    Write-Ok 'data/ directory exists'
+}
+
 Write-Host "`n=== Setup complete ===" -ForegroundColor Green
 Write-Host @"
 
-  Start everything:      .\scripts\dev.ps1
+  Start everything:      .\run.bat  or  npm run dev  or  .\scripts\dev.ps1
   Backend only:          apps\api\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
-  Frontend only:         cd apps\web; npm run dev
+  Frontend only:         npm run dev --workspace @ocr-workspace/web
   Extract from the CLI:  apps\api\.venv\Scripts\python.exe apps\api\cli.py extract "<file.pdf>"
 
 "@ -ForegroundColor Gray

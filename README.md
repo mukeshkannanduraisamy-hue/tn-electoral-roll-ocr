@@ -42,36 +42,48 @@ OCR alone is sufficient.
 
 ## Quick start (local)
 
-Requires **Node 20+**. Python 3.11 is installed for you if missing.
+Requires **Node 20+**. Python 3.11 is installed for you on Windows if missing.
 
 ```bash
-git clone https://github.com/mukeshkannanduraisamy-hue/tn-electoral-roll-ocr.git OCR && cd OCR
+git clone https://github.com/mukeshkannanduraisamy-hue/tn-electoral-roll-ocr.git OCR
+cd OCR
 ```
 
+### Windows (1-Click)
+```cmd
+setup.bat
+run.bat
+```
+*(Or via PowerShell: `pwsh -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1` and `npm run dev`)*
+
+### Linux / macOS / WSL (1-Click)
 ```bash
-pwsh -File scripts/bootstrap.ps1
+chmod +x setup.sh run.sh scripts/*.sh
+./setup.sh
+./run.sh
 ```
 
-Then run both services:
-
-```bash
-npm run dev
-```
-
-- Frontend → <http://localhost:3000>
-- API docs → <http://localhost:8000/docs>
+- Frontend UI → <http://localhost:3000>
+- API Docs → <http://localhost:8000/docs>
+- Default Login → `admin` / `Admin@123456`
+- See [SETUP_GUIDE.md](file:///d:/OCR/SETUP_GUIDE.md) for full step-by-step instructions, dependencies, and troubleshooting.
 
 <details>
 <summary>Manual setup, if you prefer</summary>
 
 ```bash
+# Backend
 python -m venv apps/api/.venv
-apps/api/.venv/Scripts/pip install -r apps/api/requirements.txt
-apps/api/.venv/Scripts/python -m uvicorn app.main:app --reload --port 8000
+# Windows: apps/api/.venv/Scripts/pip install -r apps/api/requirements.txt
+# Linux/Mac: apps/api/.venv/bin/pip install -r apps/api/requirements.txt
+# Windows: apps/api/.venv/Scripts/python -m uvicorn app.main:app --port 8000
+# Linux/Mac: apps/api/.venv/bin/python -m uvicorn app.main:app --port 8000
 ```
 
 ```bash
-npm ci && npm run build --workspace @ocr-workspace/web && npm run start --workspace @ocr-workspace/web
+# Frontend
+npm install
+npm run dev --workspace @ocr-workspace/web
 ```
 
 </details>

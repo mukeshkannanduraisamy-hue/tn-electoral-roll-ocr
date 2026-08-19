@@ -4,6 +4,12 @@
 *.sqlite
 *.sqlite3
 *.db
+*.xlsx
+*.xls
+*.csv
+*.log
+scratch/
+/scratch/
 
 # ---- Source PDF corpora (PII — keep out of git) ----
 /2026-EROLLGEN-*/
