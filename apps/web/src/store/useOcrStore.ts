@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { pauseJobApi, resumeJobApi, cancelJobApi } from "@/lib/api";
 import { resetDatabase as apiResetDatabase } from "@/lib/voterApi";
 
-export type ViewTab = "dashboard" | "table" | "page" | "review" | "voters" | "settings" | "analytics" | "polling_stations" | "validation";
+export type ViewTab = "dashboard" | "table" | "page" | "review" | "voters" | "settings" | "analytics" | "polling_stations" | "validation" | "database";
 
 // Per-file extraction progress tracked from SSE
 export interface FileJobProgress {
