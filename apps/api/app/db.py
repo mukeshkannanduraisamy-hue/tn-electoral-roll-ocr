@@ -1269,6 +1269,7 @@ def save_part_metadata(session: Session, file_id: str, metadata) -> None:
 
 
 def file_to_schema(row: FileRow) -> SourceFile:
+    folder_name = Path(row.stored_path).parent.name if row.stored_path else ""
     return SourceFile(
         id=row.id,
         name=row.name,
@@ -1280,6 +1281,8 @@ def file_to_schema(row: FileRow) -> SourceFile:
         languages=row.languages or [],
         created_at=row.created_at,
         error=row.error,
+        stored_path=row.stored_path or "",
+        folder_name=folder_name,
     )
 
 

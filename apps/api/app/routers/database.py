@@ -355,3 +355,47 @@ def execute_query(
             )
     except Exception as exc:
         raise HTTPException(400, f"Query error: {exc}") from exc
+
+
+@router.post("/tables/{name}/truncate")
+def truncate_single_table(
+    name: str,
+    session: Session = Depends(get_session),
+    user: UserRow = Depends(require_user),
+) -> dict:
+    """Truncate / delete all rows from a specific database table."""
+    name = _validate_table_name(name)
+    if name.lower() in ("sqlite_master", "sqlite_sequence", "sqlite_stat1", "users"):
+        raise HTTPException(400, f"Cannot truncate system/user table: {name}")
+    try:
+        session.execute(text(f"DELETE FROM {name};"))
+        session.commit()
+        logger.info("User %r truncated table %s", user.username, name)
+        return {"status": "ok", "message": f"Table {name} truncated successfully."}
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(500, f"Failed to truncate table {name}: {e}") from e
+
+
+@router.post("/truncate-all")
+def truncate_all_database_tables(
+    session: Session = Depends(get_session),
+    user: UserRow = Depends(require_user),
+) -> dict:
+    """Truncate all data tables in the database."""
+    tables = [
+        "audit_logs", "ocr_blocks", "photos", "records", "summaries",
+        "polling_stations", "pages", "files", "voters", "jobs"
+    ]
+    try:
+        for t in tables:
+            try:
+                session.execute(text(f"DELETE FROM {t};"))
+            except Exception:
+                pass
+        session.commit()
+        logger.info("User %r truncated entire database", user.username)
+        return {"status": "ok", "message": "All database tables truncated successfully."}
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(500, f"Database truncation failed: {e}") from e

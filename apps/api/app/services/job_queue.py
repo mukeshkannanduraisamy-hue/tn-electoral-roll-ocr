@@ -473,12 +473,12 @@ class JobManager:
                 )
 
 
-            # Spelling consensus needs every page of a file at once, so it
-            # runs after the fan-in rather than per page.
+            # Spelling consensus, section reconciliation, part metadata, and auto DB promotion
             for file_id in touched_files:
                 self._apply_consensus(file_id)
                 self._reconcile_sections(file_id)
                 self._extract_part_metadata(file_id)
+                self._auto_promote_to_db(file_id)
                 with session_scope() as session:
                     file_row = session.get(FileRow, file_id)
                     if file_row:
@@ -580,6 +580,23 @@ class JobManager:
             )
         except Exception:  # noqa: BLE001 - never fail a job over post-processing
             logger.exception("Part metadata extraction failed for file %s", file_id)
+
+    def _auto_promote_to_db(self, file_id: str) -> None:
+        """Auto-promote extracted OCR records to the curated voters table."""
+        try:
+            from ..routers.voters import auto_promote_file
+
+            with session_scope() as session:
+                res = auto_promote_file(session, file_id, actor="ocr_auto_pipeline")
+                logger.info(
+                    "Auto-promoted %s to DB: %d created, %d updated, %d skipped",
+                    file_id,
+                    res.created,
+                    res.updated,
+                    res.skipped,
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("Auto-promotion to DB failed for file %s", file_id)
 
     # --------------------------------------------------------------- helpers
 

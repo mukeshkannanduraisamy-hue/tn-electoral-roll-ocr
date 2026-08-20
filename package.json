@@ -4,10 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "node ./scripts/dev.js",
+    "dev:serena": "npm run dev --workspace @ocr-workspace/serena-ocr",
     "bootstrap": "node ./scripts/bootstrap.js",
     "test:backend": "node ./scripts/test-backend.js",
     "test:web": "npm run typecheck --workspace @ocr-workspace/web",
-    "build:web": "npm run build --workspace @ocr-workspace/web"
+    "build:web": "npm run build --workspace @ocr-workspace/web",
+    "test:serena": "npm run typecheck --workspace @ocr-workspace/serena-ocr",
+    "build:serena": "npm run build --workspace @ocr-workspace/serena-ocr"
   },
   "workspaces": [
     "apps/*",

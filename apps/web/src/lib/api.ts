@@ -1,6 +1,9 @@
 import {
   ExportRequest,
   FileStatus,
+  FolderPdfItem,
+  FolderScanRequest,
+  FolderScanResponse,
   Job,
   Page,
   Record_,
@@ -121,6 +124,24 @@ export async function importFolder(path: string, recursive = true): Promise<Sour
     body: JSON.stringify({ path, recursive }),
   });
   if (!res.ok) await handleError(res, "Folder import failed");
+  return res.json();
+}
+
+export async function scanFolder(path: string, recursive = true): Promise<FolderScanResponse> {
+  const res = await apiFetch("/api/files/scan-folder", {
+    method: "POST",
+    body: JSON.stringify({ path, recursive }),
+  });
+  if (!res.ok) await handleError(res, "Folder scan failed");
+  return res.json();
+}
+
+export async function reprocessFiles(fileIds: string[], templateId = "auto"): Promise<Job> {
+  const res = await apiFetch("/api/files/reprocess", {
+    method: "POST",
+    body: JSON.stringify({ file_ids: fileIds, template_id: templateId }),
+  });
+  if (!res.ok) await handleError(res, "Re-process failed");
   return res.json();
 }
 

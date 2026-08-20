@@ -20,6 +20,7 @@ import {
   Sparkles,
   Trash2,
   ShieldCheck,
+  Folder,
 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useOcrStore } from "@/store/useOcrStore";
@@ -241,8 +242,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         )}
 
-        {/* AI Assistant button. The assistant is global, so this no longer
-            switches tabs on the way to opening it. */}
+        {/* AI Assistant button */}
         <button
           onClick={() => window.dispatchEvent(new CustomEvent("vi-mc:open-ai-assistant"))}
           className="h-8 px-3 rounded-lg bg-gradient-to-r from-indigo-600 via-purple-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white text-xs font-black shadow-md flex items-center gap-1.5 transition-all"
@@ -251,6 +251,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           <Sparkles className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">AI Assistant</span>
         </button>
+
+        {/* Folder Batch OCR Pipeline button */}
+        <button
+          onClick={() => setActiveTab("folder_ocr")}
+          className="h-8 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 border border-indigo-500/40 text-indigo-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+          title="Select folder and batch process / re-process PDFs"
+        >
+          <Folder className="w-3.5 h-3.5 text-indigo-400" />
+          <span className="hidden sm:inline">Folder OCR</span>
+        </button>
+
         {/* Import button */}
         <button
           onClick={onOpenUpload}

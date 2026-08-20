@@ -28,8 +28,18 @@ if [ ! -f "$VENV_PY" ]; then
   exit 1
 fi
 
+# Load .env if present
+if [ -f "$REPO_ROOT/.env" ]; then
+  set -a
+  source "$REPO_ROOT/.env"
+  set +a
+fi
+
+BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${BACKEND_PORT:-8080}"
-WEB_PORT="${PORT:-3001}"
+WEB_HOST="${HOST:-127.0.0.1}"
+WEB_PORT="${PORT:-3000}"
+BACKEND_URL="${BACKEND_URL:-http://$BACKEND_HOST:$BACKEND_PORT}"
 
 echo -e "\033[1;36m===================================================\033[0m"
 echo -e "\033[1;36m    OCR Workspace - Starting Local Servers         \033[0m"
@@ -55,8 +65,8 @@ cleanup() {
 trap cleanup SIGINT SIGTERM EXIT
 
 # 1. Start Backend
-echo -e "\033[1;32m[backend]\033[0m  FastAPI running on http://localhost:$BACKEND_PORT (API Docs: http://localhost:$BACKEND_PORT/docs)"
-UVICORN_ARGS=("-m" "uvicorn" "app.main:app" "--port" "$BACKEND_PORT" "--host" "0.0.0.0")
+echo -e "\033[1;32m[backend]\033[0m  FastAPI running on http://$BACKEND_HOST:$BACKEND_PORT (API Docs: http://$BACKEND_HOST:$BACKEND_PORT/docs)"
+UVICORN_ARGS=("-m" "uvicorn" "app.main:app" "--host" "$BACKEND_HOST" "--port" "$BACKEND_PORT")
 if [ "$RELOAD" = true ]; then
   UVICORN_ARGS+=("--reload")
   echo -e "\033[1;33mAuto-reload ON - editing a .py file will restart the backend.\033[0m"
@@ -67,14 +77,19 @@ BACKEND_PID=$!
 
 # 2. Start Frontend
 if [ -f "$WEB_DIR/package.json" ]; then
-  echo -e "\033[1;35m[frontend]\033[0m Next.js running on http://localhost:$WEB_PORT"
-  (cd "$WEB_DIR" && BACKEND_URL="http://localhost:$BACKEND_PORT" npm run dev -- -p "$WEB_PORT") &
+  echo -e "\033[1;35m[frontend]\033[0m Next.js running on http://$WEB_HOST:$WEB_PORT"
+  (cd "$WEB_DIR" && HOST="$WEB_HOST" PORT="$WEB_PORT" BACKEND_URL="$BACKEND_URL" BACKEND_HOST="$BACKEND_HOST" BACKEND_PORT="$BACKEND_PORT" npm run dev -- -H "$WEB_HOST" -p "$WEB_PORT") &
   FRONTEND_PID=$!
 else
   echo -e "\033[1;33mapps/web/package.json not found. Running backend only.\033[0m"
 fi
 
-echo -e "\n\033[1;36mReady! Open \033[4mhttp://localhost:$WEB_PORT\033[0m in your browser.\033[0m"
+DISPLAY_HOST="$WEB_HOST"
+if [ "$DISPLAY_HOST" = "0.0.0.0" ]; then
+  DISPLAY_HOST="localhost"
+fi
+
+echo -e "\n\033[1;36mReady! Open \033[4mhttp://$DISPLAY_HOST:$WEB_PORT\033[0m in your browser.\033[0m"
 echo -e "Press Ctrl+C in this terminal to stop all servers.\n"
 
 # Wait for background processes

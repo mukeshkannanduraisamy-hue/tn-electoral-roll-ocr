@@ -21,7 +21,7 @@ interface UploadModalProps {
 }
 
 export const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
-  const { loadFiles, startBulkJob } = useOcrStore();
+  const { loadFiles, startBulkJob, setActiveTab: setStoreTab, setActiveFolder } = useOcrStore();
 
   const [activeTab, setActiveTab] = useState<"file" | "folder">("file");
   const [folderPath, setFolderPath] = useState("");
@@ -254,15 +254,29 @@ export const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => 
                   className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none font-mono"
                 />
               </div>
-              <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer font-medium">
-                <input
-                  type="checkbox"
-                  checked={recursive}
-                  onChange={(e) => setRecursive(e.target.checked)}
-                  className="rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-0 cursor-pointer"
-                />
-                Include subdirectories recursively
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer font-medium">
+                  <input
+                    type="checkbox"
+                    checked={recursive}
+                    onChange={(e) => setRecursive(e.target.checked)}
+                    className="rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-0 cursor-pointer"
+                  />
+                  Include subdirectories recursively
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (folderPath.trim()) setActiveFolder(folderPath.trim());
+                    setStoreTab("folder_ocr");
+                    handleClose();
+                  }}
+                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-semibold"
+                >
+                  Open in Folder OCR View →
+                </button>
+              </div>
             </div>
           )}
 

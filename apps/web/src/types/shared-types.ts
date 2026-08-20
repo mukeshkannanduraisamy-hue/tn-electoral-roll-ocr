@@ -356,6 +356,45 @@ export interface SourceFile {
   languages: string[];
   created_at: string;
   error: string | null;
+  stored_path?: string;
+  folder_name?: string;
+  records_count?: number;
+  ocr_duration_sec?: number | null;
+}
+
+export interface FolderScanRequest {
+  path: string;
+  recursive?: boolean;
+}
+
+export interface FolderPdfItem {
+  name: string;
+  stored_path: string;
+  folder_name: string;
+  size_bytes: number;
+  page_count: number;
+  is_registered: boolean;
+  file_id: string | null;
+  status: 'unregistered' | 'pending' | 'processing' | 'completed' | 'error';
+  pages_done: number;
+  records_count: number;
+  ocr_duration_sec: number | null;
+  error: string | null;
+  created_at: string | null;
+}
+
+export interface FolderScanResponse {
+  folder_path: string;
+  folder_name: string;
+  total_files: number;
+  total_pages: number;
+  total_size_bytes: number;
+  completed_count: number;
+  pending_count: number;
+  processing_count: number;
+  error_count: number;
+  unregistered_count: number;
+  items: FolderPdfItem[];
 }
 
 export type JobStatus =

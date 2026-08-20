@@ -3,6 +3,7 @@
 import React from "react";
 import {
   LayoutDashboard,
+  Folder,
   FileText,
   Users,
   BarChart3,
@@ -30,14 +31,15 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "dashboard", stepNum: "01", label: "Dashboard", icon: LayoutDashboard, group: "stage1" },
-  { id: "table", stepNum: "02", label: "Documents", icon: FileText, group: "stage2" },
-  { id: "page", stepNum: "03", label: "Page Viewer", icon: Eye, group: "stage2" },
-  { id: "review", stepNum: "04", label: "Review Queue", icon: ClipboardCheck, group: "stage2" },
-  { id: "voters", stepNum: "05", label: "Voter Roll", icon: Users, group: "stage3" },
-  { id: "polling_stations", stepNum: "06", label: "Polling Stations", icon: Building2, group: "stage3" },
-  { id: "analytics", stepNum: "07", label: "Analytics", icon: BarChart3, group: "stage4" },
-  { id: "database", stepNum: "08", label: "Database", icon: Database, group: "stage4" },
-  { id: "settings", stepNum: "09", label: "Settings", icon: Settings, group: "stage4" },
+  { id: "folder_ocr", stepNum: "02", label: "Folder Batch OCR", icon: Folder, group: "stage2" },
+  { id: "table", stepNum: "03", label: "Documents", icon: FileText, group: "stage2" },
+  { id: "page", stepNum: "04", label: "Page Viewer", icon: Eye, group: "stage2" },
+  { id: "review", stepNum: "05", label: "Review Queue", icon: ClipboardCheck, group: "stage2" },
+  { id: "voters", stepNum: "06", label: "Voter Roll", icon: Users, group: "stage3" },
+  { id: "polling_stations", stepNum: "07", label: "Polling Stations", icon: Building2, group: "stage3" },
+  { id: "analytics", stepNum: "08", label: "Analytics", icon: BarChart3, group: "stage4" },
+  { id: "database", stepNum: "09", label: "Database", icon: Database, group: "stage4" },
+  { id: "settings", stepNum: "10", label: "Settings", icon: Settings, group: "stage4" },
 ];
 
 const GROUP_LABELS: Record<string, string> = {

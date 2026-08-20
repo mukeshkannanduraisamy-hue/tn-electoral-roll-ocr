@@ -989,36 +989,16 @@ def resolve_duplicate_epics(
     return {epic: record_id for epic, (_key, record_id) in best.items()}
 
 
-@router.post("/promote", response_model=PromotionResult)
-def promote_records(
-    payload: PromotionRequest,
-    session: Session = Depends(get_session),
-    user: UserRow = Depends(require_user),
+def execute_promotion(
+    session: Session,
+    rows: list[RecordRow],
+    on_conflict: str = "overwrite",
+    only_clean: bool = False,
+    actor: str = "system",
 ) -> PromotionResult:
-    """Copy reviewed OCR records into the curated table.
-
-    A duplicate EPIC is reported as a conflict rather than raising, so one
-    bad row cannot abort a 30-record page. That is the entire reason the two
-    tables are separate.
-    """
-    stmt = select(RecordRow)
-    if payload.record_ids:
-        stmt = stmt.where(RecordRow.id.in_(payload.record_ids))
-    elif payload.page_id:
-        stmt = stmt.where(RecordRow.page_id == payload.page_id)
-    elif payload.file_id:
-        stmt = stmt.where(RecordRow.file_id == payload.file_id)
-    elif payload.all_documents:
-        pass
-    else:
-        raise HTTPException(400, "Provide record_ids, page_id, file_id, or all_documents")
-
-    # `only_clean` is applied in Python rather than here, because the
-    # exception to it -- a deletion -- lives inside the JSON `fields` column,
-    # and reaching into that from SQL differs between SQLite and Postgres.
-    rows = session.execute(stmt.order_by(RecordRow.page_number, RecordRow.index)).scalars().all()
+    """Core logic to promote RecordRows to VoterRows."""
     if not rows:
-        raise HTTPException(404, "No matching records to promote")
+        return PromotionResult()
 
     # Page/file context, fetched once rather than per record.
     file_names = dict(session.execute(select(FileRow.id, FileRow.name)).all())
@@ -1028,10 +1008,6 @@ def promote_records(
             select(PageRow).where(PageRow.id.in_({r.page_id for r in rows}))
         ).scalars().all()
     }
-    # The cover sheet has already been read into a station row, so the part
-    # number and constituency come from there rather than from scraping the
-    # page header -- which is how they end up matching what the station is
-    # filed under, and therefore how a station's voters can be found at all.
     stations = {
         s.file_id: s for s in
         session.execute(
@@ -1053,20 +1029,14 @@ def promote_records(
     # Pre-parse rows and pre-fetch all existing VoterRow instances by EPIC in batch
     row_records = [(row, row_to_record(row)) for row in rows]
 
-    if payload.only_clean:
-        # A record that fails validation is not fit to define an elector --
-        # unless it is the roll striking one off. A deletion is a status, not
-        # a reading, and a struck-through cell fails validation routinely
-        # because the stamp costs the age line a digit. Excluding those left
-        # 160 struck-off electors sitting active on the Penn corpus. They are
-        # admitted here so `resolve_deletions` can see them; the elector's
-        # actual details still come from a clean record wherever one exists.
+    if only_clean:
         row_records = [
             (row, record) for row, record in row_records
             if row.error_count == 0 or _field_value(record, "is_deleted") == "Yes"
         ]
         if not row_records:
-            raise HTTPException(404, "No matching records to promote")
+            return PromotionResult()
+
     epic_list = list({
         normalise_epic(_field_value(rec, "epic"))
         for _, rec in row_records
@@ -1082,11 +1052,6 @@ def promote_records(
             for v in v_rows:
                 existing_voters_map[v.epic] = v
 
-    # An EPIC repeating in the batch is normal -- a supplement reprints an
-    # elector to strike them off, and the corpus holds two revisions of some
-    # parts -- so decide which record represents each elector before promoting
-    # any of them, rather than letting page order decide it. See
-    # `resolve_duplicate_epics`.
     candidates = [
         PromotionCandidate(
             record_id=row.id,
@@ -1106,8 +1071,6 @@ def promote_records(
         if normalise_epic(_field_value(record, "epic"))
     ]
     winning_record_ids = resolve_duplicate_epics(candidates)
-    # Decided across every record for an elector, not just the winning one, so
-    # a deletion the roll printed on a page that reads badly still lands.
     deleted_epics = resolve_deletions(candidates)
 
     result = PromotionResult()
@@ -1124,10 +1087,6 @@ def promote_records(
             result.skipped += 1
             continue
 
-        # This elector appears more than once in the batch and another record
-        # represents them better -- a later revision, or the supplement entry
-        # that struck them off. Reported rather than dropped silently, because
-        # the count is how you notice a part has been supplied twice.
         winner_id = winning_record_ids.get(epic)
         if winner_id is not None and winner_id != row.id:
             result.conflicts.append(PromotionConflict(
@@ -1137,9 +1096,6 @@ def promote_records(
             result.skipped += 1
             continue
 
-        # Belt and braces: two records cannot both be the winner, so reaching
-        # here twice for one EPIC would mean the resolution disagreed with the
-        # scan. Catch it before the database's unique index does.
         if epic in seen_in_batch:
             result.conflicts.append(PromotionConflict(
                 record_id=row.id, epic=epic,
@@ -1150,7 +1106,7 @@ def promote_records(
 
         existing = existing_voters_map.get(epic)
 
-        if existing is not None and payload.on_conflict == "skip":
+        if existing is not None and on_conflict == "skip":
             result.conflicts.append(PromotionConflict(
                 record_id=row.id, epic=epic,
                 reason="EPIC already exists in the voter database",
@@ -1165,9 +1121,6 @@ def promote_records(
         age_raw = _field_value(record, "age")
         serial_raw = _field_value(record, "serial")
 
-        # An elector added by a supplement is not a base-roll elector: they
-        # were added after the base roll was published, and any report that
-        # cannot tell the two apart misstates the revision.
         is_supplement = bool(page and page.page_type == "supplement_page")
 
         constituency = header[:255]
@@ -1191,17 +1144,11 @@ def promote_records(
             "constituency": constituency,
             "polling_station_id": station.id if station else None,
             "is_supplement": is_supplement,
-            # Resolved across every record for this elector rather than read
-            # off this one, because the roll often strikes an elector off on a
-            # reprint that reads too badly to be the record promoted. An
-            # elector nobody deleted at their latest revision is active.
             "is_deleted": epic in deleted_epics,
             "section_name": (
                 _field_value(record, "section_name")
-                or (page.payload or {}).get("section_name", "") if page else ""
-            )[:500],
-            # The reason comes from whichever record carried the deletion,
-            # which is frequently not this one.
+                or (station.address if station else None)
+            ),
             "deletion_reason": (
                 deleted_epics.get(epic)
                 or _field_value(record, "deletion_reason")
@@ -1214,21 +1161,18 @@ def promote_records(
             "page_id": row.page_id,
         }
 
-        if existing is not None:  # on_conflict == "update"
-            # Per-field here, unlike creation: re-promoting an existing
-            # elector overwrites values a reviewer may have corrected by
-            # hand, and the trail has to show exactly what was overwritten.
+        if existing is not None:
             _apply_fields(
-                existing, values, user.username, session, audit_action="promoted"
+                existing, values, actor, session, audit_action="promoted"
             )
             result.updated += 1
             result.voter_ids.append(existing.id)
         else:
-            voter = VoterRow(id=uuid.uuid4().hex[:12], created_by=user.username)
-            _apply_fields(voter, values, user.username)
+            voter = VoterRow(id=uuid.uuid4().hex[:12], created_by=actor)
+            _apply_fields(voter, values, actor)
             session.add(voter)
             record_audit(
-                session, voter.id, action="promoted", user=user.username,
+                session, voter.id, action="promoted", user=actor,
                 new_value=f"{voter.epic} {voter.name}".strip(),
                 file_id=row.file_id, page_id=row.page_id,
             )
@@ -1236,8 +1180,6 @@ def promote_records(
             result.voter_ids.append(voter.id)
             existing_voters_map[epic] = voter
 
-        # The crop was taken during extraction, before any voter existed;
-        # promotion is the first moment it can be attributed to one.
         photo = photos_by_record.get(row.id)
         if photo is not None:
             photo.voter_id = existing.id if existing is not None else result.voter_ids[-1]
@@ -1251,10 +1193,74 @@ def promote_records(
         raise HTTPException(409, f"Promotion failed on a uniqueness conflict: {exc}") from exc
 
     logger.info(
-        "User %r promoted %d created / %d updated / %d skipped",
-        user.username, result.created, result.updated, result.skipped,
+        "Actor %r promoted %d created / %d updated / %d skipped",
+        actor, result.created, result.updated, result.skipped,
     )
     return result
+
+
+def auto_promote_file(session: Session, file_id: str, actor: str = "system") -> PromotionResult:
+    """Auto-promote records for a single file into the voters table."""
+    rows = session.execute(
+        select(RecordRow).where(RecordRow.file_id == file_id).order_by(RecordRow.page_number, RecordRow.index)
+    ).scalars().all()
+    if not rows:
+        return PromotionResult()
+    return execute_promotion(session, rows, on_conflict="overwrite", only_clean=False, actor=actor)
+
+
+@router.post("/promote", response_model=PromotionResult)
+def promote_records(
+    payload: PromotionRequest,
+    session: Session = Depends(get_session),
+    user: UserRow = Depends(require_user),
+) -> PromotionResult:
+    """Copy reviewed OCR records into the curated table."""
+    stmt = select(RecordRow)
+    if payload.record_ids:
+        stmt = stmt.where(RecordRow.id.in_(payload.record_ids))
+    elif payload.page_id:
+        stmt = stmt.where(RecordRow.page_id == payload.page_id)
+    elif payload.file_id:
+        stmt = stmt.where(RecordRow.file_id == payload.file_id)
+    elif payload.all_documents:
+        pass
+    else:
+        raise HTTPException(400, "Provide record_ids, page_id, file_id, or all_documents")
+
+    rows = session.execute(stmt.order_by(RecordRow.page_number, RecordRow.index)).scalars().all()
+    if not rows:
+        raise HTTPException(404, "No matching records to promote")
+
+    return execute_promotion(
+        session,
+        rows,
+        on_conflict=payload.on_conflict,
+        only_clean=payload.only_clean,
+        actor=user.username,
+    )
+
+
+@router.post("/promote-all", response_model=PromotionResult)
+def promote_all_records(
+    on_conflict: str = Query("overwrite", pattern="^(skip|overwrite)$"),
+    only_clean: bool = Query(False),
+    session: Session = Depends(get_session),
+    user: UserRow = Depends(require_user),
+) -> PromotionResult:
+    """Promote every OCR record in the database to the curated voter table."""
+    rows = session.execute(
+        select(RecordRow).order_by(RecordRow.page_number, RecordRow.index)
+    ).scalars().all()
+    if not rows:
+        return PromotionResult()
+    return execute_promotion(
+        session,
+        rows,
+        on_conflict=on_conflict,
+        only_clean=only_clean,
+        actor=user.username,
+    )
 
 
 @router.post("/reset-database")

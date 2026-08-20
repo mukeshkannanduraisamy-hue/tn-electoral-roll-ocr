@@ -13,7 +13,15 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import FileRow, JobRow, PageRow, RecordRow, file_to_schema, get_session
-from ..schemas.core import FileStatus, JobStatus, SourceFile
+from ..schemas.core import (
+    FileStatus,
+    FolderPdfItem,
+    FolderScanRequest,
+    FolderScanResponse,
+    Job,
+    JobStatus,
+    SourceFile,
+)
 from ..services import pdf_service
 from ..services.job_queue import manager
 
@@ -150,13 +158,185 @@ def list_files(session: Session = Depends(get_session)) -> list[SourceFile]:
             .scalars()
             .all()
         )
-        return [file_to_schema(r) for r in rows]
+        if not rows:
+            return []
+
+        # Bulk query record counts per file
+        rec_counts = dict(
+            session.execute(
+                select(RecordRow.file_id, func.count(RecordRow.id)).group_by(RecordRow.file_id)
+            ).all()
+        )
+
+        # Bulk query total OCR duration in ms per file
+        ocr_durations = dict(
+            session.execute(
+                select(PageRow.file_id, func.sum(PageRow.ocr_ms)).group_by(PageRow.file_id)
+            ).all()
+        )
+
+        result: list[SourceFile] = []
+        for r in rows:
+            schema = file_to_schema(r)
+            schema.records_count = rec_counts.get(r.id, 0)
+            total_ocr_ms = ocr_durations.get(r.id, 0) or 0
+            if total_ocr_ms > 0:
+                schema.ocr_duration_sec = round(total_ocr_ms / 1000.0, 1)
+            result.append(schema)
+        return result
     except Exception as exc:
         logger.error("Failed to list files: %s", exc, exc_info=True)
         raise HTTPException(500, f"Failed to fetch files from database: {exc}")
 
 
-# ── /import-folder MUST be declared BEFORE /{file_id} to avoid shadowing ───
+# ── Special named routes MUST be declared BEFORE /{file_id} to avoid shadowing ───
+
+@router.post("/scan-folder", response_model=FolderScanResponse)
+def scan_folder(
+    payload: FolderScanRequest,
+    session: Session = Depends(get_session),
+) -> FolderScanResponse:
+    """Scan a local directory for PDFs, returning metadata and current DB registration/processing status."""
+    folder_raw = payload.path.strip()
+    if not folder_raw:
+        raise HTTPException(400, "Folder path cannot be empty")
+
+    folder = Path(folder_raw).expanduser().resolve()
+    if not folder.is_dir():
+        raise HTTPException(400, f"Directory not found: {folder}")
+
+    pattern = "**/*.pdf" if payload.recursive else "*.pdf"
+    try:
+        paths = sorted(folder.glob(pattern))
+    except Exception as e:
+        raise HTTPException(400, f"Failed to scan folder: {e}")
+
+    # Query registered files from DB
+    db_files = session.execute(select(FileRow)).scalars().all()
+    files_by_path = {f.stored_path: f for f in db_files if f.stored_path}
+    files_by_name = {f.name: f for f in db_files if f.name}
+
+    # Aggregate records and ocr_ms
+    rec_counts = dict(
+        session.execute(
+            select(RecordRow.file_id, func.count(RecordRow.id)).group_by(RecordRow.file_id)
+        ).all()
+    )
+    ocr_durations = dict(
+        session.execute(
+            select(PageRow.file_id, func.sum(PageRow.ocr_ms)).group_by(PageRow.file_id)
+        ).all()
+    )
+
+    items: list[FolderPdfItem] = []
+    completed_cnt = 0
+    pending_cnt = 0
+    processing_cnt = 0
+    error_cnt = 0
+    unregistered_cnt = 0
+    total_size = 0
+    total_pages = 0
+
+    for p in paths:
+        str_path = str(p)
+        size = p.stat().st_size if p.exists() else 0
+        total_size += size
+
+        db_file = files_by_path.get(str_path) or files_by_name.get(p.name)
+
+        if db_file:
+            is_reg = True
+            fid = db_file.id
+            stat = db_file.status
+            pdone = db_file.pages_done
+            pg_count = db_file.page_count
+            rcount = rec_counts.get(fid, 0)
+            ocr_ms = ocr_durations.get(fid, 0) or 0
+            ocr_sec = round(ocr_ms / 1000.0, 1) if ocr_ms > 0 else None
+            err = db_file.error
+            c_at = db_file.created_at
+
+            if stat == "completed":
+                completed_cnt += 1
+            elif stat == "processing":
+                processing_cnt += 1
+            elif stat == "error":
+                error_cnt += 1
+            else:
+                pending_cnt += 1
+        else:
+            is_reg = False
+            fid = None
+            stat = "unregistered"
+            pdone = 0
+            rcount = 0
+            ocr_sec = None
+            err = None
+            c_at = None
+            unregistered_cnt += 1
+            # Fast page count inspect
+            try:
+                info = pdf_service.inspect(p)
+                pg_count = info.page_count
+            except Exception:
+                pg_count = 0
+
+        total_pages += pg_count
+
+        items.append(
+            FolderPdfItem(
+                name=p.name,
+                stored_path=str_path,
+                folder_name=p.parent.name,
+                size_bytes=size,
+                page_count=pg_count,
+                is_registered=is_reg,
+                file_id=fid,
+                status=stat,
+                pages_done=pdone,
+                records_count=rcount,
+                ocr_duration_sec=ocr_sec,
+                error=err,
+                created_at=c_at,
+            )
+        )
+
+    return FolderScanResponse(
+        folder_path=str(folder),
+        folder_name=folder.name,
+        total_files=len(items),
+        total_pages=total_pages,
+        total_size_bytes=total_size,
+        completed_count=completed_cnt,
+        pending_count=pending_cnt,
+        processing_count=processing_cnt,
+        error_count=error_cnt,
+        unregistered_count=unregistered_cnt,
+        items=items,
+    )
+
+
+@router.post("/reprocess", response_model=Job)
+def reprocess_files(
+    payload: dict,
+    session: Session = Depends(get_session),
+) -> Job:
+    """Reset file status and re-submit an OCR extraction job."""
+    file_ids = payload.get("file_ids", [])
+    template_id = payload.get("template_id", "auto")
+    if not file_ids:
+        raise HTTPException(400, "No file IDs provided for re-processing")
+
+    for fid in file_ids:
+        row = session.get(FileRow, fid)
+        if row is not None:
+            row.status = FileStatus.PENDING.value
+            row.pages_done = 0
+            row.error = None
+    session.flush()
+
+    return manager.submit(file_ids, template_id=template_id)
+
 
 @router.post("/import-folder", response_model=list[SourceFile])
 def import_folder(
@@ -182,13 +362,18 @@ def import_folder(
             "Folder import is disabled on this deployment. Upload the PDFs instead.",
         )
 
-    folder = Path(str(payload.get("path", ""))).expanduser()
+    target = Path(str(payload.get("path", ""))).expanduser()
     recursive = bool(payload.get("recursive", True))
-    if not folder.is_dir():
-        raise HTTPException(400, f"Not a directory: {folder}")
+    if target.is_file():
+        if target.suffix.lower() != ".pdf":
+            raise HTTPException(400, f"Not a PDF file: {target}")
+        paths = [target]
+    elif target.is_dir():
+        pattern = "**/*.pdf" if recursive else "*.pdf"
+        paths = sorted(target.glob(pattern))
+    else:
+        raise HTTPException(400, f"Path does not exist: {target}")
 
-    pattern = "**/*.pdf" if recursive else "*.pdf"
-    paths = sorted(folder.glob(pattern))
     if not paths:
         return []
 

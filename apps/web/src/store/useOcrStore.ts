@@ -6,6 +6,7 @@ import {
   RecordStats,
   deleteFile as apiDeleteFile,
   createJob,
+  reprocessFiles as apiReprocessFiles,
   reocrPage as apiReocrPage,
   bulkUpdateRecords,
 } from "@/lib/api";
@@ -14,7 +15,18 @@ import { toast } from "sonner";
 import { pauseJobApi, resumeJobApi, cancelJobApi } from "@/lib/api";
 import { resetDatabase as apiResetDatabase } from "@/lib/voterApi";
 
-export type ViewTab = "dashboard" | "table" | "page" | "review" | "voters" | "settings" | "analytics" | "polling_stations" | "validation" | "database";
+export type ViewTab =
+  | "dashboard"
+  | "folder_ocr"
+  | "table"
+  | "page"
+  | "review"
+  | "voters"
+  | "settings"
+  | "analytics"
+  | "polling_stations"
+  | "validation"
+  | "database";
 
 // Per-file extraction progress tracked from SSE
 export interface FileJobProgress {
@@ -83,6 +95,10 @@ interface OcrState {
   confirmModal: ConfirmModalState | null;
   setConfirmModal: (modal: ConfirmModalState | null) => void;
 
+  // Active folder selection
+  activeFolder: string;
+  setActiveFolder: (folder: string) => void;
+
   // Actions
   loadFiles: () => Promise<void>;
   setActiveFileId: (id: string | null) => void;
@@ -116,6 +132,8 @@ interface OcrState {
 
   // Starts an OCR job for given fileIds
   startBulkJob: (fileIds: string[], templateId?: string, allPending?: boolean) => Promise<Job | null>;
+  reprocessFile: (fileId: string, templateId?: string) => Promise<Job | null>;
+  reprocessBulkFiles: (fileIds: string[], templateId?: string) => Promise<Job | null>;
 }
 
 
@@ -445,6 +463,9 @@ export const useOcrStore = create<OcrState>((set, get) => ({
     }
   },
 
+  activeFolder: "D:\\OCR\\PDF\\Penn PDF",
+  setActiveFolder: (activeFolder) => set({ activeFolder }),
+
   startBulkJob: async (fileIds, templateId = "auto", allPending = false) => {
     try {
       const job = await createJob(fileIds, templateId, allPending);
@@ -455,6 +476,34 @@ export const useOcrStore = create<OcrState>((set, get) => ({
     } catch (e) {
       console.error("Failed to start OCR job", e);
       toast.error("Failed to initiate OCR extraction job");
+      return null;
+    }
+  },
+
+  reprocessFile: async (fileId, templateId = "auto") => {
+    try {
+      const job = await apiReprocessFiles([fileId], templateId);
+      set({ activeJobId: job.id, activeJobStatus: "running", activeJobProgress: 0, fileJobProgress: {} });
+      attachJobSSE(job.id, get, set as any);
+      toast.info(`Re-processing started for file #${fileId.slice(0, 6)}`);
+      return job;
+    } catch (e) {
+      console.error("Failed to re-process file", e);
+      toast.error("Failed to initiate re-processing");
+      return null;
+    }
+  },
+
+  reprocessBulkFiles: async (fileIds, templateId = "auto") => {
+    try {
+      const job = await apiReprocessFiles(fileIds, templateId);
+      set({ activeJobId: job.id, activeJobStatus: "running", activeJobProgress: 0, fileJobProgress: {} });
+      attachJobSSE(job.id, get, set as any);
+      toast.info(`Re-processing started for ${fileIds.length} files`);
+      return job;
+    } catch (e) {
+      console.error("Failed to re-process files", e);
+      toast.error("Failed to initiate bulk re-processing");
       return null;
     }
   },

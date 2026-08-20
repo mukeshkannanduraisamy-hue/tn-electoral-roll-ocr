@@ -352,8 +352,47 @@ class SourceFile(BaseModel):
     languages: list[str] = Field(default_factory=list)
     created_at: datetime
     error: str | None = None
+    ocr_duration_sec: float | None = None
+    records_count: int = 0
+    stored_path: str = ""
+    folder_name: str = ""
 
     model_config = {"use_enum_values": True}
+
+
+class FolderScanRequest(BaseModel):
+    path: str
+    recursive: bool = True
+
+
+class FolderPdfItem(BaseModel):
+    name: str
+    stored_path: str
+    folder_name: str = ""
+    size_bytes: int = 0
+    page_count: int = 0
+    is_registered: bool = False
+    file_id: str | None = None
+    status: str = "unregistered"
+    pages_done: int = 0
+    records_count: int = 0
+    ocr_duration_sec: float | None = None
+    error: str | None = None
+    created_at: datetime | None = None
+
+
+class FolderScanResponse(BaseModel):
+    folder_path: str
+    folder_name: str = ""
+    total_files: int = 0
+    total_pages: int = 0
+    total_size_bytes: int = 0
+    completed_count: int = 0
+    pending_count: int = 0
+    processing_count: int = 0
+    error_count: int = 0
+    unregistered_count: int = 0
+    items: list[FolderPdfItem] = Field(default_factory=list)
 
 
 class JobStatus(str, Enum):

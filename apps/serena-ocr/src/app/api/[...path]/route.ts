@@ -8,10 +8,6 @@ const BACKEND = (
     : "http://127.0.0.1:8080")
 ).replace(/\/$/, "");
 
-// Use Node.js fetch with no timeout cap — the default Next.js rewrite proxy
-// has a very short socket timeout (~5 s) that kills long promote operations
-// before the backend finishes. This route handler proxies /api/* with the
-// full Node.js fetch which respects the backend's own timeout.
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
@@ -55,7 +51,6 @@ async function proxyRequest(
   const url = new URL(request.url);
   const targetUrl = `${BACKEND}/api/${path}${url.search}`;
 
-  // Forward all headers except host
   const headers = new Headers();
   request.headers.forEach((value, key) => {
     if (key.toLowerCase() !== "host") {
@@ -63,7 +58,6 @@ async function proxyRequest(
     }
   });
 
-  // Read body for methods that may have one
   let body: BodyInit | null = null;
   const method = request.method;
   if (!["GET", "HEAD"].includes(method)) {
@@ -76,14 +70,12 @@ async function proxyRequest(
       method,
       headers,
       body: body ?? undefined,
-      // @ts-ignore — Allow unbounded streaming for SSE events; 15 mins for bulk operations
+      // @ts-ignore
       signal: isStream ? undefined : AbortSignal.timeout(900_000),
     });
 
-    // Stream the response back
     const responseHeaders = new Headers();
     response.headers.forEach((value, key) => {
-      // Skip headers that Next.js manages itself
       if (!["transfer-encoding", "connection"].includes(key.toLowerCase())) {
         responseHeaders.set(key, value);
       }
@@ -96,7 +88,7 @@ async function proxyRequest(
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[API Proxy] Failed to proxy ${targetUrl}:`, message);
+    console.error(`[Serena Proxy] Failed to proxy ${targetUrl}:`, message);
     return NextResponse.json(
       { detail: `Proxy error: ${message}` },
       { status: 502 }

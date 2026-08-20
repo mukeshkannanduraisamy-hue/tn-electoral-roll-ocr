@@ -24,6 +24,7 @@ import { PollingStationsView } from "@/components/PollingStationsView";
 import { DatabaseView } from "@/components/DatabaseView";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
 import { FloatingAiChatbot } from "@/components/FloatingAiChatbot";
+import { FolderBatchOcrView } from "@/components/FolderBatchOcrView";
 
 
 export default function Home() {
@@ -134,6 +135,7 @@ export default function Home() {
         <main className="flex-1 flex flex-col overflow-hidden min-w-0">
           <div className="flex-1 flex overflow-hidden min-w-0">
             {activeTab === "dashboard"        && <DashboardView />}
+            {activeTab === "folder_ocr"       && <FolderBatchOcrView />}
             {activeTab === "voters"           && <VotersView />}
             {activeTab === "polling_stations" && <PollingStationsView />}
             {activeTab === "table"            && <DocumentView />}
