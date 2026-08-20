@@ -65,11 +65,8 @@ console.log('\x1b[36m    OCR Workspace - Starting Local Servers\x1b[0m');
 console.log('\x1b[36m===================================================\x1b[0m\n');
 
 // 1. Backend process
-const uvicornArgs = ['-m', 'uvicorn', 'app.main:app', '--host', backendHost, '--port', backendPort];
-if (isReload) {
-  uvicornArgs.push('--reload');
-  console.log('\x1b[33mAuto-reload ON - editing a .py file will restart the backend.\x1b[0m');
-}
+const uvicornArgs = ['-m', 'uvicorn', 'app.main:app', '--host', backendHost, '--port', backendPort, '--reload'];
+console.log('\x1b[33mAuto-reload ON - editing a .py file will restart the backend.\x1b[0m');
 
 console.log(`\x1b[32m[backend]\x1b[0m FastAPI running on      \x1b[4mhttp://${backendHost}:${backendPort}\x1b[0m (API Docs: \x1b[4mhttp://${backendHost}:${backendPort}/docs\x1b[0m)`);
 const backend = spawn(venvPython, uvicornArgs, {
