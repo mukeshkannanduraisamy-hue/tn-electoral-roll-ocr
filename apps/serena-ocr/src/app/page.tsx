@@ -8,6 +8,7 @@ import { SerenaToolbar } from "@/components/SerenaToolbar";
 import { SerenaPdfCard } from "@/components/SerenaPdfCard";
 import { SerenaPdfTable } from "@/components/SerenaPdfTable";
 import { DatabasePage } from "@/components/DatabasePage";
+import { LocalDeploymentPage } from "@/components/LocalDeploymentPage";
 import { SerenaAuthModal } from "@/components/SerenaAuthBar";
 import { Folder, Loader2, RefreshCw } from "lucide-react";
 
@@ -85,7 +86,7 @@ export default function SerenaHome() {
       {/* Top Header */}
       <SerenaHeader onOpenAuth={() => setIsAuthOpen(true)} />
 
-      {/* RENDER VIEW: Batch OCR Workstation vs. Database Explorer */}
+      {/* RENDER VIEW: Batch OCR Workstation vs. Database Explorer vs. Local Deployment */}
       {activeTab === "workstation" ? (
         <>
           {/* Metrics HUD */}
@@ -136,9 +137,12 @@ export default function SerenaHome() {
             )}
           </main>
         </>
-      ) : (
+      ) : activeTab === "database" ? (
         /* Database Page */
         <DatabasePage />
+      ) : (
+        /* Local Auto Deployment Page */
+        <LocalDeploymentPage />
       )}
 
       {/* Auth Modal */}

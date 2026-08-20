@@ -17,7 +17,7 @@ export class ApiError extends Error {
   }
 }
 
-async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+export async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   const target = url.startsWith("http") ? url : `${API_BASE}${url}`;
   const res = await fetch(target, {
     ...init,

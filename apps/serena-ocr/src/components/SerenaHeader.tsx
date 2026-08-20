@@ -17,6 +17,7 @@ import {
   Moon,
   CheckCircle2,
   Zap,
+  Rocket,
 } from "lucide-react";
 import { useSerenaStore } from "@/store/useSerenaStore";
 import { uploadFiles } from "@/lib/api";
@@ -125,7 +126,19 @@ export const SerenaHeader: React.FC<{ onOpenAuth: () => void }> = ({ onOpenAuth 
             }`}
           >
             <Database className="w-4 h-4" />
-            <span>Database Explorer</span>
+            <span>Database</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("deployment")}
+            className={`px-4 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+              activeTab === "deployment"
+                ? "bg-gradient-to-r from-serena-indigo to-serena-violet text-white shadow-md shadow-serena-indigo/20"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+            }`}
+          >
+            <Rocket className="w-4 h-4" />
+            <span>Auto Deployment</span>
           </button>
         </div>
 

@@ -51,13 +51,13 @@ export interface SerenaState {
 
   // Theme & Navigation State
   theme: "dark" | "light";
-  activeTab: "workstation" | "database";
+  activeTab: "workstation" | "database" | "deployment";
   autoInsertToDb: boolean;
 
   // Setters
   setTheme: (t: "dark" | "light") => void;
   toggleTheme: () => void;
-  setActiveTab: (tab: "workstation" | "database") => void;
+  setActiveTab: (tab: "workstation" | "database" | "deployment") => void;
   toggleAutoInsertToDb: () => void;
   setFolderPath: (path: string) => void;
   setRecursive: (val: boolean) => void;
