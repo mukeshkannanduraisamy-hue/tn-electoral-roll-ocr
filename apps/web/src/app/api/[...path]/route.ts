@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 const BACKEND = (
   process.env.BACKEND_URL ||
   process.env.NEXT_PUBLIC_API_BASE ||
-  "http://localhost:8000"
+  "http://127.0.0.1:8080"
 ).replace(/\/$/, "");
 
 // Use Node.js fetch with no timeout cap — the default Next.js rewrite proxy
