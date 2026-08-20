@@ -27,8 +27,8 @@ This guide explains how to set up and run the **Tamil Nadu Electoral Roll OCR Wo
    - *This automatically detects/installs Python 3.11, creates the virtualenv, installs dependencies, downloads OCR models, sets up `.env`, and installs npm packages.*
 3. Double-click `run.bat` (or run `run.bat`).
 4. Open your browser:
-   - **Frontend UI:** [http://localhost:3000](http://localhost:3000)
-   - **Backend Swagger API Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+   - **Frontend UI:** [http://localhost:3001](http://localhost:3001)
+   - **Backend Swagger API Docs:** [http://localhost:8080/docs](http://localhost:8080/docs)
    - **Default Admin Login:** Username `admin` | Password `Admin@123456`
 
 ### Method 2: PowerShell

@@ -28,7 +28,12 @@ if [ ! -f "$VENV_PY" ]; then
   exit 1
 fi
 
-echo -e "\033[1;36m=== Starting OCR Workspace Dev Servers ===\033[0m"
+BACKEND_PORT="${BACKEND_PORT:-8080}"
+WEB_PORT="${PORT:-3001}"
+
+echo -e "\033[1;36m===================================================\033[0m"
+echo -e "\033[1;36m    OCR Workspace - Starting Local Servers         \033[0m"
+echo -e "\033[1;36m===================================================\033[0m\n"
 
 # PIDs to cleanup
 BACKEND_PID=""
@@ -50,8 +55,8 @@ cleanup() {
 trap cleanup SIGINT SIGTERM EXIT
 
 # 1. Start Backend
-echo -e "\033[1;32mStarting FastAPI backend on http://localhost:8000 ...\033[0m"
-UVICORN_ARGS=("-m" "uvicorn" "app.main:app" "--port" "8000" "--host" "0.0.0.0")
+echo -e "\033[1;32m[backend]\033[0m  FastAPI running on http://localhost:$BACKEND_PORT (API Docs: http://localhost:$BACKEND_PORT/docs)"
+UVICORN_ARGS=("-m" "uvicorn" "app.main:app" "--port" "$BACKEND_PORT" "--host" "0.0.0.0")
 if [ "$RELOAD" = true ]; then
   UVICORN_ARGS+=("--reload")
   echo -e "\033[1;33mAuto-reload ON - editing a .py file will restart the backend.\033[0m"
@@ -62,14 +67,15 @@ BACKEND_PID=$!
 
 # 2. Start Frontend
 if [ -f "$WEB_DIR/package.json" ]; then
-  echo -e "\033[1;32mStarting Next.js frontend on http://localhost:3000 ...\033[0m"
-  (cd "$WEB_DIR" && npm run dev) &
+  echo -e "\033[1;35m[frontend]\033[0m Next.js running on http://localhost:$WEB_PORT"
+  (cd "$WEB_DIR" && BACKEND_URL="http://localhost:$BACKEND_PORT" npm run dev -- -p "$WEB_PORT") &
   FRONTEND_PID=$!
 else
   echo -e "\033[1;33mapps/web/package.json not found. Running backend only.\033[0m"
 fi
 
-echo -e "\n\033[1;36mDev environment started! Press Ctrl+C in this terminal to stop.\033[0m\n"
+echo -e "\n\033[1;36mReady! Open \033[4mhttp://localhost:$WEB_PORT\033[0m in your browser.\033[0m"
+echo -e "Press Ctrl+C in this terminal to stop all servers.\n"
 
 # Wait for background processes
 wait

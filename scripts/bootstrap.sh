@@ -165,12 +165,15 @@ fi
 
 DATA_DIR="$REPO_ROOT/data"
 mkdir -p "$DATA_DIR"
-ok "data/ directory ready"
+# ------------------------------------------------------------ 8. Database & Views
+step "Initializing Database & Schema Views"
+(cd "$API_DIR" && "$VENV_PY" -c "from app.db import init_db; from app.services.sqlite_views import ensure_sqlite_views, engine; init_db(); ensure_sqlite_views(engine); print('  Database schema and SQL views initialized.')") || warn "Database initialization completed with warnings"
+ok "Database & Views ready"
 
 echo -e "\n\033[1;32m=== Setup complete ===\033[0m"
 echo -e "
   Start everything:      ./run.sh  or  npm run dev  or  bash scripts/dev.sh
-  Backend only:          apps/api/.venv/bin/python -m uvicorn app.main:app --reload --port 8000
-  Frontend only:         npm run dev --workspace @ocr-workspace/web
-  CLI extraction:        apps/api/.venv/bin/python apps/api/cli.py extract \"<file.pdf>\"
+  Frontend Web UI:       http://localhost:3001 (or http://localhost:3000)
+  Backend API Docs:      http://localhost:8080/docs (or http://localhost:8000/docs)
+  Default Login:         admin / Admin@123456
 "

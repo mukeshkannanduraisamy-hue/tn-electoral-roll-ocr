@@ -193,12 +193,24 @@ if (-not (Test-Path $dataDir)) {
     Write-Ok 'data/ directory exists'
 }
 
+# ------------------------------------------------------------------ 7. Database & Views
+Write-Step 'Initializing Database & Schema Views'
+Push-Location $ApiDir
+try {
+    & $VenvPy -c "from app.db import init_db; from app.services.sqlite_views import ensure_sqlite_views, engine; init_db(); ensure_sqlite_views(engine); print('  Database schema and SQL views initialized.')"
+    Write-Ok 'Database & Views ready'
+} catch {
+    Write-Warn "Database init warning: $_"
+} finally {
+    Pop-Location
+}
+
 Write-Host "`n=== Setup complete ===" -ForegroundColor Green
 Write-Host @"
 
   Start everything:      .\run.bat  or  npm run dev  or  .\scripts\dev.ps1
-  Backend only:          apps\api\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
-  Frontend only:         npm run dev --workspace @ocr-workspace/web
-  Extract from the CLI:  apps\api\.venv\Scripts\python.exe apps\api\cli.py extract "<file.pdf>"
+  Frontend Web UI:       http://localhost:3001 (or http://localhost:3000)
+  Backend API Docs:      http://localhost:8080/docs (or http://localhost:8000/docs)
+  Default Login:         admin / Admin@123456
 
 "@ -ForegroundColor Gray

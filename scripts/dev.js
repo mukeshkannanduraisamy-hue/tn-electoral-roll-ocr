@@ -31,16 +31,21 @@ if (!fs.existsSync(venvPython)) {
 const args = process.argv.slice(2);
 const isReload = args.includes('--reload');
 
-console.log('\x1b[36m=== Starting OCR Workspace Dev Servers ===\x1b[0m');
+const backendPort = process.env.BACKEND_PORT || '8080';
+const webPort = process.env.PORT || '3001';
+
+console.log('\x1b[36m===================================================\x1b[0m');
+console.log('\x1b[36m    OCR Workspace - Starting Local Servers\x1b[0m');
+console.log('\x1b[36m===================================================\x1b[0m\n');
 
 // 1. Backend process
-const uvicornArgs = ['-m', 'uvicorn', 'app.main:app', '--port', '8000', '--host', '0.0.0.0'];
+const uvicornArgs = ['-m', 'uvicorn', 'app.main:app', '--port', backendPort, '--host', '0.0.0.0'];
 if (isReload) {
   uvicornArgs.push('--reload');
   console.log('\x1b[33mAuto-reload ON - editing a .py file will restart the backend.\x1b[0m');
 }
 
-console.log('\x1b[32m[backend]\x1b[0m Starting FastAPI on \x1b[4mhttp://localhost:8000\x1b[0m ...');
+console.log(`\x1b[32m[backend]\x1b[0m FastAPI running on  \x1b[4mhttp://localhost:${backendPort}\x1b[0m (API Docs: \x1b[4mhttp://localhost:${backendPort}/docs\x1b[0m)`);
 const backend = spawn(venvPython, uvicornArgs, {
   cwd: apiDir,
   stdio: 'inherit',
@@ -50,18 +55,22 @@ const backend = spawn(venvPython, uvicornArgs, {
 // 2. Frontend process
 let frontend = null;
 if (fs.existsSync(path.join(webDir, 'package.json'))) {
-  console.log('\x1b[35m[frontend]\x1b[0m Starting Next.js on \x1b[4mhttp://localhost:3000\x1b[0m ...');
+  console.log(`\x1b[35m[frontend]\x1b[0m Next.js running on \x1b[1m\x1b[4mhttp://localhost:${webPort}\x1b[0m\n`);
   const npmCmd = isWindows ? 'npm.cmd' : 'npm';
-  frontend = spawn(npmCmd, ['run', 'dev'], {
+  frontend = spawn(npmCmd, ['run', 'dev', '--', '-p', webPort], {
     cwd: webDir,
     stdio: 'inherit',
-    env: { ...process.env },
+    env: {
+      ...process.env,
+      BACKEND_URL: `http://localhost:${backendPort}`,
+    },
   });
 } else {
   console.log('\x1b[33mapps/web/package.json not found. Running backend only.\x1b[0m');
 }
 
-console.log('\n\x1b[36mPress Ctrl+C to stop all servers.\x1b[0m\n');
+console.log('\x1b[36mReady! Open \x1b[1m\x1b[4mhttp://localhost:' + webPort + '\x1b[0m\x1b[36m in your browser.\x1b[0m');
+console.log('Press \x1b[33mCtrl+C\x1b[0m in this terminal to stop all servers.\n');
 
 function cleanup() {
   console.log('\n\x1b[33mShutting down servers...\x1b[0m');

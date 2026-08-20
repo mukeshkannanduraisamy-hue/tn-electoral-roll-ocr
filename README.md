@@ -63,8 +63,8 @@ chmod +x setup.sh run.sh scripts/*.sh
 ./run.sh
 ```
 
-- Frontend UI → <http://localhost:3000>
-- API Docs → <http://localhost:8000/docs>
+- Frontend UI → <http://localhost:3001>
+- API Docs → <http://localhost:8080/docs>
 - Default Login → `admin` / `Admin@123456`
 - See [SETUP_GUIDE.md](file:///d:/OCR/SETUP_GUIDE.md) for full step-by-step instructions, dependencies, and troubleshooting.
 

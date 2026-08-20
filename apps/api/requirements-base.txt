@@ -41,6 +41,7 @@ SQLAlchemy>=2.0.0
 # without this any change to an existing column -- a rename, a type change,
 # a backfill -- has no way to reach a database that already exists.
 alembic>=1.14.0
+sqlite-web>=0.8.0
 # No PostgreSQL driver. This project runs on SQLite: the service writes page
 # images to the data directory and runs its job queue in-process, so it is
 # single-instance by construction and Postgres bought a network round trip per
