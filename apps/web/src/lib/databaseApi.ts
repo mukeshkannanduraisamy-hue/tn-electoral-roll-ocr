@@ -42,6 +42,7 @@ export interface DbTableInfo {
   name: string;
   row_count: number;
   column_count: number;
+  type: "table" | "view";
 }
 
 export interface DbColumn {
@@ -78,6 +79,7 @@ export interface DbStats {
   file_size_bytes: number;
   file_size_display: string;
   table_count: number;
+  view_count: number;
   index_count: number;
   page_count: number;
   page_size: number;

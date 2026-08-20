@@ -22,10 +22,12 @@ import {
   Clock,
   HardDrive,
   Layers,
+  Eye,
   AlertCircle,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  FileCode2,
 } from "lucide-react";
 import {
   fetchTables,
@@ -129,13 +131,14 @@ export function DatabaseView() {
   const [loading, setLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
   const [tableSearch, setTableSearch] = useState("");
+  const [entityFilter, setEntityFilter] = useState<"all" | "table" | "view">("all");
   const [rowSearch, setRowSearch] = useState("");
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
   const [showSchema, setShowSchema] = useState(false);
   const [showSql, setShowSql] = useState(false);
-  const [sqlInput, setSqlInput] = useState("SELECT * FROM voters LIMIT 10;");
+  const [sqlInput, setSqlInput] = useState("SELECT * FROM view_voters_list LIMIT 10;");
   const [sqlResult, setSqlResult] = useState<DbQueryResult | null>(null);
   const [sqlError, setSqlError] = useState<string | null>(null);
   const [sqlRunning, setSqlRunning] = useState(false);
@@ -238,11 +241,21 @@ export function DatabaseView() {
   };
 
   // --- Computed ---
-  const filteredTables = tables.filter((t) =>
-    t.name.toLowerCase().includes(tableSearch.toLowerCase()),
-  );
+  const tableList = tables.filter((t) => (t.type || "table") === "table");
+  const viewList = tables.filter((t) => t.type === "view");
+
+  const filteredTables = tables.filter((t) => {
+    const matchesSearch = t.name.toLowerCase().includes(tableSearch.toLowerCase());
+    const matchesType = entityFilter === "all" || (t.type || "table") === entityFilter;
+    return matchesSearch && matchesType;
+  });
+
+  const filteredOnlyTables = filteredTables.filter((t) => (t.type || "table") === "table");
+  const filteredOnlyViews = filteredTables.filter((t) => t.type === "view");
+
   const totalPages = rowsData ? Math.ceil(rowsData.total / PAGE_SIZE) : 0;
   const activeInfo = tables.find((t) => t.name === activeTable);
+  const isView = activeInfo?.type === "view";
 
   // --- Loading ---
   if (loading) {
@@ -258,50 +271,140 @@ export function DatabaseView() {
 
   return (
     <div className="flex-1 flex overflow-hidden">
-      {/* ── Left Panel: Table List ── */}
-      <div className="w-56 shrink-0 border-r border-white/5 flex flex-col bg-[hsl(var(--background))]">
-        {/* Header */}
-        <div className="px-3 py-3 border-b border-white/5">
-          <div className="flex items-center gap-2 mb-2">
-            <Database className="w-4 h-4 text-emerald-400" />
-            <span className="text-xs font-bold text-white/80 uppercase tracking-wider">Tables</span>
-            <span className="ml-auto text-[10px] font-mono text-white/30">{tables.length}</span>
+      {/* ── Left Panel: Supabase-Style Schema Explorer ── */}
+      <div className="w-64 shrink-0 border-r border-white/5 flex flex-col bg-[hsl(var(--background))]">
+        {/* Header & Filter Search */}
+        <div className="p-3 border-b border-white/5 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Database className="w-4 h-4 text-emerald-400" />
+              <span className="text-xs font-bold text-white/90 uppercase tracking-wider">Schema Explorer</span>
+            </div>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-white/40">
+              {tables.length} objects
+            </span>
           </div>
+
+          {/* Type Filter Pills (All / Tables / Views) */}
+          <div className="grid grid-cols-3 gap-1 bg-white/[0.03] p-0.5 rounded-lg border border-white/5">
+            <button
+              onClick={() => setEntityFilter("all")}
+              className={`py-1 text-[10px] font-semibold rounded-md transition-all ${
+                entityFilter === "all"
+                  ? "bg-white/10 text-white shadow-sm"
+                  : "text-white/40 hover:text-white/70"
+              }`}
+            >
+              All ({tables.length})
+            </button>
+            <button
+              onClick={() => setEntityFilter("table")}
+              className={`py-1 text-[10px] font-semibold rounded-md transition-all ${
+                entityFilter === "table"
+                  ? "bg-emerald-500/20 text-emerald-300 shadow-sm border border-emerald-500/30"
+                  : "text-white/40 hover:text-white/70"
+              }`}
+            >
+              Tables ({tableList.length})
+            </button>
+            <button
+              onClick={() => setEntityFilter("view")}
+              className={`py-1 text-[10px] font-semibold rounded-md transition-all ${
+                entityFilter === "view"
+                  ? "bg-indigo-500/20 text-indigo-300 shadow-sm border border-indigo-500/30"
+                  : "text-white/40 hover:text-white/70"
+              }`}
+            >
+              Views ({viewList.length})
+            </button>
+          </div>
+
+          {/* Search box */}
           <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-white/20" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-white/20" />
             <input
               type="text"
-              placeholder="Filter tables…"
+              placeholder="Search tables & views…"
               value={tableSearch}
               onChange={(e) => setTableSearch(e.target.value)}
-              className="w-full h-7 pl-7 pr-2 text-[11px] rounded-md bg-white/5 border border-white/5 text-white/70 placeholder:text-white/20 outline-none focus:border-emerald-500/40"
+              className="w-full h-7 pl-8 pr-2 text-[11px] rounded-md bg-white/5 border border-white/5 text-white/80 placeholder:text-white/20 outline-none focus:border-emerald-500/40"
             />
           </div>
         </div>
 
-        {/* Table list */}
-        <div className="flex-1 overflow-y-auto py-1">
-          {filteredTables.map((t) => (
-            <button
-              key={t.name}
-              onClick={() => setActiveTable(t.name)}
-              className={`w-full text-left px-3 py-2 flex items-center gap-2 transition-colors text-xs group ${
-                activeTable === t.name
-                  ? "bg-emerald-500/10 text-emerald-300 border-r-2 border-emerald-400"
-                  : "text-white/50 hover:bg-white/[0.03] hover:text-white/70"
-              }`}
-            >
-              <Table2 className={`w-3.5 h-3.5 shrink-0 ${activeTable === t.name ? "text-emerald-400" : "text-white/20"}`} />
-              <span className="truncate flex-1 font-medium">{t.name}</span>
-              <span className={`text-[10px] font-mono shrink-0 px-1.5 py-0.5 rounded-full ${
-                activeTable === t.name
-                  ? "bg-emerald-500/20 text-emerald-300"
-                  : "bg-white/5 text-white/25"
-              }`}>
-                {t.row_count.toLocaleString()}
-              </span>
-            </button>
-          ))}
+        {/* Tree / Grouped List */}
+        <div className="flex-1 overflow-y-auto py-2 px-2 space-y-3">
+          {/* TABLES GROUP */}
+          {filteredOnlyTables.length > 0 && (
+            <div>
+              <div className="px-2 py-1 flex items-center justify-between text-[10px] font-bold text-white/30 uppercase tracking-widest">
+                <span className="flex items-center gap-1.5">
+                  <Table2 className="w-3 h-3 text-emerald-400/60" />
+                  Tables ({filteredOnlyTables.length})
+                </span>
+              </div>
+              <div className="mt-0.5 space-y-0.5">
+                {filteredOnlyTables.map((t) => (
+                  <button
+                    key={t.name}
+                    onClick={() => setActiveTable(t.name)}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center gap-2 transition-all text-xs group ${
+                      activeTable === t.name
+                        ? "bg-emerald-500/15 text-emerald-300 font-semibold border border-emerald-500/30 shadow-sm"
+                        : "text-white/60 hover:bg-white/[0.04] hover:text-white/90"
+                    }`}
+                  >
+                    <Table2 className={`w-3.5 h-3.5 shrink-0 ${activeTable === t.name ? "text-emerald-400" : "text-white/25 group-hover:text-white/50"}`} />
+                    <span className="truncate flex-1 font-medium">{t.name}</span>
+                    <span className={`text-[10px] font-mono shrink-0 px-1.5 py-0.5 rounded-full ${
+                      activeTable === t.name
+                        ? "bg-emerald-500/20 text-emerald-300"
+                        : "bg-white/5 text-white/25"
+                    }`}>
+                      {t.row_count.toLocaleString()}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* VIEWS GROUP */}
+          {filteredOnlyViews.length > 0 && (
+            <div>
+              <div className="px-2 py-1 flex items-center justify-between text-[10px] font-bold text-white/30 uppercase tracking-widest">
+                <span className="flex items-center gap-1.5">
+                  <Eye className="w-3 h-3 text-indigo-400/60" />
+                  Views ({filteredOnlyViews.length})
+                </span>
+              </div>
+              <div className="mt-0.5 space-y-0.5">
+                {filteredOnlyViews.map((v) => (
+                  <button
+                    key={v.name}
+                    onClick={() => setActiveTable(v.name)}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center gap-2 transition-all text-xs group ${
+                      activeTable === v.name
+                        ? "bg-indigo-500/15 text-indigo-300 font-semibold border border-indigo-500/30 shadow-sm"
+                        : "text-white/60 hover:bg-white/[0.04] hover:text-white/90"
+                    }`}
+                  >
+                    <Eye className={`w-3.5 h-3.5 shrink-0 ${activeTable === v.name ? "text-indigo-400" : "text-white/25 group-hover:text-white/50"}`} />
+                    <span className="truncate flex-1 font-medium">{v.name}</span>
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                      VIEW
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {filteredTables.length === 0 && (
+            <div className="text-center py-6">
+              <p className="text-xs text-white/25">No matching tables or views</p>
+            </div>
+          )}
         </div>
 
         {/* DB Stats Footer */}
@@ -314,34 +417,45 @@ export function DatabaseView() {
         )}
       </div>
 
-      {/* ── Right Panel: Data Grid ── */}
+      {/* ── Right Panel: Data Grid & Toolbar ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Toolbar */}
-        <div className="h-12 shrink-0 border-b border-white/5 flex items-center gap-2 px-4">
+        <div className="h-12 shrink-0 border-b border-white/5 flex items-center gap-2 px-4 bg-[hsl(var(--background))]">
           {activeTable && (
-            <>
-              <Table2 className="w-4 h-4 text-emerald-400" />
-              <span className="text-sm font-bold text-white/80">{activeTable}</span>
+            <div className="flex items-center gap-2 min-w-0">
+              {isView ? (
+                <Eye className="w-4 h-4 text-indigo-400 shrink-0" />
+              ) : (
+                <Table2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              )}
+              <span className="text-sm font-bold text-white/90 truncate">{activeTable}</span>
+              <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${
+                isView
+                  ? "bg-indigo-500/10 text-indigo-300 border-indigo-500/20"
+                  : "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+              }`}>
+                {isView ? "VIEW" : "TABLE"}
+              </span>
               {activeInfo && (
-                <span className="text-[10px] text-white/30 ml-1">
+                <span className="text-[10px] text-white/30 hidden md:inline ml-1">
                   {activeInfo.row_count.toLocaleString()} rows · {activeInfo.column_count} columns
                 </span>
               )}
-            </>
+            </div>
           )}
 
           <div className="flex-1" />
 
           {/* Row search */}
           <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-white/20" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-white/20" />
             <input
               type="text"
               placeholder="Search rows…"
               value={rowSearch}
               onChange={(e) => setRowSearch(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleRowSearch()}
-              className="h-7 w-44 pl-7 pr-2 text-[11px] rounded-md bg-white/5 border border-white/5 text-white/70 placeholder:text-white/20 outline-none focus:border-emerald-500/40"
+              className="h-7 w-48 pl-8 pr-2 text-[11px] rounded-md bg-white/5 border border-white/5 text-white/80 placeholder:text-white/20 outline-none focus:border-emerald-500/40"
             />
           </div>
 
@@ -368,7 +482,7 @@ export function DatabaseView() {
             }`}
           >
             <Terminal className="w-3.5 h-3.5" />
-            SQL
+            SQL Console
           </button>
 
           {/* Refresh */}
@@ -387,7 +501,7 @@ export function DatabaseView() {
             <div className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xs font-bold text-white/60 uppercase tracking-wider">
-                  Columns ({columns.length})
+                  {isView ? "View Columns" : "Table Columns"} ({columns.length})
                 </h3>
                 {indexes.length > 0 && (
                   <span className="text-[10px] text-white/30">{indexes.length} indexes</span>
@@ -443,7 +557,7 @@ export function DatabaseView() {
                   }}
                   rows={3}
                   className="flex-1 text-[11px] font-mono p-3 rounded-lg bg-slate-950 border border-white/10 text-emerald-300 placeholder:text-white/20 outline-none focus:border-indigo-500/40 resize-y min-h-[60px]"
-                  placeholder="SELECT * FROM voters LIMIT 10;"
+                  placeholder="SELECT * FROM view_voters_list LIMIT 10;"
                   spellCheck={false}
                 />
                 <button
@@ -572,8 +686,14 @@ export function DatabaseView() {
           ) : (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
-                <Table2 className="w-10 h-10 mx-auto mb-2 text-white/10" />
-                <p className="text-xs text-white/30">No data in this table</p>
+                {isView ? (
+                  <Eye className="w-10 h-10 mx-auto mb-2 text-white/10" />
+                ) : (
+                  <Table2 className="w-10 h-10 mx-auto mb-2 text-white/10" />
+                )}
+                <p className="text-xs text-white/30">
+                  {isView ? "No data returned by this view" : "No data in this table"}
+                </p>
               </div>
             </div>
           )}
@@ -581,10 +701,10 @@ export function DatabaseView() {
 
         {/* Pagination */}
         {rowsData && totalPages > 0 && (
-          <div className="h-10 shrink-0 border-t border-white/5 flex items-center justify-between px-4">
+          <div className="h-10 shrink-0 border-t border-white/5 flex items-center justify-between px-4 bg-[hsl(var(--background))]">
             <span className="text-[10px] text-white/30">
               Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, rowsData.total)} of{" "}
-              {rowsData.total.toLocaleString()} rows
+              {rowsData.total.toLocaleString()} {isView ? "records in view" : "rows"}
             </span>
             <div className="flex items-center gap-1">
               <button

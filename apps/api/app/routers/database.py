@@ -26,6 +26,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+from ..services.sqlite_views import ensure_sqlite_views
+
+# Ensure SQLite views exist on startup
+try:
+    ensure_sqlite_views(engine)
+except Exception as e:
+    logger.warning("Could not auto-ensure sqlite views: %s", e)
+
+
 # ---------------------------------------------------------------------------
 # Response models
 # ---------------------------------------------------------------------------
@@ -34,6 +43,7 @@ class TableInfo(BaseModel):
     name: str
     row_count: int
     column_count: int
+    type: str = "table"  # "table" | "view"
 
 
 class ColumnInfo(BaseModel):
@@ -74,6 +84,7 @@ class DbStats(BaseModel):
     file_size_bytes: int
     file_size_display: str
     table_count: int
+    view_count: int
     index_count: int
     page_count: int
     page_size: int
@@ -88,10 +99,11 @@ _SAFE_TABLE_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 def _validate_table_name(name: str) -> str:
     if not _SAFE_TABLE_RE.match(name):
-        raise HTTPException(400, f"Invalid table name: {name}")
+        raise HTTPException(400, f"Invalid table/view name: {name}")
     inspector = inspect(engine)
-    if name not in inspector.get_table_names():
-        raise HTTPException(404, f"Table not found: {name}")
+    all_names = set(inspector.get_table_names()) | set(inspector.get_view_names())
+    if name not in all_names:
+        raise HTTPException(404, f"Table or View not found: {name}")
     return name
 
 
@@ -125,6 +137,7 @@ def get_db_stats(
     """Database-level statistics."""
     inspector = inspect(engine)
     tables = inspector.get_table_names()
+    views = inspector.get_view_names()
 
     index_count = 0
     for t in tables:
@@ -149,6 +162,7 @@ def get_db_stats(
         file_size_bytes=file_size,
         file_size_display=_format_size(file_size),
         table_count=len(tables),
+        view_count=len(views),
         index_count=index_count,
         page_count=page_count,
         page_size=page_size,
@@ -160,15 +174,28 @@ def list_tables(
     session: Session = Depends(get_session),
     _user: UserRow = Depends(require_user),
 ) -> list[TableInfo]:
-    """List all tables with row counts."""
+    """List all tables and views with row counts."""
     inspector = inspect(engine)
     tables = sorted(inspector.get_table_names())
+    views = sorted(inspector.get_view_names())
     result: list[TableInfo] = []
+
     for name in tables:
         col_count = len(inspector.get_columns(name))
         row = session.execute(text(f'SELECT COUNT(*) FROM "{name}"')).fetchone()
         row_count = row[0] if row else 0
-        result.append(TableInfo(name=name, row_count=row_count, column_count=col_count))
+        result.append(TableInfo(name=name, row_count=row_count, column_count=col_count, type="table"))
+
+    for name in views:
+        try:
+            col_count = len(inspector.get_columns(name))
+            row = session.execute(text(f'SELECT COUNT(*) FROM "{name}"')).fetchone()
+            row_count = row[0] if row else 0
+        except Exception:
+            col_count = 0
+            row_count = 0
+        result.append(TableInfo(name=name, row_count=row_count, column_count=col_count, type="view"))
+
     return result
 
 
