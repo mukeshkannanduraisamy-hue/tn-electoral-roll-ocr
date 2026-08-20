@@ -60,30 +60,30 @@ function StatCard({ icon: Icon, label, value }: { icon: React.ElementType; label
 
 function CellValue({ value }: { value: unknown }) {
   if (value === null || value === undefined) {
-    return <span className="text-white/20 italic text-[12px]">NULL</span>;
+    return <span className="text-white/20 italic text-[11px]">NULL</span>;
   }
   if (typeof value === "boolean") {
     return (
-      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono font-medium ${value ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-rose-500/10 text-rose-400 border border-rose-500/20"}`}>
+      <span className={`text-[11px] font-mono ${value ? "text-emerald-400" : "text-rose-400"}`}>
         {value ? "true" : "false"}
       </span>
     );
   }
   if (typeof value === "number") {
-    return <span className="text-[12px] font-mono text-sky-300 font-medium">{value.toLocaleString()}</span>;
+    return <span className="text-[11px] font-mono text-sky-300">{value.toLocaleString()}</span>;
   }
   const str = String(value);
   // JSON objects
   if (str.startsWith("{") || str.startsWith("[")) {
     return (
-      <span className="text-[12px] font-mono text-amber-300/90 truncate block max-w-[400px]" title={str}>
-        {str.length > 100 ? str.slice(0, 100) + "…" : str}
+      <span className="text-[11px] font-mono text-amber-300 truncate block max-w-[300px]" title={str}>
+        {str.length > 80 ? str.slice(0, 80) + "…" : str}
       </span>
     );
   }
   return (
-    <span className="text-[12px] text-white/80 truncate block max-w-[400px]" title={str}>
-      {str.length > 100 ? str.slice(0, 100) + "…" : str}
+    <span className="text-[11px] text-white/70 truncate block max-w-[300px]" title={str}>
+      {str.length > 80 ? str.slice(0, 80) + "…" : str}
     </span>
   );
 }
@@ -599,22 +599,22 @@ export function DatabaseView() {
                     </div>
                   </div>
                   {sqlResult.columns.length > 0 && (
-                    <div className="rounded-xl border border-white/10 overflow-hidden max-h-64 overflow-auto custom-scrollbar shadow-xl bg-[#0f1115]">
-                      <table className="w-full text-[12px] border-collapse text-left">
+                    <div className="rounded-lg border border-white/5 overflow-hidden max-h-64 overflow-auto">
+                      <table className="w-full text-[11px]">
                         <thead>
-                          <tr className="bg-[#16181d] border-b border-white/10">
+                          <tr className="bg-white/[0.03]">
                             {sqlResult.columns.map((c) => (
-                              <th key={c} className="px-4 py-2.5 font-semibold text-white/50 whitespace-nowrap tracking-wider sticky top-0 bg-[#16181d] z-10 shadow-[0_1px_0_rgba(255,255,255,0.1)] uppercase text-[10px]">
+                              <th key={c} className="px-3 py-2 text-left font-semibold text-white/50 border-b border-white/5 whitespace-nowrap">
                                 {c}
                               </th>
                             ))}
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-white/[0.04]">
+                        <tbody>
                           {sqlResult.rows.map((row, i) => (
-                            <tr key={i} className="hover:bg-white/[0.04] even:bg-white/[0.01] transition-colors group">
+                            <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
                               {sqlResult.columns.map((c) => (
-                                <td key={c} className="px-4 py-2.5 whitespace-nowrap text-white/80 group-hover:text-white transition-colors">
+                                <td key={c} className="px-3 py-1.5 whitespace-nowrap">
                                   <CellValue value={row[c]} />
                                 </td>
                               ))}
@@ -637,54 +637,52 @@ export function DatabaseView() {
               <Loader2 className="w-5 h-5 animate-spin text-emerald-400" />
             </div>
           ) : rowsData && rowsData.columns.length > 0 ? (
-            <div className="w-full h-full relative custom-scrollbar bg-[#0f1115]">
-              <table className="w-full text-[12px] border-collapse text-left">
-                <thead>
-                  <tr className="bg-[#16181d] border-b border-white/10">
-                    <th className="px-4 py-3 font-semibold text-white/50 uppercase tracking-wider sticky top-0 left-0 z-30 bg-[#16181d] shadow-[inset_-1px_-1px_0_rgba(255,255,255,0.1)] w-12 text-center text-[10px]">
-                      #
-                    </th>
-                    {rowsData.columns.map((col) => (
-                      <th
-                        key={col}
-                        onClick={() => handleSort(col)}
-                        className="px-4 py-3 font-semibold text-white/50 uppercase tracking-wider sticky top-0 z-20 bg-[#16181d] shadow-[0_1px_0_rgba(255,255,255,0.1)] cursor-pointer hover:text-white/80 transition-colors whitespace-nowrap select-none group text-[10px]"
-                      >
-                        <div className="flex items-center gap-1.5">
-                          {col}
-                          {sortCol === col ? (
-                            sortDir === "asc" ? (
-                              <ArrowUp className="w-3.5 h-3.5 text-emerald-400" />
-                            ) : (
-                              <ArrowDown className="w-3.5 h-3.5 text-emerald-400" />
-                            )
+            <table className="w-full text-[11px] border-collapse">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-slate-900/95 backdrop-blur">
+                  <th className="px-3 py-2.5 text-left text-[10px] font-bold text-white/30 uppercase tracking-wider border-b border-white/5 w-10">
+                    #
+                  </th>
+                  {rowsData.columns.map((col) => (
+                    <th
+                      key={col}
+                      onClick={() => handleSort(col)}
+                      className="px-3 py-2.5 text-left text-[10px] font-bold text-white/30 uppercase tracking-wider border-b border-white/5 cursor-pointer hover:text-white/60 transition-colors whitespace-nowrap select-none"
+                    >
+                      <span className="flex items-center gap-1">
+                        {col}
+                        {sortCol === col ? (
+                          sortDir === "asc" ? (
+                            <ArrowUp className="w-3 h-3 text-emerald-400" />
                           ) : (
-                            <ArrowUpDown className="w-3.5 h-3.5 text-white/0 group-hover:text-white/20 transition-colors" />
-                          )}
-                        </div>
-                      </th>
+                            <ArrowDown className="w-3 h-3 text-emerald-400" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 text-white/10" />
+                        )}
+                      </span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rowsData.rows.map((row, i) => (
+                  <tr
+                    key={i}
+                    className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"
+                  >
+                    <td className="px-3 py-1.5 text-[10px] font-mono text-white/15">
+                      {(page - 1) * PAGE_SIZE + i + 1}
+                    </td>
+                    {rowsData.columns.map((col) => (
+                      <td key={col} className="px-3 py-1.5 whitespace-nowrap">
+                        <CellValue value={row[col]} />
+                      </td>
                     ))}
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-white/[0.04]">
-                  {rowsData.rows.map((row, i) => (
-                    <tr
-                      key={i}
-                      className="hover:bg-white/[0.04] even:bg-white/[0.01] transition-colors group"
-                    >
-                      <td className="px-4 py-2.5 text-[11px] font-mono text-white/30 sticky left-0 z-10 bg-inherit group-hover:bg-[#1a1c23] even:bg-[#13151a] odd:bg-[#0f1115] shadow-[inset_-1px_0_0_rgba(255,255,255,0.05)] text-center">
-                        {(page - 1) * PAGE_SIZE + i + 1}
-                      </td>
-                      {rowsData.columns.map((col) => (
-                        <td key={col} className="px-4 py-2.5 whitespace-nowrap text-white/80 group-hover:text-white transition-colors">
-                          <CellValue value={row[col]} />
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           ) : (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">

@@ -21,11 +21,8 @@ export const ThreadMenu: React.FC<Props> = ({
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      onRefresh();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+    if (open) onRefresh();
+  }, [open, onRefresh]);
 
   return (
     <div className="relative">

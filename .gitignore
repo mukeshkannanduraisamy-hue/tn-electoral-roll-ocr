@@ -58,3 +58,4 @@ dist/
 .claude/
 .DS_Store
 Thumbs.db
+*.exe
