@@ -77,24 +77,9 @@ const backend = spawn(venvPython, uvicornArgs, {
 
 const npmCmd = isWindows ? 'npm.cmd' : 'npm';
 
-// 2. Primary Frontend process
+// 2. Primary Frontend process (DISABLED by user request)
 let frontend = null;
-if (fs.existsSync(path.join(webDir, 'package.json'))) {
-  console.log(`\x1b[35m[web-ui]\x1b[0m  Next.js running on     \x1b[1m\x1b[4mhttp://${webHost}:${webPort}\x1b[0m`);
-  frontend = spawn(npmCmd, ['run', 'dev', '--', '-H', webHost, '-p', webPort], {
-    cwd: webDir,
-    stdio: 'inherit',
-    shell: isWindows,
-    env: {
-      ...process.env,
-      HOST: webHost,
-      PORT: webPort,
-      BACKEND_URL: backendUrl,
-      BACKEND_HOST: backendHost,
-      BACKEND_PORT: backendPort,
-    },
-  });
-}
+// Main Electoral UI disabled - all functionality unified into Serena Windows 11 Explorer
 
 // 3. Standalone Serena Batch OCR Frontend process
 let serenaFrontend = null;
@@ -116,8 +101,8 @@ if (fs.existsSync(path.join(serenaDir, 'package.json'))) {
 }
 
 const displayHost = webHost === '0.0.0.0' ? 'localhost' : webHost;
-console.log(`\x1b[36m✨ Serena Batch OCR Ready:\x1b[0m \x1b[1m\x1b[4mhttp://${displayHost}:${serenaPort}\x1b[0m`);
-console.log(`\x1b[35m📄 Main Electoral UI Ready:\x1b[0m \x1b[1m\x1b[4mhttp://${displayHost}:${webPort}\x1b[0m`);
+console.log(`\x1b[36m✨ Serena Windows 11 OCR Ready:\x1b[0m \x1b[1m\x1b[4mhttp://${displayHost}:${serenaPort}\x1b[0m`);
+console.log(`\x1b[90m[disabled] Main Electoral UI disabled (All operations unified into Serena Explorer)\x1b[0m`);
 console.log('Press \x1b[33mCtrl+C\x1b[0m in this terminal to stop all servers.\n');
 
 function cleanup() {

@@ -1,160 +1,35 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useOcrStore } from "@/store/useOcrStore";
-import { Navbar } from "@/components/Navbar";
-import { Sidebar } from "@/components/Sidebar";
-import { DocumentView } from "@/components/DocumentView";
-import { PageView } from "@/components/PageView";
-import { ReviewQueue } from "@/components/ReviewQueue";
-import { ExportModal } from "@/components/ExportModal";
-import { UploadModal } from "@/components/UploadModal";
-import { BulkExtractModal } from "@/components/BulkExtractModal";
-import { ShortcutsModal } from "@/components/ShortcutsModal";
-import { Toaster } from "sonner";
-import { Loader2, X, PanelLeft } from "lucide-react";
-import { VotersView } from "@/components/VotersView";
-import { LoginScreen } from "@/components/LoginScreen";
-import { useAuthStore } from "@/store/useAuthStore";
-import { setUnauthorizedHandler } from "@/lib/voterApi";
-import { DashboardView } from "@/components/DashboardView";
-import { SettingsView } from "@/components/SettingsView";
-import { AnalyticsView } from "@/components/AnalyticsView";
-import { PollingStationsView } from "@/components/PollingStationsView";
-import { DatabaseView } from "@/components/DatabaseView";
-import { ConfirmationModal } from "@/components/ConfirmationModal";
-import { FloatingAiChatbot } from "@/components/FloatingAiChatbot";
-import { FolderBatchOcrView } from "@/components/FolderBatchOcrView";
+import React, { useEffect } from "react";
+import { Folder, ArrowRight, ExternalLink } from "lucide-react";
 
-
-export default function Home() {
-  const { loadFiles, activeTab, setActiveTab, setIsShortcutsOpen, isShortcutsOpen } = useOcrStore();
-
-  const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [isExportOpen, setIsExportOpen] = useState(false);
-  const [isBulkExtractOpen, setIsBulkExtractOpen] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
-  const { user, authEnabled, checked, check, handleUnauthorized } = useAuthStore();
-  const signedIn = checked && (!authEnabled || user !== null);
-
+export default function DummyHome() {
   useEffect(() => {
-    setUnauthorizedHandler(handleUnauthorized);
-    return () => setUnauthorizedHandler(null);
-  }, [handleUnauthorized]);
-
-  useEffect(() => {
-    void check();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (signedIn) loadFiles();
-  }, [signedIn]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Global keydown: ?, 1-8, Esc
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
-
-      if (e.key === "?") {
-        e.preventDefault();
-        setIsShortcutsOpen(!isShortcutsOpen);
-      } else if (e.key === "1") setActiveTab("dashboard");
-      else if (e.key === "2") setActiveTab("voters");
-      else if (e.key === "3") setActiveTab("table");
-      else if (e.key === "4") setActiveTab("analytics");
-      else if (e.key === "5") setActiveTab("validation");
-      else if (e.key === "6") setActiveTab("page");
-      else if (e.key === "7") setActiveTab("review");
-      else if (e.key === "8") setActiveTab("settings");
-      else if (e.key === "Escape") setIsShortcutsOpen(false);
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isShortcutsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (!checked) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--background))]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
-            <svg className="w-4 h-4 text-white animate-pulse" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-          </div>
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!signedIn) {
-    return (
-      <>
-        <Toaster position="top-right" richColors />
-        <LoginScreen />
-      </>
-    );
-  }
+    // Auto-redirect to Serena Windows 11 Explorer on port 3002
+    if (typeof window !== "undefined") {
+      const targetUrl = window.location.protocol + "//" + window.location.hostname + ":3002";
+      window.location.replace(targetUrl);
+    }
+  }, []);
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[hsl(var(--background))] text-foreground transition-colors duration-200">
-      <Toaster position="top-right" richColors />
-
-      {/* Top Navbar */}
-      <Navbar
-        onOpenUpload={() => setIsUploadOpen(true)}
-        onOpenExport={() => setIsExportOpen(true)}
-        onOpenBulkExtract={() => setIsBulkExtractOpen(true)}
-      />
-
-      {/* Main Workspace */}
-      <div className="flex-1 flex overflow-hidden relative">
-        <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
-
-        {/* Mobile backdrop */}
-        {isSidebarOpen && (
-          <div
-            className="fixed inset-0 top-14 z-30 bg-slate-900/60 backdrop-blur-sm lg:hidden"
-            onClick={() => setIsSidebarOpen(false)}
-            aria-hidden="true"
-          />
-        )}
-
-        {/* Mobile drawer toggle */}
-        <button
-          onClick={() => setIsSidebarOpen((v) => !v)}
-          className="lg:hidden fixed bottom-5 left-5 z-50 h-12 w-12 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center transition-colors"
-          aria-label={isSidebarOpen ? "Close navigation" : "Open navigation"}
+    <div className="flex flex-col items-center justify-center min-h-screen bg-[#1E1E1E] text-white p-6 font-sans">
+      <div className="max-w-md w-full p-8 rounded-2xl bg-[#252525] border border-white/10 shadow-2xl text-center space-y-4">
+        <div className="w-16 h-16 rounded-2xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center mx-auto text-blue-500">
+          <Folder className="w-8 h-8" />
+        </div>
+        <h1 className="text-xl font-bold">Serena Windows 11 Explorer</h1>
+        <p className="text-xs text-slate-400">
+          Main Electoral UI has been disabled. All operations (File Explorer, Database, Deployment) have been unified into Serena OCR Explorer.
+        </p>
+        <a
+          href="http://127.0.0.1:3002"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#005FB8] hover:bg-[#004E98] font-semibold text-xs text-white transition-all shadow-md"
         >
-          {isSidebarOpen ? <X className="w-5 h-5" /> : <PanelLeft className="w-5 h-5" />}
-        </button>
-
-        {/* Main content area */}
-        <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-          <div className="flex-1 flex overflow-hidden min-w-0">
-            {activeTab === "dashboard"        && <DashboardView />}
-            {activeTab === "folder_ocr"       && <FolderBatchOcrView />}
-            {activeTab === "voters"           && <VotersView />}
-            {activeTab === "polling_stations" && <PollingStationsView />}
-            {activeTab === "table"            && <DocumentView />}
-            {activeTab === "analytics"        && <AnalyticsView />}
-            {activeTab === "database"         && <DatabaseView />}
-            {activeTab === "page"             && <PageView />}
-            {activeTab === "review"           && <ReviewQueue />}
-            {activeTab === "settings"         && <SettingsView />}
-          </div>
-        </main>
+          <span>Open Serena Explorer (Port 3002)</span>
+          <ArrowRight className="w-4 h-4" />
+        </a>
       </div>
-
-      {/* Modals & Persistent Floating AI Chatbot */}
-      <UploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} />
-      <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />
-      <BulkExtractModal isOpen={isBulkExtractOpen} onClose={() => setIsBulkExtractOpen(false)} />
-      <ShortcutsModal />
-      <ConfirmationModal />
-      <FloatingAiChatbot />
     </div>
   );
 }
