@@ -135,11 +135,18 @@ function attachJobSSE(
         if (state.scannedData?.items && file_id) {
           const items = state.scannedData.items.map((item) => {
             if (item.file_id === file_id && item.status !== "completed") {
-              return { ...item, status: "processing" as const };
+              return { ...item, status: "processing" as const, pages_done: fileCompleted };
             }
             return item;
           });
-          updatedScanned = { ...state.scannedData, items };
+          updatedScanned = {
+            ...state.scannedData,
+            completed_count: items.filter((i) => i.status === "completed").length,
+            pending_count: items.filter((i) => i.status === "pending" || i.status === "unregistered").length,
+            processing_count: items.filter((i) => i.status === "processing").length,
+            error_count: items.filter((i) => i.status === "error").length,
+            items,
+          };
         }
 
         return {
@@ -180,7 +187,14 @@ function attachJobSSE(
             }
             return item;
           });
-          updatedScanned = { ...state.scannedData, items };
+          updatedScanned = {
+            ...state.scannedData,
+            completed_count: items.filter((i) => i.status === "completed").length,
+            pending_count: items.filter((i) => i.status === "pending" || i.status === "unregistered").length,
+            processing_count: items.filter((i) => i.status === "processing").length,
+            error_count: items.filter((i) => i.status === "error").length,
+            items,
+          };
         }
 
         return {
@@ -201,7 +215,6 @@ function attachJobSSE(
         };
       });
       void get().loadDbFiles();
-      void get().scanCurrentFolder();
     } catch {}
   };
 
@@ -704,6 +717,32 @@ export const useSerenaStore = create<SerenaState>((set, get) => ({
   deleteRegisteredFile: async (fileId: string) => {
     try {
       await apiDeleteFile(fileId);
+      const { scannedData } = get();
+      if (scannedData) {
+        const updatedItems = scannedData.items.map((item) => {
+          if (item.file_id === fileId) {
+            return {
+              ...item,
+              file_id: null,
+              is_registered: false,
+              status: "unregistered" as const,
+              pages_done: 0,
+              records_count: 0,
+            };
+          }
+          return item;
+        });
+        set({
+          scannedData: {
+            ...scannedData,
+            completed_count: updatedItems.filter((i) => i.status === "completed").length,
+            pending_count: updatedItems.filter((i) => i.status === "pending" || i.status === "unregistered").length,
+            processing_count: updatedItems.filter((i) => i.status === "processing").length,
+            error_count: updatedItems.filter((i) => i.status === "error").length,
+            items: updatedItems,
+          },
+        });
+      }
       await get().loadDbFiles();
       toast.success("Document deleted from database");
     } catch (e: any) {
