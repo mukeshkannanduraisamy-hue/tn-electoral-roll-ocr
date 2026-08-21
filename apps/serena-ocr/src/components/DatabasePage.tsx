@@ -918,6 +918,11 @@ export const DatabasePage: React.FC = () => {
                 <p className="text-xs text-slate-500">
                   Are you sure you want to clear all data in <strong className="text-red-500 font-mono">{confirmTruncate}</strong>?
                 </p>
+                {confirmTruncate.startsWith("view_") && (
+                  <p className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">
+                    ℹ️ This will truncate the underlying data table (<strong>{confirmTruncate === "view_voters_list" ? "voters" : "polling_stations"}</strong>).
+                  </p>
+                )}
               </div>
             </div>
 

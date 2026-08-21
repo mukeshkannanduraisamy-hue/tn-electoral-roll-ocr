@@ -363,15 +363,44 @@ def truncate_single_table(
     session: Session = Depends(get_session),
     user: UserRow = Depends(require_user),
 ) -> dict:
-    """Truncate / delete all rows from a specific database table."""
+    """Truncate / delete all rows from a specific database table or underlying table of a view."""
     name = _validate_table_name(name)
     if name.lower() in ("sqlite_master", "sqlite_sequence", "sqlite_stat1", "users"):
         raise HTTPException(400, f"Cannot truncate system/user table: {name}")
+
+    # Map known views to their underlying source tables
+    VIEW_TO_BASE_MAP = {
+        "view_voters_list": "voters",
+        "view_part_details": "polling_stations",
+        "view_elector_counts": "polling_stations",
+    }
+
+    target_table = VIEW_TO_BASE_MAP.get(name.lower(), name)
+
+    # If it's another unmapped view, verify
     try:
-        session.execute(text(f"DELETE FROM {name};"))
+        insp = inspect(session.connection())
+        views = set(insp.get_view_names())
+        if target_table in views and target_table not in VIEW_TO_BASE_MAP.values():
+            raise HTTPException(
+                400,
+                f"'{name}' is a virtual SQL view. Please select and truncate the underlying data table.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    try:
+        session.execute(text(f"DELETE FROM {target_table};"))
         session.commit()
-        logger.info("User %r truncated table %s", user.username, name)
-        return {"status": "ok", "message": f"Table {name} truncated successfully."}
+        logger.info("User %r truncated table %s (target: %s)", user.username, name, target_table)
+        msg = (
+            f"Table '{target_table}' (via '{name}') truncated successfully."
+            if target_table != name
+            else f"Table '{name}' truncated successfully."
+        )
+        return {"status": "ok", "message": msg}
     except Exception as e:
         session.rollback()
         raise HTTPException(500, f"Failed to truncate table {name}: {e}") from e
