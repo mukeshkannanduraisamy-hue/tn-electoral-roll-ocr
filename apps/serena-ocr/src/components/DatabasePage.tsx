@@ -390,6 +390,16 @@ export const DatabasePage: React.FC = () => {
             <span>Truncate Table</span>
           </button>
 
+          {/* Wipe Entire Database */}
+          <button
+            onClick={() => setConfirmTruncate("all")}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-xs font-semibold shadow-xs transition-all"
+            title="Wipe entire database including all OCR extracted records and polling stations"
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>Wipe Entire DB</span>
+          </button>
+
           {/* Refresh */}
           <button
             onClick={() => void loadTableDetails()}
@@ -908,44 +918,64 @@ export const DatabasePage: React.FC = () => {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
           <div className="bg-white dark:bg-[#252525] rounded-xl shadow-2xl border border-red-500/30 w-full max-w-md p-5 space-y-4">
             <div className="flex items-center gap-3 text-red-600 dark:text-red-400">
-              <div className="w-10 h-10 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-5 h-5" />
               </div>
               <div>
                 <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                  Confirm Truncate Table
+                  {confirmTruncate === "all" ? "Confirm Wipe Entire Database" : "Confirm Truncate Table"}
                 </h3>
-                <p className="text-xs text-slate-500">
-                  Are you sure you want to clear all data in <strong className="text-red-500 font-mono">{confirmTruncate}</strong>?
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {confirmTruncate === "all" ? (
+                    <>Are you sure you want to wipe <strong className="text-red-500 font-bold">ALL database tables</strong> (voters, OCR extractions, pages, stations)?</>
+                  ) : (
+                    <>Are you sure you want to clear all data in <strong className="text-red-500 font-mono font-bold">{confirmTruncate}</strong>?</>
+                  )}
                 </p>
-                {confirmTruncate.startsWith("view_") && (
-                  <p className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">
-                    ℹ️ This will truncate the underlying data table (<strong>{confirmTruncate === "view_voters_list" ? "voters" : "polling_stations"}</strong>).
+                {confirmTruncate && confirmTruncate.startsWith("view_") && (
+                  <p className="text-[11px] text-blue-600 dark:text-blue-400 font-medium mt-1">
+                    ℹ️ This will safely truncate the underlying base table (<strong>{confirmTruncate === "view_voters_list" ? "voters" : "polling_stations"}</strong>).
                   </p>
                 )}
               </div>
             </div>
 
             <p className="text-xs text-slate-600 dark:text-slate-400 bg-red-50 dark:bg-red-950/30 p-3 rounded-lg border border-red-200 dark:border-red-900/50">
-              ⚠️ This operation will permanently remove all rows from this table. This action cannot be undone.
+              ⚠️ {confirmTruncate === "all"
+                ? "This will permanently delete all records across every table in the database. This action cannot be undone."
+                : "This operation will permanently remove all rows from this table. This action cannot be undone."}
             </p>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                onClick={() => setConfirmTruncate(null)}
-                disabled={isTruncating}
-                className="px-3 py-1.5 rounded-md border border-slate-300 dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => void handleExecuteTruncate()}
-                disabled={isTruncating}
-                className="px-4 py-1.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs"
-              >
-                {isTruncating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Yes, Truncate Now</span>
-              </button>
+            <div className="flex items-center justify-between pt-2">
+              {confirmTruncate !== "all" ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmTruncate("all")}
+                  className="text-xs text-red-600 dark:text-red-400 underline hover:text-red-700 font-medium"
+                >
+                  Wipe Entire DB Instead
+                </button>
+              ) : (
+                <div />
+              )}
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setConfirmTruncate(null)}
+                  disabled={isTruncating}
+                  className="px-3 py-1.5 rounded-md border border-slate-300 dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void handleExecuteTruncate()}
+                  disabled={isTruncating}
+                  className="px-4 py-1.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs"
+                >
+                  {isTruncating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{confirmTruncate === "all" ? "Yes, Wipe Entire DB" : "Yes, Truncate Now"}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

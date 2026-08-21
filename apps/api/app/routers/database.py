@@ -360,12 +360,11 @@ def execute_query(
 @router.post("/tables/{name}/truncate")
 def truncate_single_table(
     name: str,
-    session: Session = Depends(get_session),
     user: UserRow = Depends(require_user),
 ) -> dict:
     """Truncate / delete all rows from a specific database table or underlying table of a view."""
     name = _validate_table_name(name)
-    if name.lower() in ("sqlite_master", "sqlite_sequence", "sqlite_stat1", "users", "sessions"):
+    if name.lower() in ("sqlite_master", "sqlite_sequence", "sqlite_stat1", "users", "sessions", "alembic_version"):
         raise HTTPException(400, f"Cannot truncate system/user table: {name}")
 
     # Map known views to their underlying source tables
@@ -378,11 +377,15 @@ def truncate_single_table(
     target_table = VIEW_TO_BASE_MAP.get(name.lower(), name)
 
     try:
-        # Disable foreign key checks during deletion
-        session.execute(text("PRAGMA foreign_keys = OFF;"))
-        session.execute(text(f'DELETE FROM "{target_table}";'))
-        session.commit()
-        session.execute(text("PRAGMA foreign_keys = ON;"))
+        with engine.begin() as conn:
+            conn.exec_driver_sql("PRAGMA foreign_keys = OFF;")
+            conn.exec_driver_sql(f'DELETE FROM "{target_table}";')
+            try:
+                conn.exec_driver_sql(f"DELETE FROM sqlite_sequence WHERE name = '{target_table}';")
+            except Exception:
+                pass
+            conn.exec_driver_sql("PRAGMA foreign_keys = ON;")
+        
         logger.info("User %r truncated table %s (target: %s)", user.username, name, target_table)
         msg = (
             f"Table '{target_table}' (via '{name}') truncated successfully."
@@ -391,37 +394,36 @@ def truncate_single_table(
         )
         return {"status": "ok", "message": msg}
     except Exception as e:
-        session.rollback()
         logger.exception("Failed to truncate table %s", name)
         raise HTTPException(500, f"Failed to truncate table {name}: {e}") from e
 
 
 @router.post("/truncate-all")
 def truncate_all_database_tables(
-    session: Session = Depends(get_session),
     user: UserRow = Depends(require_user),
 ) -> dict:
     """Truncate all data tables in the database."""
     tables = [
         "voters", "polling_stations", "records", "pages", "files",
-        "summaries", "ocr_blocks", "photos", "jobs", "audit_logs"
+        "summaries", "ocr_blocks", "photos", "jobs", "audit_logs",
+        "chat_messages", "chat_threads"
     ]
     try:
-        session.execute(text("PRAGMA foreign_keys = OFF;"))
-        for t in tables:
+        with engine.begin() as conn:
+            conn.exec_driver_sql("PRAGMA foreign_keys = OFF;")
+            for t in tables:
+                try:
+                    conn.exec_driver_sql(f'DELETE FROM "{t}";')
+                except Exception as err:
+                    logger.warning("Could not delete from %s: %s", t, err)
             try:
-                session.execute(text(f'DELETE FROM "{t}";'))
-            except Exception as err:
-                logger.warning("Could not delete from %s: %s", t, err)
-        try:
-            session.execute(text("DELETE FROM sqlite_sequence;"))
-        except Exception:
-            pass
-        session.commit()
-        session.execute(text("PRAGMA foreign_keys = ON;"))
+                conn.exec_driver_sql("DELETE FROM sqlite_sequence;")
+            except Exception:
+                pass
+            conn.exec_driver_sql("PRAGMA foreign_keys = ON;")
+            
         logger.info("User %r truncated entire database", user.username)
         return {"status": "ok", "message": "All database tables truncated successfully."}
     except Exception as e:
-        session.rollback()
         logger.exception("Database truncation failed")
         raise HTTPException(500, f"Database truncation failed: {e}") from e

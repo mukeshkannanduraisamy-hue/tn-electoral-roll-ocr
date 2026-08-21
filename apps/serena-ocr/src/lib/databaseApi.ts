@@ -53,7 +53,7 @@ const API_BASE = (
 
 async function dbFetch(url: string, init?: RequestInit): Promise<Response> {
   const target = url.startsWith("http") ? url : `${API_BASE}${url}`;
-  return fetch(target, {
+  const res = await fetch(target, {
     ...init,
     credentials: "include",
     headers: {
@@ -61,6 +61,14 @@ async function dbFetch(url: string, init?: RequestInit): Promise<Response> {
       ...init?.headers,
     },
   });
+
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("serena:unauthorized"));
+    }
+  }
+
+  return res;
 }
 
 export async function fetchDbStats(): Promise<DbStats> {
