@@ -85,6 +85,7 @@ export interface SerenaState {
   loadElectorsForFile: (fileId: string) => Promise<void>;
   launchAutonomousFlow: () => Promise<void>;
   scanCurrentFolder: (overridePath?: string) => Promise<void>;
+  importEntireFolder: (targetFolder?: string) => Promise<any>;
   ensureRegistered: (item: FolderPdfItem) => Promise<string | null>;
   processSingle: (item: FolderPdfItem) => Promise<void>;
   reprocessSingle: (item: FolderPdfItem) => Promise<void>;
@@ -567,6 +568,34 @@ export const useSerenaStore = create<SerenaState>((set, get) => ({
     }
   },
 
+  importEntireFolder: async (targetFolder?: string) => {
+    const folder = (targetFolder || get().folderPath).trim();
+    if (!folder) return [];
+    try {
+      const imported = await apiImportFolder(folder, get().recursive);
+      const idMap = new Map(imported.map((f) => [f.stored_path, f.id]));
+      set((state) => {
+        if (!state.scannedData?.items) return {};
+        const items = state.scannedData.items.map((item) => {
+          const fid = idMap.get(item.stored_path) || item.file_id;
+          return {
+            ...item,
+            file_id: fid,
+            is_registered: !!fid,
+          };
+        });
+        return {
+          scannedData: { ...state.scannedData, items },
+        };
+      });
+      await get().loadDbFiles();
+      return imported;
+    } catch (e: any) {
+      toast.error(`Could not bulk register folder: ${e?.message}`);
+      return [];
+    }
+  },
+
   processSelected: async () => {
     const { scannedData, selectedPaths, templateId } = get();
     if (!scannedData || selectedPaths.size === 0) return;
@@ -576,15 +605,16 @@ export const useSerenaStore = create<SerenaState>((set, get) => ({
     set({ actionInProgress: "batch" });
     toast.info(`Preparing ${selectedItems.length} PDF(s)...`);
     try {
-      const fileIds: string[] = [];
-      for (const item of selectedItems) {
-        if (item.file_id) {
-          fileIds.push(item.file_id);
-        } else {
-          const fid = await get().ensureRegistered(item);
-          if (fid) fileIds.push(fid);
-        }
+      // Bulk register if any are missing file_id
+      const hasUnregistered = selectedItems.some((i) => !i.file_id);
+      if (hasUnregistered) {
+        await get().importEntireFolder(get().folderPath);
       }
+
+      const refreshedData = get().scannedData;
+      const currentSelected = refreshedData?.items.filter((i) => selectedPaths.has(i.stored_path)) || [];
+      const fileIds = currentSelected.map((i) => i.file_id).filter(Boolean) as string[];
+
       if (fileIds.length > 0) {
         const job = await apiCreateJob(fileIds, templateId);
         set({ activeJobId: job.id, activeJobStatus: "running", activeJobProgress: 0, fileJobProgress: {} });
@@ -637,15 +667,15 @@ export const useSerenaStore = create<SerenaState>((set, get) => ({
     set({ actionInProgress: "all_pending" });
     toast.info(`Registering & queueing ${pendingItems.length} unprocessed PDFs...`);
     try {
-      const fileIds: string[] = [];
-      for (const item of pendingItems) {
-        if (item.file_id) {
-          fileIds.push(item.file_id);
-        } else {
-          const fid = await get().ensureRegistered(item);
-          if (fid) fileIds.push(fid);
-        }
-      }
+      // Bulk register all items in 1 network request
+      await get().importEntireFolder(get().folderPath);
+
+      const refreshedData = get().scannedData;
+      const currentPending = refreshedData?.items.filter(
+        (i) => i.status === "pending" || i.status === "unregistered" || i.status === "error"
+      ) || [];
+      const fileIds = currentPending.map((i) => i.file_id).filter(Boolean) as string[];
+
       if (fileIds.length > 0) {
         const job = await apiCreateJob(fileIds, templateId);
         set({ activeJobId: job.id, activeJobStatus: "running", activeJobProgress: 0, fileJobProgress: {} });
