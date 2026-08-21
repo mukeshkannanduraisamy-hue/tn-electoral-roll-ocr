@@ -82,6 +82,8 @@ export const Windows11Explorer: React.FC<{ onOpenAuth: () => void }> = ({ onOpen
     activeJobStatus,
     activeJobProgress,
     pagesPerSec,
+    etaSeconds,
+    cancelActiveJob,
     autoInsertToDb,
     toggleAutoInsertToDb,
     activeTab,
@@ -739,9 +741,46 @@ export const Windows11Explorer: React.FC<{ onOpenAuth: () => void }> = ({ onOpen
 
                           <td className="px-3 py-2">
                             {isCurrentlyProcessing ? (
-                              <span className="inline-flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400 text-[11px]">
-                                <Loader2 className="w-3 h-3 animate-spin" /> Processing…
-                              </span>
+                              <div className="flex flex-col gap-1 min-w-[150px] max-w-[200px]">
+                                <div className="flex items-center justify-between text-[11px] font-mono">
+                                  <span className="font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    <span>
+                                      {fileProgress && fileProgress.pagesTotal > 0
+                                        ? `${Math.round(((fileProgress.pagesCompleted + fileProgress.pagesFailed) / fileProgress.pagesTotal) * 100)}%`
+                                        : `${activeJobProgress.toFixed(0)}%`}
+                                    </span>
+                                  </span>
+                                  <span className="text-slate-500 dark:text-slate-400 text-[10px]">
+                                    {fileProgress && fileProgress.pagesTotal > 0
+                                      ? `${fileProgress.pagesCompleted}/${fileProgress.pagesTotal} pgs`
+                                      : `${item.page_count || 1} pgs`}
+                                  </span>
+                                </div>
+
+                                {/* Progress Bar */}
+                                <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300"
+                                    style={{
+                                      width: `${Math.max(
+                                        5,
+                                        fileProgress && fileProgress.pagesTotal > 0
+                                          ? ((fileProgress.pagesCompleted + fileProgress.pagesFailed) / fileProgress.pagesTotal) * 100
+                                          : activeJobProgress
+                                      )}%`,
+                                    }}
+                                  />
+                                </div>
+
+                                {/* Speed & ETA */}
+                                <div className="flex items-center justify-between text-[9px] font-mono text-slate-400">
+                                  <span>{pagesPerSec > 0 ? `${pagesPerSec.toFixed(1)} pgs/s` : "GPU active"}</span>
+                                  <span className="text-blue-500 dark:text-blue-400 font-bold">
+                                    ETA: {etaSeconds > 0 ? (etaSeconds > 60 ? `${Math.floor(etaSeconds / 60)}m ${etaSeconds % 60}s` : `${etaSeconds}s`) : "< 10s"}
+                                  </span>
+                                </div>
+                              </div>
                             ) : isCompleted ? (
                               <span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400 text-[11px]">
                                 <CheckCircle2 className="w-3 h-3" /> Completed
@@ -840,14 +879,50 @@ export const Windows11Explorer: React.FC<{ onOpenAuth: () => void }> = ({ onOpen
                         </button>
                       </div>
 
+                      {isCurrentlyProcessing && (
+                        <div className="my-1.5 space-y-1">
+                          <div className="flex items-center justify-between text-[10px] font-mono">
+                            <span className="text-blue-600 dark:text-blue-400 font-bold">
+                              {fileProgress && fileProgress.pagesTotal > 0
+                                ? `${Math.round(((fileProgress.pagesCompleted + fileProgress.pagesFailed) / fileProgress.pagesTotal) * 100)}%`
+                                : `${activeJobProgress.toFixed(0)}%`}
+                            </span>
+                            <span className="text-slate-400">
+                              {fileProgress && fileProgress.pagesTotal > 0
+                                ? `${fileProgress.pagesCompleted}/${fileProgress.pagesTotal} pgs`
+                                : `${item.page_count || 1} pgs`}
+                            </span>
+                          </div>
+                          <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300"
+                              style={{
+                                width: `${Math.max(
+                                  5,
+                                  fileProgress && fileProgress.pagesTotal > 0
+                                    ? ((fileProgress.pagesCompleted + fileProgress.pagesFailed) / fileProgress.pagesTotal) * 100
+                                    : activeJobProgress
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                          <div className="text-[9px] font-mono text-slate-400 flex justify-between">
+                            <span>{pagesPerSec > 0 ? `${pagesPerSec.toFixed(1)} pgs/s` : "OCR active"}</span>
+                            <span className="text-blue-500 font-bold">
+                              ETA: {etaSeconds > 0 ? `${etaSeconds}s` : "< 10s"}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-white/5 text-[11px]">
                         {isCompleted ? (
                           <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
                             <CheckCircle2 className="w-3 h-3" /> {item.records_count || 0} Voters
                           </span>
                         ) : isCurrentlyProcessing ? (
-                          <span className="text-blue-600 dark:text-blue-400 font-semibold flex items-center gap-1 animate-pulse">
-                            <Loader2 className="w-3 h-3 animate-spin" /> Processing
+                          <span className="text-blue-600 dark:text-blue-400 font-semibold flex items-center gap-1 animate-pulse text-[11px]">
+                            <Loader2 className="w-3 h-3 animate-spin" /> Processing…
                           </span>
                         ) : (
                           <span className="text-slate-400 flex items-center gap-1">
@@ -932,6 +1007,42 @@ export const Windows11Explorer: React.FC<{ onOpenAuth: () => void }> = ({ onOpen
                         {selectedItem.folder_name}
                       </span>
                     </div>
+
+                    {/* In-Flight Live Progress & ETA */}
+                    {(selectedItem.status === "processing" ||
+                      (selectedItem.file_id && fileJobProgress[selectedItem.file_id] && !fileJobProgress[selectedItem.file_id].done)) && (
+                      <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-blue-600 dark:text-blue-400 font-bold flex items-center gap-1">
+                            <Loader2 className="w-3 h-3 animate-spin" /> In Progress
+                          </span>
+                          <span className="text-slate-700 dark:text-slate-300 font-bold">
+                            {selectedItem.file_id && fileJobProgress[selectedItem.file_id] && fileJobProgress[selectedItem.file_id].pagesTotal > 0
+                              ? `${Math.round(((fileJobProgress[selectedItem.file_id].pagesCompleted + fileJobProgress[selectedItem.file_id].pagesFailed) / fileJobProgress[selectedItem.file_id].pagesTotal) * 100)}%`
+                              : `${activeJobProgress.toFixed(0)}%`}
+                          </span>
+                        </div>
+                        <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-white/10 overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300"
+                            style={{
+                              width: `${Math.max(
+                                5,
+                                selectedItem.file_id && fileJobProgress[selectedItem.file_id] && fileJobProgress[selectedItem.file_id].pagesTotal > 0
+                                  ? ((fileJobProgress[selectedItem.file_id].pagesCompleted + fileJobProgress[selectedItem.file_id].pagesFailed) / fileJobProgress[selectedItem.file_id].pagesTotal) * 100
+                                  : activeJobProgress
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-[10px] text-slate-400">
+                          <span>{pagesPerSec > 0 ? `${pagesPerSec.toFixed(1)} pgs/sec` : "GPU active"}</span>
+                          <span className="text-blue-500 font-bold">
+                            ETA: {etaSeconds > 0 ? (etaSeconds > 60 ? `${Math.floor(etaSeconds / 60)}m ${etaSeconds % 60}s` : `${etaSeconds}s`) : "< 10s"}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Action Buttons */}
@@ -1027,6 +1138,86 @@ export const Windows11Explorer: React.FC<{ onOpenAuth: () => void }> = ({ onOpen
           <span>PaddleOCR PP-OCRv5 (GPU:0)</span>
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* 6. WINDOWS 11 FLOATING OPERATION PROGRESS BOX (NATIVE STYLE) */}
+      {/* ========================================================================= */}
+      {isJobRunning && (
+        <div className="fixed bottom-10 right-6 w-96 bg-white dark:bg-[#252525] rounded-xl shadow-2xl border border-slate-300 dark:border-white/15 overflow-hidden z-50 animate-in slide-in-from-bottom-5 duration-200">
+          {/* Header */}
+          <div className="px-3.5 py-2.5 bg-[#F3F3F3] dark:bg-[#1E1E1E] border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 text-[#005FB8] dark:text-blue-400 animate-spin" />
+              <span className="font-bold text-xs text-slate-800 dark:text-white">
+                Processing Electoral Rolls
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-mono font-bold text-[#005FB8] dark:text-blue-400">
+                {activeJobProgress.toFixed(0)}%
+              </span>
+              <button
+                onClick={() => void cancelActiveJob()}
+                className="w-6 h-6 rounded hover:bg-red-500 hover:text-white flex items-center justify-center text-slate-400 transition-colors"
+                title="Cancel Operation"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="p-4 space-y-3">
+            {/* Progress Bar */}
+            <div className="space-y-1">
+              <div className="w-full h-2.5 rounded-full bg-slate-100 dark:bg-white/10 overflow-hidden relative">
+                <div
+                  className="h-full bg-gradient-to-r from-[#005FB8] to-blue-400 rounded-full transition-all duration-300 shadow-xs"
+                  style={{ width: `${Math.max(4, activeJobProgress)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Metrics */}
+            <div className="space-y-1.5 font-mono text-[11px] text-slate-600 dark:text-slate-300">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Time remaining:</span>
+                <span className="font-bold text-blue-600 dark:text-blue-400">
+                  {etaSeconds > 0
+                    ? etaSeconds > 60
+                      ? `About ${Math.floor(etaSeconds / 60)} min ${etaSeconds % 60} sec`
+                      : `About ${etaSeconds} seconds`
+                    : "Calculating…"}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Processing speed:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                  {pagesPerSec > 0 ? `${pagesPerSec.toFixed(1)} Pages/sec` : "GPU Warming up"}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Database ingestion:</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                  {autoInsertToDb ? "Auto-Insert ON" : "Manual"}
+                </span>
+              </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="pt-2 border-t border-slate-100 dark:border-white/5 flex justify-end">
+              <button
+                onClick={() => void cancelActiveJob()}
+                className="px-3 py-1 rounded bg-slate-100 dark:bg-white/10 hover:bg-red-600 hover:text-white text-xs font-semibold text-slate-700 dark:text-slate-300 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
