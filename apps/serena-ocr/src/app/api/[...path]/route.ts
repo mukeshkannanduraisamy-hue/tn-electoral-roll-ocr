@@ -76,10 +76,25 @@ async function proxyRequest(
 
     const responseHeaders = new Headers();
     response.headers.forEach((value, key) => {
-      if (!["transfer-encoding", "connection"].includes(key.toLowerCase())) {
+      const lowerKey = key.toLowerCase();
+      if (!["transfer-encoding", "connection", "set-cookie"].includes(lowerKey)) {
         responseHeaders.set(key, value);
       }
     });
+
+    if (typeof (response.headers as any).getSetCookie === "function") {
+      const cookies: string[] = (response.headers as any).getSetCookie();
+      for (const cookie of cookies) {
+        responseHeaders.append("set-cookie", cookie);
+      }
+    }
+
+    if (isStream) {
+      responseHeaders.set("Content-Type", "text/event-stream");
+      responseHeaders.set("Cache-Control", "no-cache, no-transform");
+      responseHeaders.set("Connection", "keep-alive");
+      responseHeaders.set("X-Accel-Buffering", "no");
+    }
 
     return new NextResponse(response.body, {
       status: response.status,

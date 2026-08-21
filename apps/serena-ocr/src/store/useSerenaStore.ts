@@ -129,10 +129,23 @@ function attachJobSSE(
           pagesTotal: total,
           done: false,
         };
+
+        let updatedScanned = state.scannedData;
+        if (state.scannedData?.items && file_id) {
+          const items = state.scannedData.items.map((item) => {
+            if (item.file_id === file_id && item.status !== "completed") {
+              return { ...item, status: "processing" as const };
+            }
+            return item;
+          });
+          updatedScanned = { ...state.scannedData, items };
+        }
+
         return {
           activeJobProgress: pct,
           pagesPerSec: pages_per_sec,
           etaSeconds: eta_seconds,
+          scannedData: updatedScanned,
           fileJobProgress: file_id
             ? {
                 ...state.fileJobProgress,
@@ -152,23 +165,42 @@ function attachJobSSE(
 
   const handleFileDone = (e: MessageEvent) => {
     try {
-      const { file_id } = JSON.parse(e.data);
-      set((state) => ({
-        fileJobProgress: {
-          ...state.fileJobProgress,
-          [file_id]: {
-            ...(state.fileJobProgress[file_id] || {
-              fileId: file_id,
-              fileName: file_id,
-              pagesCompleted: 0,
-              pagesFailed: 0,
-              pagesTotal: 0,
-            }),
-            done: true,
+      const { file_id, records_count } = JSON.parse(e.data);
+      set((state) => {
+        let updatedScanned = state.scannedData;
+        if (state.scannedData?.items && file_id) {
+          const items = state.scannedData.items.map((item) => {
+            if (item.file_id === file_id) {
+              return {
+                ...item,
+                status: "completed" as const,
+                records_count: records_count ?? item.records_count,
+              };
+            }
+            return item;
+          });
+          updatedScanned = { ...state.scannedData, items };
+        }
+
+        return {
+          scannedData: updatedScanned,
+          fileJobProgress: {
+            ...state.fileJobProgress,
+            [file_id]: {
+              ...(state.fileJobProgress[file_id] || {
+                fileId: file_id,
+                fileName: file_id,
+                pagesCompleted: 0,
+                pagesFailed: 0,
+                pagesTotal: 0,
+              }),
+              done: true,
+            },
           },
-        },
-      }));
-      get().loadDbFiles();
+        };
+      });
+      void get().loadDbFiles();
+      void get().scanCurrentFolder();
     } catch {}
   };
 
@@ -193,7 +225,8 @@ function attachJobSSE(
       pagesPerSec: 0,
       etaSeconds: 0,
     });
-    get().loadDbFiles();
+    void get().loadDbFiles();
+    void get().scanCurrentFolder();
 
     if (isFailed) {
       toast.error("OCR batch processing failed");
@@ -207,7 +240,8 @@ function attachJobSSE(
     isDone = true;
     evtSource.close();
     set({ activeJobId: null, activeJobStatus: null, pagesPerSec: 0, etaSeconds: 0 });
-    get().loadDbFiles();
+    void get().loadDbFiles();
+    void get().scanCurrentFolder();
   };
 
   evtSource.addEventListener("progress", handleProgress);
