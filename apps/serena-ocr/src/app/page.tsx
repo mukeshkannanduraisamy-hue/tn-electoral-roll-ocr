@@ -9,7 +9,7 @@ import { SerenaPdfCard } from "@/components/SerenaPdfCard";
 import { SerenaPdfTable } from "@/components/SerenaPdfTable";
 import { DatabasePage } from "@/components/DatabasePage";
 import { LocalDeploymentPage } from "@/components/LocalDeploymentPage";
-import { QuantumStudio } from "@/components/QuantumStudio";
+import { WindowsExplorerView } from "@/components/WindowsExplorerView";
 import { SerenaAuthModal } from "@/components/SerenaAuthBar";
 import { Folder, Loader2, RefreshCw } from "lucide-react";
 
@@ -87,9 +87,9 @@ export default function SerenaHome() {
       {/* Top Header */}
       <SerenaHeader onOpenAuth={() => setIsAuthOpen(true)} />
 
-      {/* RENDER VIEW: Quantum Studio vs. Database Explorer vs. Local Deployment */}
+      {/* RENDER VIEW: Windows File Explorer vs. Database Records vs. Local Deployment */}
       {activeTab === "workstation" ? (
-        <QuantumStudio />
+        <WindowsExplorerView />
       ) : activeTab === "database" ? (
         /* Database Page */
         <DatabasePage />

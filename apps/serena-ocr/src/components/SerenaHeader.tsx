@@ -90,55 +90,55 @@ export const SerenaHeader: React.FC<{ onOpenAuth: () => void }> = ({ onOpenAuth 
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-base font-black tracking-tight text-slate-900 dark:text-white">
-                SERENA
+              <span className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">
+                Serena OCR Explorer
               </span>
-              <span className="text-xs font-mono font-bold text-cyan-400 uppercase tracking-widest px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30">
-                QUANTUM STUDIO
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 font-semibold">
+                Tamil Nadu
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-              Real-Time Neural OCR Raycaster, Curated Voter Vault & Autonomous Deployment
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Electoral Roll Batch OCR & Curated Voter Database
             </p>
           </div>
         </div>
 
         {/* Center Primary Page Switcher Tabs */}
-        <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-obsidian-950 p-1 rounded-2xl border border-slate-200 dark:border-white/10 shadow-inner">
+        <div className="flex items-center gap-1 bg-slate-200/70 dark:bg-white/5 p-1 rounded-xl border border-slate-300 dark:border-white/10">
           <button
             onClick={() => setActiveTab("workstation")}
-            className={`px-4 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+            className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
               activeTab === "workstation"
-                ? "bg-gradient-to-r from-serena-indigo to-serena-violet text-white shadow-md shadow-serena-indigo/20"
+                ? "bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-xs font-bold"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
             }`}
           >
-            <Zap className="w-4 h-4 text-cyan-200 fill-cyan-200" />
-            <span>Quantum Studio</span>
+            <Folder className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+            <span>Files Explorer</span>
           </button>
 
           <button
             onClick={() => setActiveTab("database")}
-            className={`px-4 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+            className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
               activeTab === "database"
-                ? "bg-gradient-to-r from-serena-indigo to-serena-violet text-white shadow-md shadow-serena-indigo/20"
+                ? "bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-xs font-bold"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
             }`}
           >
-            <Database className="w-4 h-4" />
+            <Database className="w-3.5 h-3.5" />
             <span>Database</span>
           </button>
 
           <button
             onClick={() => setActiveTab("deployment")}
-            className={`px-4 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+            className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
               activeTab === "deployment"
-                ? "bg-gradient-to-r from-serena-indigo to-serena-violet text-white shadow-md shadow-serena-indigo/20"
+                ? "bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-xs font-bold"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
             }`}
           >
-            <Rocket className="w-4 h-4" />
-            <span>Auto Deployment</span>
+            <Rocket className="w-3.5 h-3.5" />
+            <span>Deployment</span>
           </button>
         </div>
 
