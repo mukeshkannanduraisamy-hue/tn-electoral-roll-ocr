@@ -365,7 +365,7 @@ def truncate_single_table(
 ) -> dict:
     """Truncate / delete all rows from a specific database table or underlying table of a view."""
     name = _validate_table_name(name)
-    if name.lower() in ("sqlite_master", "sqlite_sequence", "sqlite_stat1", "users"):
+    if name.lower() in ("sqlite_master", "sqlite_sequence", "sqlite_stat1", "users", "sessions"):
         raise HTTPException(400, f"Cannot truncate system/user table: {name}")
 
     # Map known views to their underlying source tables
@@ -377,23 +377,12 @@ def truncate_single_table(
 
     target_table = VIEW_TO_BASE_MAP.get(name.lower(), name)
 
-    # If it's another unmapped view, verify
     try:
-        insp = inspect(session.connection())
-        views = set(insp.get_view_names())
-        if target_table in views and target_table not in VIEW_TO_BASE_MAP.values():
-            raise HTTPException(
-                400,
-                f"'{name}' is a virtual SQL view. Please select and truncate the underlying data table.",
-            )
-    except HTTPException:
-        raise
-    except Exception:
-        pass
-
-    try:
-        session.execute(text(f"DELETE FROM {target_table};"))
+        # Disable foreign key checks during deletion
+        session.execute(text("PRAGMA foreign_keys = OFF;"))
+        session.execute(text(f'DELETE FROM "{target_table}";'))
         session.commit()
+        session.execute(text("PRAGMA foreign_keys = ON;"))
         logger.info("User %r truncated table %s (target: %s)", user.username, name, target_table)
         msg = (
             f"Table '{target_table}' (via '{name}') truncated successfully."
@@ -403,6 +392,7 @@ def truncate_single_table(
         return {"status": "ok", "message": msg}
     except Exception as e:
         session.rollback()
+        logger.exception("Failed to truncate table %s", name)
         raise HTTPException(500, f"Failed to truncate table {name}: {e}") from e
 
 
@@ -413,18 +403,25 @@ def truncate_all_database_tables(
 ) -> dict:
     """Truncate all data tables in the database."""
     tables = [
-        "audit_logs", "ocr_blocks", "photos", "records", "summaries",
-        "polling_stations", "pages", "files", "voters", "jobs"
+        "voters", "polling_stations", "records", "pages", "files",
+        "summaries", "ocr_blocks", "photos", "jobs", "audit_logs"
     ]
     try:
+        session.execute(text("PRAGMA foreign_keys = OFF;"))
         for t in tables:
             try:
-                session.execute(text(f"DELETE FROM {t};"))
-            except Exception:
-                pass
+                session.execute(text(f'DELETE FROM "{t}";'))
+            except Exception as err:
+                logger.warning("Could not delete from %s: %s", t, err)
+        try:
+            session.execute(text("DELETE FROM sqlite_sequence;"))
+        except Exception:
+            pass
         session.commit()
+        session.execute(text("PRAGMA foreign_keys = ON;"))
         logger.info("User %r truncated entire database", user.username)
         return {"status": "ok", "message": "All database tables truncated successfully."}
     except Exception as e:
         session.rollback()
+        logger.exception("Database truncation failed")
         raise HTTPException(500, f"Database truncation failed: {e}") from e
