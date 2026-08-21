@@ -27,21 +27,34 @@
   }
 }
 
+/* Quantum Dot Matrix & Holographic Background */
+.quantum-backdrop {
+  background-color: #F8FAFC;
+  background-image: radial-gradient(rgba(99, 102, 241, 0.08) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+.dark .quantum-backdrop {
+  background-color: #030712;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
 /* Glassmorphism surfaces - Light & Dark */
 .serena-glass {
   background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.03);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.03);
 }
 
 .dark .serena-glass {
-  background: rgba(11, 15, 25, 0.7);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(8, 12, 22, 0.75);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: none;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
 }
 
 .serena-glass-card {
@@ -59,23 +72,48 @@
 }
 
 .dark .serena-glass-card {
-  background: rgba(15, 23, 42, 0.5);
+  background: rgba(14, 21, 38, 0.6);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   box-shadow: none;
 }
 
 .dark .serena-glass-card:hover {
-  background: rgba(17, 24, 39, 0.85);
-  border-color: rgba(99, 102, 241, 0.3);
-  box-shadow: 0 12px 30px -10px rgba(99, 102, 241, 0.15);
+  background: rgba(21, 31, 54, 0.85);
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 12px 30px -10px rgba(99, 102, 241, 0.25);
+}
+
+/* Neural Laser Scan Ray */
+.laser-ray {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #00F2FE 20%, #4FACFE 50%, #00F2FE 80%, transparent);
+  box-shadow: 0 0 15px 3px rgba(0, 242, 254, 0.6), 0 0 30px 6px rgba(79, 172, 254, 0.4);
+  pointer-events: none;
+  z-index: 30;
+}
+
+/* Elector Cell Highlights */
+.elector-cell-bbox {
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  background: rgba(99, 102, 241, 0.04);
+  transition: all 0.2s ease;
+}
+
+.elector-cell-bbox:hover {
+  border-color: #00F2FE;
+  background: rgba(0, 242, 254, 0.12);
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.3);
 }
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {

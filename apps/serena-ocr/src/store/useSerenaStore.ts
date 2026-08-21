@@ -54,11 +54,21 @@ export interface SerenaState {
   activeTab: "workstation" | "database" | "deployment";
   autoInsertToDb: boolean;
 
+  // Quantum Studio Active Selection & Elector Stream
+  selectedItem: FolderPdfItem | null;
+  activePageNumber: number;
+  liveExtractedElectors: any[];
+  isLoadingElectors: boolean;
+  isAutonomousFlowActive: boolean;
+
   // Setters
   setTheme: (t: "dark" | "light") => void;
   toggleTheme: () => void;
   setActiveTab: (tab: "workstation" | "database" | "deployment") => void;
   toggleAutoInsertToDb: () => void;
+  setSelectedItem: (item: FolderPdfItem | null) => void;
+  setActivePageNumber: (pg: number) => void;
+  setLiveExtractedElectors: (records: any[]) => void;
   setFolderPath: (path: string) => void;
   setRecursive: (val: boolean) => void;
   setSearchQuery: (query: string) => void;
@@ -72,6 +82,8 @@ export interface SerenaState {
   setScannedData: (data: FolderScanResponse | null) => void;
 
   // Action Methods
+  loadElectorsForFile: (fileId: string) => Promise<void>;
+  launchAutonomousFlow: () => Promise<void>;
   scanCurrentFolder: (overridePath?: string) => Promise<void>;
   ensureRegistered: (item: FolderPdfItem) => Promise<string | null>;
   processSingle: (item: FolderPdfItem) => Promise<void>;
@@ -315,6 +327,12 @@ export const useSerenaStore = create<SerenaState>((set, get) => ({
   activeTab: "workstation",
   autoInsertToDb: true,
 
+  selectedItem: null,
+  activePageNumber: 1,
+  liveExtractedElectors: [],
+  isLoadingElectors: false,
+  isAutonomousFlowActive: false,
+
   setTheme: (theme) => {
     if (typeof window !== "undefined") {
       localStorage.setItem("serena-theme", theme);
@@ -335,6 +353,51 @@ export const useSerenaStore = create<SerenaState>((set, get) => ({
   setActiveTab: (activeTab) => set({ activeTab }),
   toggleAutoInsertToDb: () => set((s) => ({ autoInsertToDb: !s.autoInsertToDb })),
 
+  setSelectedItem: (selectedItem) => {
+    set({ selectedItem, activePageNumber: 1 });
+    if (selectedItem?.file_id) {
+      void get().loadElectorsForFile(selectedItem.file_id);
+    } else {
+      set({ liveExtractedElectors: [] });
+    }
+  },
+
+  setActivePageNumber: (activePageNumber) => set({ activePageNumber }),
+  setLiveExtractedElectors: (liveExtractedElectors) => set({ liveExtractedElectors }),
+
+  loadElectorsForFile: async (fileId: string) => {
+    set({ isLoadingElectors: true });
+    try {
+      const res = await fetch(`/api/records?file_id=${encodeURIComponent(fileId)}&limit=1000`);
+      if (res.ok) {
+        const data = await res.json();
+        set({ liveExtractedElectors: data.items || [] });
+      }
+    } catch (e) {
+      console.warn("Failed to fetch electors for file", fileId, e);
+    } finally {
+      set({ isLoadingElectors: false });
+    }
+  },
+
+  launchAutonomousFlow: async () => {
+    const { scannedData, processAllUnprocessed } = get();
+    if (!scannedData?.items || scannedData.items.length === 0) {
+      toast.error("No documents discovered. Scan a folder first.");
+      return;
+    }
+    set({ isAutonomousFlowActive: true });
+    toast.info("⚡ Autonomous Quantum Flow Initiated: Processing all pending parts...");
+    try {
+      await processAllUnprocessed();
+      toast.success("✨ Autonomous Flow complete! All voter records curated and auto-promoted.");
+    } catch (e: any) {
+      toast.error(e?.message || "Autonomous flow halted");
+    } finally {
+      set({ isAutonomousFlowActive: false });
+    }
+  },
+
   setFolderPath: (folderPath) => set({ folderPath }),
   setRecursive: (recursive) => set({ recursive }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
@@ -343,7 +406,19 @@ export const useSerenaStore = create<SerenaState>((set, get) => ({
   setSortDesc: (sortDesc) => set({ sortDesc }),
   setViewMode: (viewMode) => set({ viewMode }),
   setTemplateId: (templateId) => set({ templateId }),
-  setScannedData: (scannedData) => set({ scannedData }),
+  setScannedData: (scannedData) => {
+    const prevSelected = get().selectedItem;
+    let nextSelected = prevSelected;
+    if (scannedData?.items && scannedData.items.length > 0) {
+      if (!prevSelected || !scannedData.items.some((i) => i.stored_path === prevSelected.stored_path)) {
+        nextSelected = scannedData.items[0];
+      }
+    }
+    set({ scannedData, selectedItem: nextSelected });
+    if (nextSelected?.file_id) {
+      void get().loadElectorsForFile(nextSelected.file_id);
+    }
+  },
 
   promoteAllToDatabase: async () => {
     try {

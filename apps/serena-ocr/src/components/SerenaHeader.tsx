@@ -93,12 +93,12 @@ export const SerenaHeader: React.FC<{ onOpenAuth: () => void }> = ({ onOpenAuth 
               <span className="text-base font-black tracking-tight text-slate-900 dark:text-white">
                 SERENA
               </span>
-              <span className="text-xs font-mono font-bold text-serena-violet uppercase tracking-widest px-2 py-0.5 rounded-full bg-serena-violet/10 border border-serena-violet/30">
-                Neural OCR
+              <span className="text-xs font-mono font-bold text-cyan-400 uppercase tracking-widest px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30">
+                QUANTUM STUDIO
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-              Autonomous Folder Explorer & Curated Voter Database Pipeline
+              Real-Time Neural OCR Raycaster, Curated Voter Vault & Autonomous Deployment
             </p>
           </div>
         </div>
@@ -113,8 +113,8 @@ export const SerenaHeader: React.FC<{ onOpenAuth: () => void }> = ({ onOpenAuth 
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
             }`}
           >
-            <Cpu className="w-4 h-4" />
-            <span>Batch OCR Workstation</span>
+            <Zap className="w-4 h-4 text-cyan-200 fill-cyan-200" />
+            <span>Quantum Studio</span>
           </button>
 
           <button

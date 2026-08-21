@@ -9,6 +9,7 @@ import { SerenaPdfCard } from "@/components/SerenaPdfCard";
 import { SerenaPdfTable } from "@/components/SerenaPdfTable";
 import { DatabasePage } from "@/components/DatabasePage";
 import { LocalDeploymentPage } from "@/components/LocalDeploymentPage";
+import { QuantumStudio } from "@/components/QuantumStudio";
 import { SerenaAuthModal } from "@/components/SerenaAuthBar";
 import { Folder, Loader2, RefreshCw } from "lucide-react";
 
@@ -86,57 +87,9 @@ export default function SerenaHome() {
       {/* Top Header */}
       <SerenaHeader onOpenAuth={() => setIsAuthOpen(true)} />
 
-      {/* RENDER VIEW: Batch OCR Workstation vs. Database Explorer vs. Local Deployment */}
+      {/* RENDER VIEW: Quantum Studio vs. Database Explorer vs. Local Deployment */}
       {activeTab === "workstation" ? (
-        <>
-          {/* Metrics HUD */}
-          <SerenaMetricsHud />
-
-          {/* Main Workstation Deck */}
-          <main className="flex-1 flex flex-col overflow-hidden p-6 gap-4 min-h-0">
-            {/* Toolbar */}
-            <SerenaToolbar totalFiltered={filteredItems.length} />
-
-            {/* PDF Documents Content */}
-            {isScanning ? (
-              <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-400">
-                <Loader2 className="w-9 h-9 animate-spin text-serena-indigo" />
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  Scanning local folder for PDF documents…
-                </p>
-              </div>
-            ) : filteredItems.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center gap-3 serena-glass rounded-3xl p-8 text-center border border-slate-200 dark:border-white/5">
-                <Folder className="w-12 h-12 text-slate-400 dark:text-slate-600" />
-                <div>
-                  <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">No PDF files match your filter</h3>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Try selecting a different directory or adjusting your search filters
-                  </p>
-                </div>
-                <button
-                  onClick={() => void scanCurrentFolder()}
-                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-obsidian-850 hover:bg-slate-200 dark:hover:bg-obsidian-800 border border-slate-200 dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors flex items-center gap-1.5"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Rescan Directory</span>
-                </button>
-              </div>
-            ) : viewMode === "grid" ? (
-              /* Cards Grid */
-              <div className="flex-1 overflow-y-auto min-h-0 pr-1">
-                <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
-                  {filteredItems.map((item) => (
-                    <SerenaPdfCard key={item.stored_path} item={item} />
-                  ))}
-                </div>
-              </div>
-            ) : (
-              /* High-Density Table */
-              <SerenaPdfTable items={filteredItems} />
-            )}
-          </main>
-        </>
+        <QuantumStudio />
       ) : activeTab === "database" ? (
         /* Database Page */
         <DatabasePage />
