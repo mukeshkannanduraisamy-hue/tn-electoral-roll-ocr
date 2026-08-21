@@ -29,6 +29,18 @@ import {
   Eye,
   Hash,
   Type,
+  User,
+  Home,
+  MapPin,
+  Calendar,
+  Filter,
+  Copy,
+  Check,
+  Download,
+  Share2,
+  ExternalLink,
+  ShieldCheck,
+  Grid,
 } from "lucide-react";
 import {
   fetchTables,
@@ -58,31 +70,37 @@ export const DatabasePage: React.FC = () => {
   const [stats, setStats] = useState<DbStats | null>(null);
   const [tables, setTables] = useState<DbTableInfo[]>([]);
   const [selectedTable, setSelectedTable] = useState<string>("voters");
-  const [activeTab, setActiveTab] = useState<"rows" | "columns" | "sql">("rows");
   const [isLoadingTables, setIsLoadingTables] = useState(true);
 
   // Table Rows State
   const [rowsData, setRowsData] = useState<DbRowsResponse | null>(null);
   const [columns, setColumns] = useState<DbColumn[]>([]);
-  const [indexes, setIndexes] = useState<DbIndex[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [searchQuery, setSearchQuery] = useState("");
+  const [genderFilter, setGenderFilter] = useState<"all" | "male" | "female">("all");
+  const [ageGroupFilter, setAgeGroupFilter] = useState<"all" | "18-30" | "31-50" | "50+">("all");
   const [sortCol, setSortCol] = useState<string | undefined>(undefined);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [isLoadingRows, setIsLoadingRows] = useState(false);
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set(["raw_ocr_json", "extra_json", "bbox_json"]));
+  const [showColSelector, setShowColSelector] = useState(false);
+
+  // Voter Detail Card Modal
+  const [selectedRowDetail, setSelectedRowDetail] = useState<Record<string, any> | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // SQL Console State
+  const [showSqlDrawer, setShowSqlDrawer] = useState(false);
   const [sqlQuery, setSqlQuery] = useState("SELECT * FROM voters LIMIT 50;");
   const [queryResult, setQueryResult] = useState<DbQueryResult | null>(null);
   const [isExecutingSql, setIsExecutingSql] = useState(false);
   const [sqlError, setSqlError] = useState<string | null>(null);
 
-  // Modal Detail State
-  const [modalValue, setModalValue] = useState<{ title: string; content: string } | null>(null);
-  const [isPromotingAll, setIsPromotingAll] = useState(false);
+  // Truncate & Promote State
   const [confirmTruncate, setConfirmTruncate] = useState<"all" | string | null>(null);
   const [isTruncating, setIsTruncating] = useState(false);
+  const [isPromotingAll, setIsPromotingAll] = useState(false);
 
   // Handle Truncate Execution
   const handleExecuteTruncate = async () => {
@@ -103,6 +121,22 @@ export const DatabasePage: React.FC = () => {
       toast.error(e?.message || "Truncate operation failed");
     } finally {
       setIsTruncating(false);
+    }
+  };
+
+  // Promote OCR Records to DB
+  const handlePromoteAll = async () => {
+    setIsPromotingAll(true);
+    toast.info("Promoting extracted OCR records to voters database...");
+    try {
+      const res = await promoteAllToDb();
+      toast.success(`Promoted! Created: ${res.created}, Updated: ${res.updated}, Skipped: ${res.skipped}`);
+      void loadOverview();
+      void loadTableDetails();
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to promote records");
+    } finally {
+      setIsPromotingAll(false);
     }
   };
 
@@ -127,21 +161,19 @@ export const DatabasePage: React.FC = () => {
     void loadOverview();
   }, [loadOverview]);
 
-  // Load Table Rows & Schema when table or filter changes
+  // Load Table Rows & Schema
   const loadTableDetails = useCallback(async () => {
     if (!selectedTable) return;
     setIsLoadingRows(true);
     try {
-      const [cols, idxs, rows] = await Promise.all([
+      const [cols, rows] = await Promise.all([
         fetchColumns(selectedTable),
-        fetchIndexes(selectedTable).catch(() => []),
         fetchRows(selectedTable, page, pageSize, searchQuery || undefined, sortCol, sortOrder),
       ]);
       setColumns(cols);
-      setIndexes(idxs);
       setRowsData(rows);
     } catch (e: any) {
-      toast.error(`Error loading table ${selectedTable}: ${e?.message}`);
+      toast.error(e?.message || `Failed to fetch data for ${selectedTable}`);
     } finally {
       setIsLoadingRows(false);
     }
@@ -151,7 +183,31 @@ export const DatabasePage: React.FC = () => {
     void loadTableDetails();
   }, [loadTableDetails]);
 
-  // Handle Sort Change
+  // Client-Side Quick Filters (Gender & Age)
+  const displayRows = useMemo(() => {
+    if (!rowsData?.rows) return [];
+    let rows = rowsData.rows;
+
+    if (selectedTable === "voters") {
+      if (genderFilter === "male") {
+        rows = rows.filter((r) => String(r.gender || "").toLowerCase().includes("male") || String(r.gender || "").includes("ஆண்"));
+      } else if (genderFilter === "female") {
+        rows = rows.filter((r) => String(r.gender || "").toLowerCase().includes("female") || String(r.gender || "").includes("பெண்"));
+      }
+
+      if (ageGroupFilter === "18-30") {
+        rows = rows.filter((r) => Number(r.age) >= 18 && Number(r.age) <= 30);
+      } else if (ageGroupFilter === "31-50") {
+        rows = rows.filter((r) => Number(r.age) >= 31 && Number(r.age) <= 50);
+      } else if (ageGroupFilter === "50+") {
+        rows = rows.filter((r) => Number(r.age) > 50);
+      }
+    }
+
+    return rows;
+  }, [rowsData, selectedTable, genderFilter, ageGroupFilter]);
+
+  // Handle Sort
   const handleSort = (colName: string) => {
     if (sortCol === colName) {
       if (sortOrder === "asc") setSortOrder("desc");
@@ -163,665 +219,673 @@ export const DatabasePage: React.FC = () => {
       setSortCol(colName);
       setSortOrder("asc");
     }
-    setPage(1);
   };
 
-  // Run SQL Query
+  // Toggle Column Visibility
+  const toggleColumn = (colName: string) => {
+    setHiddenCols((prev) => {
+      const next = new Set(prev);
+      if (next.has(colName)) next.delete(colName);
+      else next.add(colName);
+      return next;
+    });
+  };
+
+  // Copy helper
+  const handleCopy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    toast.success("Copied to clipboard!");
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  // Execute Custom SQL
   const handleRunSql = async () => {
     if (!sqlQuery.trim()) return;
     setIsExecutingSql(true);
     setSqlError(null);
     try {
-      const result = await executeQuery(sqlQuery);
-      setQueryResult(result);
-      toast.success(`Query executed in ${result.duration_ms}ms (${result.row_count} rows)`);
+      const res = await executeQuery(sqlQuery);
+      setQueryResult(res);
+      toast.success(`Query executed: ${res.row_count} row(s) returned`);
     } catch (e: any) {
       setSqlError(e?.message || "Query execution failed");
-      toast.error(e?.message || "Query execution failed");
+      toast.error("SQL execution error");
     } finally {
       setIsExecutingSql(false);
     }
   };
 
-  // Trigger Bulk Promotion to DB
-  const handlePromoteAll = async () => {
-    setIsPromotingAll(true);
-    toast.info("Auto-promoting all extracted records to voters table...");
-    try {
-      const res = await promoteAllToDb();
-      toast.success(
-        `Database updated! ${res.created} voters inserted, ${res.updated} updated, ${res.skipped} skipped.`
-      );
-      void loadOverview();
-      void loadTableDetails();
-    } catch (e: any) {
-      toast.error(e?.message || "Failed to promote records to database");
-    } finally {
-      setIsPromotingAll(false);
-    }
-  };
-
-  // Export current table rows as CSV
-  const handleExportCsv = () => {
-    if (!rowsData || rowsData.rows.length === 0) {
-      toast.warning("No data rows to export");
-      return;
-    }
-    downloadCsv(`${selectedTable}_export.csv`, rowsData.columns, rowsData.rows);
-    toast.success(`Exported ${rowsData.rows.length} rows to CSV`);
-  };
-
-  const totalPages = useMemo(() => {
-    if (!rowsData || rowsData.total === 0) return 1;
-    return Math.ceil(rowsData.total / pageSize);
-  }, [rowsData, pageSize]);
+  const visibleColumns = columns.filter((c) => !hiddenCols.has(c.name));
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden p-6 gap-4 min-h-0 bg-transparent">
-      {/* Top Database Stats Banner */}
-      <div className="serena-glass p-4 rounded-2xl border border-slate-200 dark:border-white/5 flex items-center justify-between gap-4 flex-wrap shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-serena-indigo/10 border border-serena-indigo/30 flex items-center justify-center shrink-0">
-            <Database className="w-5 h-5 text-serena-indigo" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                SQLite Database Explorer
-              </h2>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/10 border border-emerald-500/25 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3" /> Active Connection
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Direct introspection & querying for curated electoral roll tables
-            </p>
-          </div>
-        </div>
-
-        {/* Database Metric Badges */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          {stats && (
-            <>
-              <div className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-obsidian-950 border border-slate-200 dark:border-white/10 text-xs flex items-center gap-1.5">
-                <HardDrive className="w-3.5 h-3.5 text-serena-amber" />
-                <span className="text-slate-500 dark:text-slate-400">Size:</span>
-                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                  {stats.file_size_display}
-                </span>
-              </div>
-
-              <div className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-obsidian-950 border border-slate-200 dark:border-white/10 text-xs flex items-center gap-1.5">
-                <Table2 className="w-3.5 h-3.5 text-serena-indigo" />
-                <span className="text-slate-500 dark:text-slate-400">Tables:</span>
-                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                  {stats.table_count}
-                </span>
-              </div>
-
-              <div className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-obsidian-950 border border-slate-200 dark:border-white/10 text-xs flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-serena-violet" />
-                <span className="text-slate-500 dark:text-slate-400">Indexes:</span>
-                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                  {stats.index_count}
-                </span>
-              </div>
-            </>
-          )}
-
-          {/* Quick Auto-Promote All to DB Button */}
-          <button
-            onClick={() => void handlePromoteAll()}
-            disabled={isPromotingAll}
-            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-serena-indigo to-serena-violet hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-serena-indigo/20 transition-all active:scale-95 disabled:opacity-50"
-            title="Auto-insert / promote all pending OCR records into the curated voters table"
-          >
-            {isPromotingAll ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="w-3.5 h-3.5 text-indigo-200" />
-            )}
-            <span>Auto-Promote All</span>
-          </button>
-
-          {/* Truncate Entire DB Button */}
-          <button
-            onClick={() => setConfirmTruncate("all")}
-            className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
-            title="Truncate all data tables in SQLite database"
-          >
-            <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-            <span>Truncate DB</span>
-          </button>
-
-          <button
-            onClick={() => {
-              void loadOverview();
-              void loadTableDetails();
-            }}
-            className="p-2 rounded-xl bg-slate-100 dark:bg-obsidian-950 hover:bg-slate-200 dark:hover:bg-obsidian-850 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 transition-colors"
-            title="Refresh database"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Main Split Layout: Left Tables Sidebar + Right Table Workspace */}
-      <div className="flex-1 flex gap-4 min-h-0 overflow-hidden">
-        {/* Left Sidebar: Tables List */}
-        <aside className="w-64 serena-glass rounded-2xl border border-slate-200 dark:border-white/5 p-3 flex flex-col gap-2 shrink-0">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-2 py-1">
-            Database Tables ({tables.length})
-          </div>
-
-          <div className="flex-1 overflow-y-auto space-y-1 pr-1">
-            {isLoadingTables ? (
-              <div className="flex items-center justify-center p-6 text-slate-400">
-                <Loader2 className="w-5 h-5 animate-spin" />
-              </div>
-            ) : (
-              tables.map((t) => {
-                const isSelected = selectedTable === t.name;
-                return (
-                  <button
-                    key={t.name}
-                    onClick={() => {
-                      setSelectedTable(t.name);
-                      setPage(1);
-                      setSearchQuery("");
-                      setSortCol(undefined);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 transition-all ${
-                      isSelected
-                        ? "bg-gradient-to-r from-serena-indigo to-serena-violet text-white shadow-md shadow-serena-indigo/20 font-bold"
-                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-obsidian-850"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <Table2 className={`w-3.5 h-3.5 shrink-0 ${isSelected ? "text-white" : "text-serena-indigo"}`} />
-                      <span className="truncate">{t.name}</span>
-                    </div>
-                    <span
-                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md font-bold ${
-                        isSelected
-                          ? "bg-white/20 text-white"
-                          : "bg-slate-200 dark:bg-obsidian-950 text-slate-500 dark:text-slate-400"
-                      }`}
-                    >
-                      {t.row_count.toLocaleString()}
-                    </span>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </aside>
-
-        {/* Right Main Table Content Area */}
-        <section className="flex-1 serena-glass rounded-2xl border border-slate-200 dark:border-white/5 flex flex-col min-w-0 overflow-hidden">
-          {/* Table Header Controls */}
-          <div className="p-3.5 border-b border-slate-200 dark:border-white/5 flex items-center justify-between gap-3 flex-wrap bg-slate-50/50 dark:bg-obsidian-950/40">
-            {/* Left Tabs */}
-            <div className="flex items-center gap-1.5">
+    <div className="flex flex-col h-full w-full bg-[#F9F9F9] dark:bg-[#1E1E1E] text-slate-800 dark:text-slate-100 font-sans select-none antialiased overflow-hidden">
+      {/* ========================================================================= */}
+      {/* 1. TOP SUMMARY CARDS & STATS BAR */}
+      {/* ========================================================================= */}
+      <div className="px-4 py-2.5 bg-white dark:bg-[#202020] border-b border-slate-200 dark:border-white/10 flex items-center justify-between gap-4 shrink-0 flex-wrap shadow-2xs">
+        {/* Left Table Switcher Tabs */}
+        <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 max-w-full">
+          {tables.map((t) => {
+            const isSelected = t.name === selectedTable;
+            return (
               <button
-                onClick={() => setActiveTab("rows")}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                  activeTab === "rows"
-                    ? "bg-serena-indigo text-white shadow-sm"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                key={t.name}
+                onClick={() => {
+                  setSelectedTable(t.name);
+                  setPage(1);
+                  setSearchQuery("");
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
+                  isSelected
+                    ? "bg-[#005FB8] text-white shadow-xs"
+                    : "bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300"
                 }`}
               >
                 <Table2 className="w-3.5 h-3.5" />
-                <span>Rows ({rowsData?.total?.toLocaleString() ?? 0})</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab("columns")}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                  activeTab === "columns"
-                    ? "bg-serena-indigo text-white shadow-sm"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                }`}
-              >
-                <Columns3 className="w-3.5 h-3.5" />
-                <span>Schema ({columns.length} cols)</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab("sql")}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                  activeTab === "sql"
-                    ? "bg-serena-indigo text-white shadow-sm"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                }`}
-              >
-                <Terminal className="w-3.5 h-3.5" />
-                <span>SQL Console</span>
-              </button>
-            </div>
-
-            {/* Right Tools: Search, Export, Truncate Table, Page Size */}
-            {activeTab === "rows" && (
-              <div className="flex items-center gap-2 ml-auto flex-wrap">
-                {/* Search */}
-                <div className="relative w-40 sm:w-52">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder={`Search ${selectedTable}…`}
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      setPage(1);
-                    }}
-                    className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-obsidian-950 border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-serena-indigo"
-                  />
-                </div>
-
-                {/* CSV Export Button */}
-                <button
-                  onClick={handleExportCsv}
-                  className="px-3 py-1.5 rounded-xl bg-white dark:bg-obsidian-950 hover:bg-slate-100 dark:hover:bg-obsidian-850 border border-slate-200 dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 shadow-xs transition-colors"
-                  title="Export current rows to CSV"
+                <span>{t.name}</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                    isSelected
+                      ? "bg-white/20 text-white"
+                      : "bg-black/5 dark:bg-white/10 text-slate-500 dark:text-slate-400"
+                  }`}
                 >
-                  <FileDown className="w-3.5 h-3.5 text-serena-emerald" />
-                  <span className="hidden sm:inline">Export CSV</span>
-                </button>
-
-                {/* Truncate Single Table Button */}
-                <button
-                  onClick={() => setConfirmTruncate(selectedTable)}
-                  className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-xs font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1.5 shadow-xs transition-colors"
-                  title={`Truncate / empty all rows from table ${selectedTable}`}
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                  <span className="hidden sm:inline">Truncate Table</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* TAB 1: ROWS DATA GRID */}
-          {activeTab === "rows" && (
-            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-              <div className="flex-1 overflow-auto">
-                {isLoadingRows ? (
-                  <div className="flex flex-col items-center justify-center h-full gap-2 text-slate-400">
-                    <Loader2 className="w-8 h-8 animate-spin text-serena-indigo" />
-                    <span className="text-xs">Loading table rows…</span>
-                  </div>
-                ) : !rowsData || rowsData.rows.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full gap-2 text-slate-400 p-8 text-center">
-                    <Database className="w-10 h-10 text-slate-300 dark:text-slate-600" />
-                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                      No rows found in {selectedTable}
-                    </span>
-                    <p className="text-xs text-slate-500">
-                      {searchQuery
-                        ? "Try clearing your search query"
-                        : "Table is currently empty"}
-                    </p>
-                  </div>
-                ) : (
-                  <table className="w-full text-left text-xs border-collapse font-mono">
-                    <thead className="sticky top-0 bg-slate-100 dark:bg-obsidian-950 border-b border-slate-200 dark:border-white/10 z-10 text-[11px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
-                      <tr>
-                        {rowsData.columns.map((col) => {
-                          const isSorted = sortCol === col;
-                          return (
-                            <th
-                              key={col}
-                              onClick={() => handleSort(col)}
-                              className="p-3 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-obsidian-850 select-none whitespace-nowrap transition-colors"
-                            >
-                              <div className="flex items-center gap-1.5">
-                                <span>{col}</span>
-                                {isSorted ? (
-                                  sortOrder === "asc" ? (
-                                    <ArrowUp className="w-3 h-3 text-serena-indigo" />
-                                  ) : (
-                                    <ArrowDown className="w-3 h-3 text-serena-indigo" />
-                                  )
-                                ) : (
-                                  <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-40 hover:opacity-100" />
-                                )}
-                              </div>
-                            </th>
-                          );
-                        })}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-white/5">
-                      {rowsData.rows.map((row, rIdx) => (
-                        <tr
-                          key={rIdx}
-                          className="hover:bg-slate-100/70 dark:hover:bg-obsidian-850/60 transition-colors"
-                        >
-                          {rowsData.columns.map((col) => {
-                            const val = row[col];
-                            return (
-                              <td
-                                key={col}
-                                className="p-3 text-slate-700 dark:text-slate-300 max-w-[280px] truncate"
-                              >
-                                <CellFormatter
-                                  val={val}
-                                  colName={col}
-                                  onInspect={(content) =>
-                                    setModalValue({ title: `${selectedTable} -> ${col}`, content })
-                                  }
-                                />
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-
-              {/* Pagination Bar */}
-              {rowsData && rowsData.total > 0 && (
-                <div className="p-3 border-t border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-obsidian-950 flex items-center justify-between gap-3 text-xs shrink-0">
-                  <div className="text-slate-500 font-medium">
-                    Showing {(page - 1) * pageSize + 1}–
-                    {Math.min(page * pageSize, rowsData.total)} of {rowsData.total.toLocaleString()} rows
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={pageSize}
-                      onChange={(e) => {
-                        setPageSize(Number(e.target.value));
-                        setPage(1);
-                      }}
-                      className="px-2 py-1 bg-white dark:bg-obsidian-900 border border-slate-200 dark:border-white/10 rounded-lg text-slate-700 dark:text-slate-300 outline-none"
-                    >
-                      <option value={25}>25 rows</option>
-                      <option value={50}>50 rows</option>
-                      <option value={100}>100 rows</option>
-                    </select>
-
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => setPage((p) => Math.max(1, p - 1))}
-                        disabled={page === 1}
-                        className="p-1.5 rounded-lg bg-white dark:bg-obsidian-900 hover:bg-slate-100 dark:hover:bg-obsidian-850 border border-slate-200 dark:border-white/10 disabled:opacity-40"
-                      >
-                        <ChevronLeft className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="px-2 font-mono font-bold text-slate-700 dark:text-slate-300">
-                        {page} / {totalPages}
-                      </span>
-                      <button
-                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                        disabled={page >= totalPages}
-                        className="p-1.5 rounded-lg bg-white dark:bg-obsidian-900 hover:bg-slate-100 dark:hover:bg-obsidian-850 border border-slate-200 dark:border-white/10 disabled:opacity-40"
-                      >
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 2: SCHEMA COLUMNS */}
-          {activeTab === "columns" && (
-            <div className="flex-1 overflow-auto p-4 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {columns.map((col) => (
-                  <div
-                    key={col.name}
-                    className="p-3.5 rounded-xl bg-white dark:bg-obsidian-950 border border-slate-200 dark:border-white/5 flex items-start gap-3 shadow-xs"
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-serena-indigo/10 flex items-center justify-center shrink-0">
-                      {col.pk ? (
-                        <Key className="w-4 h-4 text-serena-amber" />
-                      ) : col.type.toUpperCase().includes("INT") ? (
-                        <Hash className="w-4 h-4 text-serena-indigo" />
-                      ) : (
-                        <Type className="w-4 h-4 text-slate-500" />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate">
-                          {col.name}
-                        </span>
-                        {col.pk && (
-                          <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/30">
-                            PRIMARY KEY
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] font-mono text-serena-violet mt-1">
-                        {col.type || "VARCHAR"}
-                      </div>
-                      <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-2">
-                        <span>{col.nullable ? "NULLABLE" : "NOT NULL"}</span>
-                        {col.dflt_value && <span>Default: {col.dflt_value}</span>}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {indexes.length > 0 && (
-                <div className="mt-6 pt-4 border-t border-slate-200 dark:border-white/5">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
-                    Indexes ({indexes.length})
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {indexes.map((idx) => (
-                      <div
-                        key={idx.name}
-                        className="p-3 rounded-xl bg-white dark:bg-obsidian-950 border border-slate-200 dark:border-white/5 text-xs font-mono"
-                      >
-                        <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                          <Layers className="w-3.5 h-3.5 text-serena-violet" />
-                          <span>{idx.name}</span>
-                          {idx.unique && (
-                            <span className="px-1.5 py-0.2 text-[9px] rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/30">
-                              UNIQUE
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-slate-500 mt-1">
-                          Columns: {idx.columns.join(", ")}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 3: SQL QUERY CONSOLE */}
-          {activeTab === "sql" && (
-            <div className="flex-1 flex flex-col min-h-0 overflow-hidden p-4 gap-3">
-              {/* Quick SQL Presets */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-                <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider shrink-0">
-                  Quick Query:
+                  {t.row_count.toLocaleString()}
                 </span>
-                {[
-                  "SELECT * FROM voters LIMIT 50;",
-                  "SELECT count(*) AS total_voters, gender FROM voters GROUP BY gender;",
-                  "SELECT count(*) AS total, part_number FROM voters GROUP BY part_number ORDER BY total DESC;",
-                  "SELECT * FROM files ORDER BY created_at DESC LIMIT 20;",
-                  "SELECT * FROM polling_stations LIMIT 20;",
-                ].map((q, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setSqlQuery(q)}
-                    className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-obsidian-950 hover:bg-slate-200 dark:hover:bg-obsidian-850 border border-slate-200 dark:border-white/5 font-mono text-[11px] text-slate-600 dark:text-slate-300 whitespace-nowrap"
-                  >
-                    {q.slice(0, 32)}…
-                  </button>
-                ))}
-              </div>
+              </button>
+            );
+          })}
+        </div>
 
-              {/* SQL Textarea */}
-              <div className="relative">
-                <textarea
-                  value={sqlQuery}
-                  onChange={(e) => setSqlQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                      void handleRunSql();
-                    }
-                  }}
-                  rows={4}
-                  placeholder="Enter custom SQL SELECT or PRAGMA query…"
-                  className="w-full p-3.5 bg-white dark:bg-obsidian-950 border border-slate-200 dark:border-white/10 rounded-xl font-mono text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-serena-indigo/40 shadow-inner"
-                />
-                <button
-                  onClick={() => void handleRunSql()}
-                  disabled={isExecutingSql || !sqlQuery.trim()}
-                  className="absolute right-3 bottom-3.5 px-4 py-2 rounded-xl bg-gradient-to-r from-serena-indigo to-serena-violet hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-serena-indigo/20 disabled:opacity-50 transition-all active:scale-95"
-                >
-                  {isExecutingSql ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Play className="w-3.5 h-3.5 fill-white" />
-                  )}
-                  <span>Execute (Ctrl+Enter)</span>
-                </button>
-              </div>
+        {/* Right Action Buttons */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Promote OCR to DB */}
+          <button
+            onClick={() => void handlePromoteAll()}
+            disabled={isPromotingAll}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs disabled:opacity-50 transition-all"
+            title="Sync extracted OCR records into curated database"
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${isPromotingAll ? "animate-spin" : ""}`} />
+            <span>Sync OCR ➔ DB</span>
+          </button>
 
-              {/* SQL Error Banner */}
-              {sqlError && (
-                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-500 text-xs font-mono flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{sqlError}</span>
-                </div>
-              )}
+          {/* Export CSV */}
+          <button
+            onClick={() =>
+              downloadCsv(
+                `${selectedTable}.csv`,
+                visibleColumns.map((c) => c.name),
+                displayRows
+              )
+            }
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/15 text-slate-700 dark:text-slate-300 text-xs font-medium transition-all"
+            title="Download CSV"
+          >
+            <Download className="w-3.5 h-3.5 text-blue-500" />
+            <span>Export CSV</span>
+          </button>
 
-              {/* SQL Result Table */}
-              <div className="flex-1 overflow-auto border border-slate-200 dark:border-white/10 rounded-xl bg-white dark:bg-obsidian-950">
-                {queryResult ? (
-                  <table className="w-full text-left text-xs font-mono border-collapse">
-                    <thead className="sticky top-0 bg-slate-100 dark:bg-obsidian-900 border-b border-slate-200 dark:border-white/10 text-[11px] text-slate-500 uppercase tracking-wider">
-                      <tr>
-                        {queryResult.columns.map((c) => (
-                          <th key={c} className="p-3 whitespace-nowrap font-bold">
-                            {c}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-white/5">
-                      {queryResult.rows.map((row, i) => (
-                        <tr key={i} className="hover:bg-slate-50 dark:hover:bg-obsidian-850">
-                          {queryResult.columns.map((c) => (
-                            <td key={c} className="p-3 text-slate-700 dark:text-slate-300 max-w-[300px] truncate">
-                              <CellFormatter
-                                val={row[c]}
-                                colName={c}
-                                onInspect={(content) =>
-                                  setModalValue({ title: `Query Result -> ${c}`, content })
-                                }
-                              />
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <div className="flex items-center justify-center h-full text-xs text-slate-400">
-                    Run a query to view results
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </section>
+          {/* Truncate Current Table */}
+          <button
+            onClick={() => setConfirmTruncate(selectedTable)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 text-xs font-medium transition-all border border-red-500/20"
+            title={`Clear all records in ${selectedTable}`}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Truncate Table</span>
+          </button>
+
+          {/* Refresh */}
+          <button
+            onClick={() => void loadTableDetails()}
+            className="p-1.5 rounded-md bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/15 text-slate-600 dark:text-slate-300"
+            title="Refresh Table (F5)"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoadingRows ? "animate-spin" : ""}`} />
+          </button>
+
+          {/* SQL Console Toggle */}
+          <button
+            onClick={() => setShowSqlDrawer(!showSqlDrawer)}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+              showSqlDrawer
+                ? "bg-purple-600 text-white"
+                : "bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-200"
+            }`}
+          >
+            <Terminal className="w-3.5 h-3.5" />
+            <span>SQL</span>
+          </button>
+        </div>
       </div>
 
-      {/* JSON / Text Inspector Modal */}
-      {modalValue && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl serena-glass rounded-3xl p-5 border border-slate-200 dark:border-white/10 shadow-2xl flex flex-col max-h-[85vh]">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-white/10">
-              <h3 className="text-xs font-bold font-mono text-slate-800 dark:text-slate-200">
-                {modalValue.title}
-              </h3>
+      {/* ========================================================================= */}
+      {/* 2. COMMAND & FILTER BAR */}
+      {/* ========================================================================= */}
+      <div className="px-4 py-2 bg-[#F3F3F3] dark:bg-[#252525] border-b border-slate-200 dark:border-white/10 flex items-center justify-between gap-3 shrink-0 text-xs flex-wrap">
+        {/* Search Bar */}
+        <div className="flex items-center gap-2 flex-1 min-w-[240px] max-w-md">
+          <div className="w-full flex items-center bg-white dark:bg-[#1E1E1E] border border-slate-300 dark:border-white/10 rounded-md px-2.5 py-1.5 shadow-2xs focus-within:ring-1 focus-within:ring-blue-500">
+            <Search className="w-3.5 h-3.5 text-slate-400 mr-2 shrink-0" />
+            <input
+              type="text"
+              placeholder={`Search ${selectedTable} (Name, EPIC, House No, Section...)`}
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
+              className="w-full bg-transparent text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery("")} className="text-slate-400 hover:text-slate-600">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Quick Filter Chips (for Voters table) */}
+        {selectedTable === "voters" && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] text-slate-400 flex items-center gap-1 font-medium">
+              <Filter className="w-3 h-3" /> Filter:
+            </span>
+
+            {/* Gender Filters */}
+            <div className="flex items-center bg-slate-200/70 dark:bg-white/5 p-0.5 rounded-md border border-slate-300 dark:border-white/10">
               <button
-                onClick={() => setModalValue(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                onClick={() => setGenderFilter("all")}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
+                  genderFilter === "all" ? "bg-white dark:bg-white/15 text-blue-600 dark:text-blue-400 shadow-2xs font-bold" : "text-slate-600 dark:text-slate-400"
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setGenderFilter("male")}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
+                  genderFilter === "male" ? "bg-white dark:bg-white/15 text-blue-600 dark:text-blue-400 shadow-2xs font-bold" : "text-slate-600 dark:text-slate-400"
+                }`}
+              >
+                👨 Male
+              </button>
+              <button
+                onClick={() => setGenderFilter("female")}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
+                  genderFilter === "female" ? "bg-white dark:bg-white/15 text-blue-600 dark:text-blue-400 shadow-2xs font-bold" : "text-slate-600 dark:text-slate-400"
+                }`}
+              >
+                👩 Female
+              </button>
+            </div>
+
+            {/* Age Group Filters */}
+            <div className="flex items-center bg-slate-200/70 dark:bg-white/5 p-0.5 rounded-md border border-slate-300 dark:border-white/10">
+              <button
+                onClick={() => setAgeGroupFilter("all")}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
+                  ageGroupFilter === "all" ? "bg-white dark:bg-white/15 text-blue-600 dark:text-blue-400 shadow-2xs font-bold" : "text-slate-600 dark:text-slate-400"
+                }`}
+              >
+                All Ages
+              </button>
+              <button
+                onClick={() => setAgeGroupFilter("18-30")}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
+                  ageGroupFilter === "18-30" ? "bg-white dark:bg-white/15 text-blue-600 dark:text-blue-400 shadow-2xs font-bold" : "text-slate-600 dark:text-slate-400"
+                }`}
+              >
+                18-30
+              </button>
+              <button
+                onClick={() => setAgeGroupFilter("31-50")}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
+                  ageGroupFilter === "31-50" ? "bg-white dark:bg-white/15 text-blue-600 dark:text-blue-400 shadow-2xs font-bold" : "text-slate-600 dark:text-slate-400"
+                }`}
+              >
+                31-50
+              </button>
+              <button
+                onClick={() => setAgeGroupFilter("50+")}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
+                  ageGroupFilter === "50+" ? "bg-white dark:bg-white/15 text-blue-600 dark:text-blue-400 shadow-2xs font-bold" : "text-slate-600 dark:text-slate-400"
+                }`}
+              >
+                50+
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Columns Visibility Dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setShowColSelector(!showColSelector)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-[#1E1E1E] text-slate-700 dark:text-slate-300 hover:bg-slate-50 text-xs shadow-2xs"
+          >
+            <Columns3 className="w-3.5 h-3.5 text-slate-500" />
+            <span>Columns ({visibleColumns.length}/{columns.length})</span>
+          </button>
+
+          {showColSelector && (
+            <div className="absolute right-0 mt-1 w-56 bg-white dark:bg-[#252525] rounded-lg shadow-xl border border-slate-300 dark:border-white/15 p-2 z-50 max-h-72 overflow-y-auto">
+              <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 px-2 py-1 border-b border-slate-200 dark:border-white/10 mb-1 flex justify-between">
+                <span>Toggle Columns</span>
+                <button onClick={() => setShowColSelector(false)} className="text-slate-400 hover:text-slate-600">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="space-y-0.5">
+                {columns.map((c) => {
+                  const isVisible = !hiddenCols.has(c.name);
+                  return (
+                    <label
+                      key={c.name}
+                      onClick={() => toggleColumn(c.name)}
+                      className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer text-xs"
+                    >
+                      <input type="checkbox" checked={isVisible} onChange={() => {}} className="rounded text-blue-600" />
+                      <span className="truncate">{c.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 3. SQL DRAWER (COLLAPSIBLE) */}
+      {/* ========================================================================= */}
+      {showSqlDrawer && (
+        <div className="bg-[#1C1C1C] text-white p-3 border-b border-slate-700 flex flex-col gap-2 shrink-0 animate-in slide-in-from-top-2 duration-150">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-mono font-bold text-purple-400 flex items-center gap-1.5">
+              <Terminal className="w-3.5 h-3.5" /> SQL Query Console
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSqlQuery("SELECT gender, count(*) FROM voters GROUP BY gender;")}
+                className="text-[10px] text-slate-400 hover:text-white underline font-mono"
+              >
+                Sample: Gender Count
+              </button>
+              <button
+                onClick={() => setSqlQuery("SELECT section_name, count(*) FROM voters GROUP BY section_name;")}
+                className="text-[10px] text-slate-400 hover:text-white underline font-mono"
+              >
+                Sample: Section Summary
+              </button>
+              <button onClick={() => setShowSqlDrawer(false)} className="text-slate-400 hover:text-white">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <textarea
+              value={sqlQuery}
+              onChange={(e) => setSqlQuery(e.target.value)}
+              rows={2}
+              className="flex-1 bg-[#121212] border border-slate-700 rounded-md p-2 text-xs font-mono text-emerald-400 focus:outline-none focus:border-purple-500"
+            />
+            <button
+              onClick={() => void handleRunSql()}
+              disabled={isExecutingSql}
+              className="px-4 bg-purple-600 hover:bg-purple-700 font-semibold text-xs rounded-md flex items-center gap-1.5 transition-all shadow-xs disabled:opacity-50"
+            >
+              <Play className="w-3.5 h-3.5 fill-white" />
+              <span>Run</span>
+            </button>
+          </div>
+
+          {sqlError && (
+            <div className="text-[11px] font-mono text-red-400 bg-red-950/40 p-1.5 rounded border border-red-800">
+              {sqlError}
+            </div>
+          )}
+
+          {queryResult && (
+            <div className="text-[11px] font-mono text-slate-300 max-h-36 overflow-y-auto bg-[#121212] p-2 rounded border border-slate-800">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-slate-700 text-purple-300">
+                    {queryResult.columns.map((c) => (
+                      <th key={c} className="p-1">{c}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {queryResult.rows.map((r, idx) => (
+                    <tr key={idx} className="border-b border-slate-800/50 hover:bg-white/5">
+                      {queryResult.columns.map((c) => (
+                        <td key={c} className="p-1">{String(r[c] ?? "—")}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 4. MAIN DATA GRID (EXCEL / FLUID TABLE VIEW) */}
+      {/* ========================================================================= */}
+      <div className="flex-1 min-h-0 overflow-auto bg-white dark:bg-[#181818] relative">
+        {isLoadingRows ? (
+          <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-2 p-8">
+            <Loader2 className="w-8 h-8 animate-spin text-[#005FB8]" />
+            <span className="text-xs font-semibold">Loading {selectedTable} data…</span>
+          </div>
+        ) : displayRows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-2 p-8 text-center">
+            <Table2 className="w-12 h-12 text-slate-300 dark:text-slate-700" />
+            <div className="text-xs font-bold text-slate-700 dark:text-slate-300">No records found</div>
+            <p className="text-[11px] text-slate-500">
+              {searchQuery ? "Try refining your search query" : "Run OCR processing or click 'Sync OCR ➔ DB' to populate records"}
+            </p>
+          </div>
+        ) : (
+          <table className="w-full text-left text-xs border-collapse font-sans">
+            <thead className="bg-[#F8F9FA] dark:bg-[#202020] border-b border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 font-semibold sticky top-0 z-10 select-none shadow-2xs">
+              <tr>
+                <th className="w-10 px-3 py-2 text-center text-slate-400">#</th>
+                {visibleColumns.map((col) => {
+                  const isSorted = sortCol === col.name;
+                  return (
+                    <th
+                      key={col.name}
+                      onClick={() => handleSort(col.name)}
+                      className="px-3 py-2 cursor-pointer hover:bg-slate-200/50 dark:hover:bg-white/5 transition-colors whitespace-nowrap"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate">{col.name}</span>
+                        {isSorted ? (
+                          sortOrder === "asc" ? (
+                            <ArrowUp className="w-3 h-3 text-blue-600" />
+                          ) : (
+                            <ArrowDown className="w-3 h-3 text-blue-600" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 text-slate-300 dark:text-slate-600 opacity-60" />
+                        )}
+                      </div>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+              {displayRows.map((row, rIdx) => (
+                <tr
+                  key={String(row.id ?? rIdx)}
+                  onClick={() => setSelectedRowDetail(row)}
+                  className="hover:bg-[#E5F3FF] dark:hover:bg-[#003774]/30 cursor-pointer transition-colors group"
+                >
+                  <td className="px-3 py-2 text-center font-mono text-[11px] text-slate-400 group-hover:text-blue-600">
+                    {(page - 1) * pageSize + rIdx + 1}
+                  </td>
+                  {visibleColumns.map((col) => {
+                    const val = row[col.name];
+                    const isEpic = col.name === "epic_id";
+                    const isName = col.name === "name_ta" || col.name === "name_en";
+                    const isGender = col.name === "gender";
+
+                    return (
+                      <td key={col.name} className="px-3 py-2 whitespace-nowrap max-w-xs truncate">
+                        {isEpic ? (
+                          <span className="font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-500/20">
+                            {String(val || "—")}
+                          </span>
+                        ) : isName ? (
+                          <span className="font-medium text-slate-900 dark:text-white">
+                            {String(val || "—")}
+                          </span>
+                        ) : isGender ? (
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                              String(val).toLowerCase().includes("female") || String(val).includes("பெண்")
+                                ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
+                                : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
+                            }`}
+                          >
+                            {String(val || "—")}
+                          </span>
+                        ) : (
+                          <span className="text-slate-700 dark:text-slate-300">
+                            {String(val ?? "—")}
+                          </span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 5. WINDOWS 11 BOTTOM PAGINATION BAR */}
+      {/* ========================================================================= */}
+      {(() => {
+        const totalRows = rowsData?.total || 0;
+        const totalPages = Math.ceil(totalRows / pageSize) || 1;
+        return (
+          <div className="h-9 px-4 bg-[#EAEAEA] dark:bg-[#202020] border-t border-slate-300 dark:border-white/10 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 shrink-0 select-none">
+            {/* Total Records Status */}
+            <div className="flex items-center gap-3">
+              <span>
+                Showing <strong className="text-slate-900 dark:text-white">{displayRows.length}</strong> of{" "}
+                <strong className="text-slate-900 dark:text-white">{totalRows.toLocaleString()}</strong> rows
+              </span>
+              <span className="text-slate-300 dark:text-slate-600">|</span>
+              <span>Table: <strong className="text-slate-900 dark:text-white">{selectedTable}</strong></span>
+            </div>
+
+            {/* Page Controls */}
+            <div className="flex items-center gap-2">
+              {/* Page Size Selector */}
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] text-slate-400">Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                  }}
+                  className="bg-white dark:bg-[#1E1E1E] border border-slate-300 dark:border-white/10 rounded px-1.5 py-0.5 text-xs focus:outline-none cursor-pointer"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={250}>250</option>
+                </select>
+              </div>
+
+              <div className="h-4 w-[1px] bg-slate-300 dark:bg-white/10 mx-1" />
+
+              {/* Navigation Arrows */}
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="p-1 rounded hover:bg-slate-200 dark:hover:bg-white/10 disabled:opacity-30 transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <span className="font-mono text-xs">
+                Page <strong className="text-slate-900 dark:text-white">{page}</strong> of{" "}
+                <strong>{totalPages}</strong>
+              </span>
+
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="p-1 rounded hover:bg-slate-200 dark:hover:bg-white/10 disabled:opacity-30 transition-colors"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ========================================================================= */}
+      {/* 6. VOTER / ROW DETAILS MODAL (RICH USER CARD) */}
+      {/* ========================================================================= */}
+      {selectedRowDetail && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-[#252525] rounded-xl shadow-2xl border border-slate-300 dark:border-white/15 w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="px-5 py-3.5 bg-[#F8F9FA] dark:bg-[#1E1E1E] border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-600/10 border border-blue-600/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                  <User className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-white">
+                    {selectedRowDetail.name_ta || selectedRowDetail.name_en || selectedRowDetail.name || "Record Details"}
+                  </h3>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    Table: {selectedTable} · ID: {selectedRowDetail.id || "—"}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setSelectedRowDetail(null)}
+                className="w-7 h-7 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-auto p-4 font-mono text-xs bg-slate-50 dark:bg-obsidian-950 rounded-xl my-3 text-slate-800 dark:text-slate-200 whitespace-pre-wrap select-text border border-slate-200 dark:border-white/5">
-              {modalValue.content}
+
+            {/* Body */}
+            <div className="p-5 overflow-y-auto space-y-4">
+              {/* Top Highlights (for Voters) */}
+              {selectedTable === "voters" && (
+                <div className="grid grid-cols-2 gap-2.5 p-3 rounded-lg bg-slate-50 dark:bg-[#1E1E1E] border border-slate-200 dark:border-white/10 font-mono text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400">EPIC Number</span>
+                    <div className="font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1.5 mt-0.5">
+                      <span>{selectedRowDetail.epic_id || "—"}</span>
+                      {selectedRowDetail.epic_id && (
+                        <button
+                          onClick={() => handleCopy(selectedRowDetail.epic_id, "epic")}
+                          className="text-slate-400 hover:text-blue-600"
+                        >
+                          {copiedKey === "epic" ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400">Gender / Age</span>
+                    <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                      {selectedRowDetail.gender || "—"} · {selectedRowDetail.age ? `${selectedRowDetail.age} yrs` : "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400">House No</span>
+                    <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5 truncate">
+                      {selectedRowDetail.house_no || "—"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400">Section</span>
+                    <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5 truncate">
+                      {selectedRowDetail.section_name || "—"}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Complete Property Key-Value List */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">All Attributes</span>
+                <div className="divide-y divide-slate-100 dark:divide-white/5 border border-slate-200 dark:border-white/10 rounded-lg overflow-hidden bg-white dark:bg-[#1E1E1E]">
+                  {Object.entries(selectedRowDetail).map(([k, v]) => (
+                    <div key={k} className="flex justify-between items-center px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-white/5">
+                      <span className="font-mono text-slate-400 text-[11px] truncate max-w-[140px]">{k}:</span>
+                      <span className="font-mono text-slate-800 dark:text-slate-200 truncate max-w-[280px] text-right font-medium">
+                        {String(v ?? "—")}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-            <div className="flex justify-end">
+
+            {/* Footer */}
+            <div className="px-5 py-3 bg-[#F8F9FA] dark:bg-[#1E1E1E] border-t border-slate-200 dark:border-white/10 flex justify-between items-center">
               <button
-                onClick={() => setModalValue(null)}
-                className="px-4 py-2 rounded-xl bg-serena-indigo text-white text-xs font-bold"
+                onClick={() => handleCopy(JSON.stringify(selectedRowDetail, null, 2), "json")}
+                className="px-3 py-1.5 rounded-md border border-slate-300 dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 flex items-center gap-1.5"
               >
-                Close
+                {copiedKey === "json" ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>Copy JSON</span>
+              </button>
+
+              <button
+                onClick={() => setSelectedRowDetail(null)}
+                className="px-4 py-1.5 rounded-md bg-[#005FB8] hover:bg-[#004E98] text-white text-xs font-semibold"
+              >
+                Done
               </button>
             </div>
           </div>
         </div>
       )}
-      {/* Truncate Confirmation Modal */}
+
+      {/* ========================================================================= */}
+      {/* 7. CONFIRM TRUNCATE DIALOG */}
+      {/* ========================================================================= */}
       {confirmTruncate && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-md serena-glass rounded-3xl p-6 border border-rose-500/30 bg-white dark:bg-obsidian-900 shadow-2xl relative">
-            <div className="flex items-center gap-3.5 mb-4">
-              <div className="w-11 h-11 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0">
-                <AlertTriangle className="w-6 h-6 text-rose-500" />
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-[#252525] rounded-xl shadow-2xl border border-red-500/30 w-full max-w-md p-5 space-y-4">
+            <div className="flex items-center gap-3 text-red-600 dark:text-red-400">
+              <div className="w-10 h-10 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                  {confirmTruncate === "all"
-                    ? "Truncate Entire Database?"
-                    : `Truncate Table "${confirmTruncate}"?`}
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                  Confirm Truncate Table
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  This action is irreversible and will permanently delete data.
+                <p className="text-xs text-slate-500">
+                  Are you sure you want to clear all data in <strong className="text-red-500 font-mono">{confirmTruncate}</strong>?
                 </p>
               </div>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-700 dark:text-rose-300 space-y-1.5 mb-5 font-medium">
-              {confirmTruncate === "all" ? (
-                <>
-                  <p>• All voter records, OCR blocks, files, and job queues will be cleared.</p>
-                  <p>• Database schema and table structures will remain intact.</p>
-                </>
-              ) : (
-                <p>• All records in table <strong>{confirmTruncate}</strong> will be permanently wiped.</p>
-              )}
-            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400 bg-red-50 dark:bg-red-950/30 p-3 rounded-lg border border-red-200 dark:border-red-900/50">
+              ⚠️ This operation will permanently remove all rows from this table. This action cannot be undone.
+            </p>
 
-            <div className="flex items-center justify-end gap-2.5">
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 onClick={() => setConfirmTruncate(null)}
                 disabled={isTruncating}
-                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-obsidian-950 hover:bg-slate-200 dark:hover:bg-obsidian-850 border border-slate-200 dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-300 transition-colors"
+                className="px-3 py-1.5 rounded-md border border-slate-300 dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100"
               >
                 Cancel
               </button>
               <button
                 onClick={() => void handleExecuteTruncate()}
                 disabled={isTruncating}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-rose-600/30 transition-all active:scale-95 disabled:opacity-50"
+                className="px-4 py-1.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs"
               >
-                {isTruncating ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Trash2 className="w-4 h-4" />
-                )}
+                {isTruncating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 <span>Yes, Truncate Now</span>
               </button>
             </div>
@@ -831,55 +895,3 @@ export const DatabasePage: React.FC = () => {
     </div>
   );
 };
-
-function CellFormatter({
-  val,
-  colName,
-  onInspect,
-}: {
-  val: unknown;
-  colName: string;
-  onInspect: (str: string) => void;
-}) {
-  if (val === null || val === undefined) {
-    return <span className="text-slate-400 dark:text-slate-600 italic">NULL</span>;
-  }
-  if (typeof val === "boolean") {
-    return (
-      <span className={`font-bold ${val ? "text-emerald-500" : "text-rose-500"}`}>
-        {val ? "TRUE" : "FALSE"}
-      </span>
-    );
-  }
-  if (typeof val === "number") {
-    return <span className="text-serena-indigo font-bold">{val.toLocaleString()}</span>;
-  }
-
-  const str = typeof val === "object" ? JSON.stringify(val, null, 2) : String(val);
-
-  if (str.startsWith("{") || str.startsWith("[")) {
-    return (
-      <button
-        onClick={() => onInspect(str)}
-        className="px-2 py-0.5 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-[10px] font-bold flex items-center gap-1"
-      >
-        <Eye className="w-3 h-3" />
-        <span>JSON Data</span>
-      </button>
-    );
-  }
-
-  if (str.length > 50) {
-    return (
-      <span
-        onClick={() => onInspect(str)}
-        className="cursor-pointer hover:underline text-slate-700 dark:text-slate-300"
-        title="Click to view full content"
-      >
-        {str.slice(0, 50)}…
-      </span>
-    );
-  }
-
-  return <span>{str}</span>;
-}
