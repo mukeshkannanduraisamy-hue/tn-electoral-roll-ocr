@@ -6,7 +6,7 @@ import { Windows11Explorer } from "@/components/Windows11Explorer";
 import { SerenaAuthModal } from "@/components/SerenaAuthBar";
 
 export default function SerenaHome() {
-  const { checkAuth, loadDbFiles, scanCurrentFolder, setTheme } = useSerenaStore();
+  const { checkAuth, loadDbFiles, checkActiveJob, scanCurrentFolder, setTheme } = useSerenaStore();
   const [isAuthOpen, setIsAuthOpen] = useState(false);
 
   useEffect(() => {
@@ -15,7 +15,9 @@ export default function SerenaHome() {
       setTheme(savedTheme);
     }
     void checkAuth();
-    void loadDbFiles();
+    void loadDbFiles().then(() => {
+      void checkActiveJob();
+    });
     void scanCurrentFolder();
   }, []);
 

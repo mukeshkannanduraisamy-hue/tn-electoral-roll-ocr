@@ -139,3 +139,10 @@ export async function cancelJob(jobId: string): Promise<void> {
   const res = await apiFetch(`/api/jobs/${jobId}/cancel`, { method: "POST" });
   if (!res.ok) await handleError(res, "Failed to cancel job");
 }
+
+export async function fetchJobs(): Promise<Job[]> {
+  const res = await apiFetch("/api/jobs");
+  if (!res.ok) return [];
+  return res.json();
+}
+

@@ -700,10 +700,11 @@ export const Windows11Explorer: React.FC<{ onOpenAuth: () => void }> = ({ onOpen
                       const isSelected = selectedItem?.stored_path === item.stored_path;
                       const isChecked = selectedPaths.has(item.stored_path);
                       const fileProgress = item.file_id ? fileJobProgress[item.file_id] : undefined;
-                      const isCurrentlyProcessing =
-                        item.status === "processing" || (fileProgress && !fileProgress.done);
-                      const isCompleted =
-                        item.status === "completed" || (fileProgress && fileProgress.done);
+                      const pagesDone = fileProgress ? fileProgress.pagesCompleted : (item.pages_done || 0);
+                      const pagesTotal = fileProgress && fileProgress.pagesTotal > 0 ? fileProgress.pagesTotal : (item.page_count || 1);
+                      const isCompleted = item.status === "completed" || (fileProgress && fileProgress.done);
+                      const isCurrentlyProcessing = item.status === "processing" || (fileProgress && !fileProgress.done && isJobRunning);
+                      const filePercent = isCompleted ? 100 : (pagesTotal > 0 ? Math.min(100, Math.round((pagesDone / pagesTotal) * 100)) : 0);
 
                       return (
                         <tr
@@ -745,16 +746,10 @@ export const Windows11Explorer: React.FC<{ onOpenAuth: () => void }> = ({ onOpen
                                 <div className="flex items-center justify-between text-[11px] font-mono">
                                   <span className="font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1">
                                     <Loader2 className="w-3 h-3 animate-spin" />
-                                    <span>
-                                      {fileProgress && fileProgress.pagesTotal > 0
-                                        ? `${Math.round(((fileProgress.pagesCompleted + fileProgress.pagesFailed) / fileProgress.pagesTotal) * 100)}%`
-                                        : `${activeJobProgress.toFixed(0)}%`}
-                                    </span>
+                                    <span>{filePercent}%</span>
                                   </span>
                                   <span className="text-slate-500 dark:text-slate-400 text-[10px]">
-                                    {fileProgress && fileProgress.pagesTotal > 0
-                                      ? `${fileProgress.pagesCompleted}/${fileProgress.pagesTotal} pgs`
-                                      : `${item.page_count || 1} pgs`}
+                                    {pagesDone}/{pagesTotal} pgs
                                   </span>
                                 </div>
 
@@ -763,12 +758,7 @@ export const Windows11Explorer: React.FC<{ onOpenAuth: () => void }> = ({ onOpen
                                   <div
                                     className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300"
                                     style={{
-                                      width: `${Math.max(
-                                        5,
-                                        fileProgress && fileProgress.pagesTotal > 0
-                                          ? ((fileProgress.pagesCompleted + fileProgress.pagesFailed) / fileProgress.pagesTotal) * 100
-                                          : activeJobProgress
-                                      )}%`,
+                                      width: `${Math.max(5, filePercent)}%`,
                                     }}
                                   />
                                 </div>
@@ -785,6 +775,16 @@ export const Windows11Explorer: React.FC<{ onOpenAuth: () => void }> = ({ onOpen
                               <span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400 text-[11px]">
                                 <CheckCircle2 className="w-3 h-3" /> Completed
                               </span>
+                            ) : pagesDone > 0 ? (
+                              <div className="flex flex-col gap-1 min-w-[130px] max-w-[170px]">
+                                <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                                  <span>{filePercent}%</span>
+                                  <span>{pagesDone}/{pagesTotal} pgs</span>
+                                </div>
+                                <div className="w-full h-1 rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
+                                  <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.max(5, filePercent)}%` }} />
+                                </div>
+                              </div>
                             ) : (
                               <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400 text-[11px]">
                                 <Clock className="w-3 h-3" /> Pending
@@ -836,10 +836,11 @@ export const Windows11Explorer: React.FC<{ onOpenAuth: () => void }> = ({ onOpen
                   const isSelected = selectedItem?.stored_path === item.stored_path;
                   const isChecked = selectedPaths.has(item.stored_path);
                   const fileProgress = item.file_id ? fileJobProgress[item.file_id] : undefined;
-                  const isCurrentlyProcessing =
-                    item.status === "processing" || (fileProgress && !fileProgress.done);
-                  const isCompleted =
-                    item.status === "completed" || (fileProgress && fileProgress.done);
+                  const pagesDone = fileProgress ? fileProgress.pagesCompleted : (item.pages_done || 0);
+                  const pagesTotal = fileProgress && fileProgress.pagesTotal > 0 ? fileProgress.pagesTotal : (item.page_count || 1);
+                  const isCompleted = item.status === "completed" || (fileProgress && fileProgress.done);
+                  const isCurrentlyProcessing = item.status === "processing" || (fileProgress && !fileProgress.done && isJobRunning);
+                  const filePercent = isCompleted ? 100 : (pagesTotal > 0 ? Math.min(100, Math.round((pagesDone / pagesTotal) * 100)) : 0);
 
                   return (
                     <div
@@ -879,30 +880,21 @@ export const Windows11Explorer: React.FC<{ onOpenAuth: () => void }> = ({ onOpen
                         </button>
                       </div>
 
-                      {isCurrentlyProcessing && (
+                      {isCurrentlyProcessing ? (
                         <div className="my-1.5 space-y-1">
                           <div className="flex items-center justify-between text-[10px] font-mono">
                             <span className="text-blue-600 dark:text-blue-400 font-bold">
-                              {fileProgress && fileProgress.pagesTotal > 0
-                                ? `${Math.round(((fileProgress.pagesCompleted + fileProgress.pagesFailed) / fileProgress.pagesTotal) * 100)}%`
-                                : `${activeJobProgress.toFixed(0)}%`}
+                              {filePercent}%
                             </span>
                             <span className="text-slate-400">
-                              {fileProgress && fileProgress.pagesTotal > 0
-                                ? `${fileProgress.pagesCompleted}/${fileProgress.pagesTotal} pgs`
-                                : `${item.page_count || 1} pgs`}
+                              {pagesDone}/{pagesTotal} pgs
                             </span>
                           </div>
                           <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
                             <div
                               className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300"
                               style={{
-                                width: `${Math.max(
-                                  5,
-                                  fileProgress && fileProgress.pagesTotal > 0
-                                    ? ((fileProgress.pagesCompleted + fileProgress.pagesFailed) / fileProgress.pagesTotal) * 100
-                                    : activeJobProgress
-                                )}%`,
+                                width: `${Math.max(5, filePercent)}%`,
                               }}
                             />
                           </div>
@@ -913,7 +905,17 @@ export const Windows11Explorer: React.FC<{ onOpenAuth: () => void }> = ({ onOpen
                             </span>
                           </div>
                         </div>
-                      )}
+                      ) : pagesDone > 0 && !isCompleted ? (
+                        <div className="my-1.5 space-y-1">
+                          <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                            <span>{filePercent}%</span>
+                            <span>{pagesDone}/{pagesTotal} pgs</span>
+                          </div>
+                          <div className="w-full h-1 rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
+                            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.max(5, filePercent)}%` }} />
+                          </div>
+                        </div>
+                      ) : null}
 
                       <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-white/5 text-[11px]">
                         {isCompleted ? (
@@ -1009,40 +1011,44 @@ export const Windows11Explorer: React.FC<{ onOpenAuth: () => void }> = ({ onOpen
                     </div>
 
                     {/* In-Flight Live Progress & ETA */}
-                    {(selectedItem.status === "processing" ||
-                      (selectedItem.file_id && fileJobProgress[selectedItem.file_id] && !fileJobProgress[selectedItem.file_id].done)) && (
-                      <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-1.5">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-blue-600 dark:text-blue-400 font-bold flex items-center gap-1">
-                            <Loader2 className="w-3 h-3 animate-spin" /> In Progress
-                          </span>
-                          <span className="text-slate-700 dark:text-slate-300 font-bold">
-                            {selectedItem.file_id && fileJobProgress[selectedItem.file_id] && fileJobProgress[selectedItem.file_id].pagesTotal > 0
-                              ? `${Math.round(((fileJobProgress[selectedItem.file_id].pagesCompleted + fileJobProgress[selectedItem.file_id].pagesFailed) / fileJobProgress[selectedItem.file_id].pagesTotal) * 100)}%`
-                              : `${activeJobProgress.toFixed(0)}%`}
-                          </span>
-                        </div>
-                        <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-white/10 overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300"
-                            style={{
-                              width: `${Math.max(
-                                5,
-                                selectedItem.file_id && fileJobProgress[selectedItem.file_id] && fileJobProgress[selectedItem.file_id].pagesTotal > 0
-                                  ? ((fileJobProgress[selectedItem.file_id].pagesCompleted + fileJobProgress[selectedItem.file_id].pagesFailed) / fileJobProgress[selectedItem.file_id].pagesTotal) * 100
-                                  : activeJobProgress
-                              )}%`,
-                            }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-[10px] text-slate-400">
-                          <span>{pagesPerSec > 0 ? `${pagesPerSec.toFixed(1)} pgs/sec` : "GPU active"}</span>
-                          <span className="text-blue-500 font-bold">
-                            ETA: {etaSeconds > 0 ? (etaSeconds > 60 ? `${Math.floor(etaSeconds / 60)}m ${etaSeconds % 60}s` : `${etaSeconds}s`) : "< 10s"}
-                          </span>
-                        </div>
-                      </div>
-                    )}
+                    {(() => {
+                      const selProgress = selectedItem.file_id ? fileJobProgress[selectedItem.file_id] : undefined;
+                      const selDone = selProgress ? selProgress.pagesCompleted : (selectedItem.pages_done || 0);
+                      const selTotal = selProgress && selProgress.pagesTotal > 0 ? selProgress.pagesTotal : (selectedItem.page_count || 1);
+                      const selPercent = selectedItem.status === "completed" ? 100 : (selTotal > 0 ? Math.min(100, Math.round((selDone / selTotal) * 100)) : 0);
+                      const isProc = selectedItem.status === "processing" || (selProgress && !selProgress.done && isJobRunning);
+
+                      if (isProc || (selDone > 0 && selectedItem.status !== "completed")) {
+                        return (
+                          <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-blue-600 dark:text-blue-400 font-bold flex items-center gap-1">
+                                {isProc ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                                <span>{isProc ? "In Progress" : "Progress"}</span>
+                              </span>
+                              <span className="text-slate-700 dark:text-slate-300 font-bold">
+                                {selPercent}% ({selDone}/{selTotal} pgs)
+                              </span>
+                            </div>
+                            <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-white/10 overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300"
+                                style={{ width: `${Math.max(5, selPercent)}%` }}
+                              />
+                            </div>
+                            {isProc && (
+                              <div className="flex justify-between text-[10px] text-slate-400">
+                                <span>{pagesPerSec > 0 ? `${pagesPerSec.toFixed(1)} pgs/sec` : "GPU active"}</span>
+                                <span className="text-blue-500 font-bold">
+                                  ETA: {etaSeconds > 0 ? (etaSeconds > 60 ? `${Math.floor(etaSeconds / 60)}m ${etaSeconds % 60}s` : `${etaSeconds}s`) : "< 10s"}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
 
                   {/* Action Buttons */}

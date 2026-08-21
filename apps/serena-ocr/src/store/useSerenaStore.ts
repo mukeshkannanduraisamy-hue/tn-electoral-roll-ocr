@@ -8,6 +8,7 @@ import {
   cancelJob as apiCancelJob,
   fetchFiles as apiFetchFiles,
   deleteFile as apiDeleteFile,
+  fetchJobs as apiFetchJobs,
   getAuthStatus,
   loginApi,
   logoutApi,
@@ -26,6 +27,7 @@ export interface SerenaState {
   // Database Files
   dbFiles: SourceFile[];
   loadDbFiles: () => Promise<void>;
+  checkActiveJob: () => Promise<void>;
 
   // Folder Explorer State
   folderPath: string;
@@ -307,6 +309,22 @@ export const useSerenaStore = create<SerenaState>((set, get) => ({
       const dbFiles = await apiFetchFiles();
       set({ dbFiles });
 
+      // Pre-fill fileJobProgress from dbFiles to retain progress on reload
+      const currentProgress = { ...get().fileJobProgress };
+      dbFiles.forEach((f) => {
+        if (!currentProgress[f.id] || currentProgress[f.id].pagesCompleted === 0) {
+          currentProgress[f.id] = {
+            fileId: f.id,
+            fileName: f.name,
+            pagesCompleted: f.pages_done || 0,
+            pagesFailed: 0,
+            pagesTotal: f.page_count || 1,
+            done: f.status === "completed",
+          };
+        }
+      });
+      set({ fileJobProgress: currentProgress });
+
       // Merge with active scannedData if present
       const scanned = get().scannedData;
       if (scanned) {
@@ -348,6 +366,27 @@ export const useSerenaStore = create<SerenaState>((set, get) => ({
       }
     } catch (e) {
       console.error("Failed to load db files", e);
+    }
+  },
+
+  checkActiveJob: async () => {
+    try {
+      const jobs = await apiFetchJobs();
+      const runningJob = jobs.find((j) => j.status === "running" || j.status === "queued");
+      if (runningJob && !get().activeJobId) {
+        const pct =
+          runningJob.total_pages > 0
+            ? ((runningJob.completed_pages + runningJob.failed_pages) / runningJob.total_pages) * 100
+            : 0;
+        set({
+          activeJobId: runningJob.id,
+          activeJobStatus: runningJob.status,
+          activeJobProgress: pct,
+        });
+        attachJobSSE(runningJob.id, get, set as any);
+      }
+    } catch (e) {
+      console.error("Failed to check active jobs", e);
     }
   },
 
